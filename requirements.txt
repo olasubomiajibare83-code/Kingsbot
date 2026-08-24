@@ -1,3 +1,2 @@
-fastapi
-uvicorn[standard]
-pydantic
+streamlit
+huggingface_hub
