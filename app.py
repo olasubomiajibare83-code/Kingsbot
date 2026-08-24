@@ -1,5 +1,10 @@
 import streamlit as st
-import requests
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# This model runs INSIDE the server. No keys, no crashes.
+model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 st.title("Kingsbot")
 
@@ -14,16 +19,17 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Call the REAL AI without any keys
-    try:
-        response = requests.get(f"https://text.pollinations.ai/{prompt}")
-        bot_reply = response.text
-    except:
-        bot_reply = "The AI is taking a moment. Please try again in 10 seconds."
+    # Ask the REAL Brain
+    messages = [{"role": "user", "content": prompt}]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    
+    model_inputs = tokenizer([text], return_tensors="pt")
+    generated_ids = model.generate(model_inputs.input_ids, max_new_tokens=100, do_sample=False)
+    
+    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    
+    # Clean the answer
+    bot_reply = response.replace(text, "").strip() or response.strip()
     
     st.chat_message("assistant").markdown(bot_reply)
     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-    
-    # Speak the answer out loud
-    audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={bot_reply}&tl=en&client=tw-ob"
-    st.audio(audio_url, format="audio/mp3")
