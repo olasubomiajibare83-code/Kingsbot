@@ -1,7 +1,7 @@
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Load the REAL AI model that works on the free server
+# Load the REAL AI model
 model_name = "Qwen/Qwen2.5-0.5B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -27,10 +27,8 @@ if prompt := st.chat_input("Ask me anything"):
     
     response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
     
-    if text in response:
-        bot_reply = response.replace(text, "").strip()
-    else:
-        bot_reply = response.strip()
+    # This part is fixed to ensure the prompt is removed
+    bot_reply = response.replace(text, "").strip() or response.strip()
     
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
