@@ -7,14 +7,9 @@ if prompt := st.chat_input('Ask me anything'):
     st.chat_message('user').markdown(prompt)
     
     try:
-        response = requests.post(
-            'https://ai.hackclub.com/chat/completions',
-            json={'messages': [{'role': 'user', 'content': prompt}]},
-            timeout=10
-        )
-        data = response.json()
-        bot_reply = data['choices'][0]['message']['content']
+        response = requests.get(f'https://text.pollinations.ai/{prompt}')
+        bot_reply = response.text
     except:
-        bot_reply = 'Hi, how may i help you.'
+        bot_reply = 'I am having trouble connecting to the server. Please try again in 10 seconds.'
     
     st.chat_message('assistant').markdown(bot_reply)
