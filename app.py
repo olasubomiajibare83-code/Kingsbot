@@ -1,10 +1,5 @@
 import streamlit as st
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# Load the model that FITS in the free memory
-model_name = "Qwen/Qwen2.5-0.5B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+import requests
 
 st.title("Kingsbot")
 
@@ -19,22 +14,21 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Format for the AI
-    messages = [{"role": "user", "content": prompt}]
-    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    
-    # Generate the answer
-    model_inputs = tokenizer([text], return_tensors="pt")
-    generated_ids = model.generate(model_inputs.input_ids, max_new_tokens=150, do_sample=False)
-    
-    # Decode ONLY the answer
-    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    
-    # Clean the response to remove the prompt
-    if text in response:
-        bot_reply = response.replace(text, "").strip()
-    else:
-        bot_reply = response.strip()
+    try:
+        # Call the MASSIVE, never-busy real brain
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {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"},
+            json={
+                "model": "qwen/qwen-2.5-72b-instruct",  # The 72 Billion parameter brain!
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+        data = response.json()
+        bot_reply = data["choices"][0]["message"]["content"]
+    except:
+        bot_reply = "The real brain is taking a moment. Please try again in 15 seconds."
     
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
