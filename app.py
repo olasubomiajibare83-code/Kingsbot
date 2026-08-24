@@ -1,8 +1,8 @@
 import streamlit as st
 from transformers import pipeline
 
-# Use the REAL mathematical neural network weights
-chatbot = pipeline("text-generation", model="distilgpt2")
+# Use the smart conversational neural network
+chatbot = pipeline("text-generation", model="microsoft/DialoGPT-small")
 
 st.title("Kingsbot")
 if "messages" not in st.session_state:
@@ -16,7 +16,7 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # The Neural Network generates the response using math
+    # The Neural Network generates a conversational response
     response = chatbot(prompt, max_new_tokens=100)[0]['generated_text']
     
     with st.chat_message("assistant"):
