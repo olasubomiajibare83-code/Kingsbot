@@ -1,8 +1,8 @@
 import streamlit as st
-from transformers import pipeline
+import requests
 
-# Load a model that fits the free memory perfectly!
-chatbot = pipeline("text-generation", model="distilgpt2")
+# Your FREE Gemini API Key (I will show you how to get it after this!)
+API_KEY = "PASTE_YOUR_GEMINI_KEY_HERE"
 
 st.title("Kingsbot")
 if "messages" not in st.session_state:
@@ -16,9 +16,20 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Generate response
-    response = chatbot(prompt, max_new_tokens=100)[0]['generated_text']
+    # Call the FREE Gemini API
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    response = requests.post(url, json=payload)
+    data = response.json()
+    
+    try:
+        bot_reply = data["candidates"][0]["content"]["parts"][0]["text"]
+    except:
+        bot_reply = "Sorry, I hit a small error."
     
     with st.chat_message("assistant"):
-        st.markdown(response)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+        st.markdown(bot_reply)
+    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
