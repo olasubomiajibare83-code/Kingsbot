@@ -1,32 +1,36 @@
 import streamlit as st
-import requests
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-st.title('Kingsbot')
+# Load the REAL, SMART instruction-tuned model
+model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
-if 'messages' not in st.session_state:
+st.title("Kingsbot")
+
+if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for message in st.session_state.messages:
-    with st.chat_message(message['role']):
-        st.markdown(message['content'])
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-if prompt := st.chat_input('Ask me anything'):
-    st.chat_message('user').markdown(prompt)
-    st.session_state.messages.append({'role': 'user', 'content': prompt})
+if prompt := st.chat_input("Ask me anything"):
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Call the REAL, FAST, FREE Groq AI
-    try:
-        response = requests.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            headers={'Authorization': 'Bearer https://api.groq.com/openai/v1/chat/completions'},
-            json={'model': 'llama-3.1-8b-instant', 'messages': [{'role': 'user', 'content': prompt}]},
-            timeout=20
-        )
-        data = response.json()
-        bot_reply = data['choices'][0]['message']['content']
-    except:
-        bot_reply = 'The AI server is busy, please wait 10 seconds and try again.'
+    # Format the question for the AI
+    messages = [{"role": "user", "content": prompt}]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     
-    with st.chat_message('assistant'):
+    # Generate the REAL answer
+    model_inputs = tokenizer([text], return_tensors="pt")
+    generated_ids = model.generate(model_inputs.input_ids, max_new_tokens=100)
+    
+    # Decode the answer
+    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    bot_reply = response.replace(text, "").strip()
+    
+    with st.chat_message("assistant"):
         st.markdown(bot_reply)
-    st.session_state.messages.append({'role': 'assistant', 'content': bot_reply})
+    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
