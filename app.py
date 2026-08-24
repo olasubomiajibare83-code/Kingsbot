@@ -1,8 +1,8 @@
 import streamlit as st
 from transformers import pipeline
 
-# The Real Brain
-chatbot = pipeline("text-generation", model="microsoft/DialoGPT-medium")
+# Load a small, fast model that fits in the free memory
+chatbot = pipeline("text-generation", model="distilgpt2")
 
 st.title("Kingsbot")
 if "messages" not in st.session_state:
