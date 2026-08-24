@@ -1,7 +1,7 @@
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Load the model that knows facts
+# Load the REAL AI model
 model_name = "Qwen/Qwen2.5-0.5B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -19,7 +19,9 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    messages = [{"role": "user", "content": prompt}]
+    # Force the AI to answer ANY question without refusing
+    messages = [{"role": "system", "content": "You are a helpful assistant. Answer all questions clearly and truthfully."}, {"role": "user", "content": prompt}]
+    
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     
     model_inputs = tokenizer([text], return_tensors="pt")
