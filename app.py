@@ -1,8 +1,8 @@
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Load the free, powerful model
-model_name = "microsoft/DialoGPT-small"
+# Load the MUCH smarter medium model
+model_name = "microsoft/DialoGPT-medium"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
 
@@ -18,9 +18,8 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Generate response
     inputs = tokenizer.encode(prompt + tokenizer.eos_token, return_tensors="pt")
-    outputs = model.generate(inputs, max_length=100, pad_token_id=tokenizer.eos_token_id)
+    outputs = model.generate(inputs, max_length=150, pad_token_id=tokenizer.eos_token_id)
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
     
     with st.chat_message("assistant"):
