@@ -1,5 +1,10 @@
 import streamlit as st
-import requests
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Load the REAL AI model that works on the free server
+model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 st.title("Kingsbot")
 
@@ -14,20 +19,18 @@ if prompt := st.chat_input("Ask me anything"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": "Bearer sk-or-v1-xxxxxxxxxxxxxxxx"},
-            json={
-                "model": "qwen/qwen-2.5-72b-instruct",
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        )
-        data = response.json()
-        bot_reply = data["choices"][0]["message"]["content"]
-    except:
-        bot_reply = "The real brain is taking a moment. Please try again in 15 seconds."
+    messages = [{"role": "user", "content": prompt}]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    
+    model_inputs = tokenizer([text], return_tensors="pt")
+    generated_ids = model.generate(model_inputs.input_ids, max_new_tokens=100, do_sample=False)
+    
+    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    
+    if text in response:
+        bot_reply = response.replace(text, "").strip()
+    else:
+        bot_reply = response.strip()
     
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
