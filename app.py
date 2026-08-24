@@ -1,8 +1,8 @@
 import streamlit as st
 from transformers import pipeline
 
-# Load the Zephyr model - It is free, smart, and knows general knowledge!
-chatbot = pipeline("text-generation", model="HuggingFaceH4/zephyr-7b-beta")
+# Load a model that fits the free memory perfectly!
+chatbot = pipeline("text-generation", model="distilgpt2")
 
 st.title("Kingsbot")
 if "messages" not in st.session_state:
@@ -17,7 +17,7 @@ if prompt := st.chat_input("Ask me anything"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     # Generate response
-    response = chatbot(prompt, max_new_tokens=150)[0]['generated_text']
+    response = chatbot(prompt, max_new_tokens=100)[0]['generated_text']
     
     with st.chat_message("assistant"):
         st.markdown(response)
