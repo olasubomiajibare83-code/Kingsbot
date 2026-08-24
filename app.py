@@ -1,29 +1,32 @@
 import streamlit as st
-from transformers import pipeline
+import requests
 
-# The smarter model that speaks clear English
-chatbot = pipeline("text-generation", model="gpt2")
+st.title('Kingsbot')
 
-st.title("Kingsbot")
-
-if "messages" not in st.session_state:
+if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    with st.chat_message(message['role']):
+        st.markdown(message['content'])
 
-if prompt := st.chat_input("Ask me anything"):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if prompt := st.chat_input('Ask me anything'):
+    st.chat_message('user').markdown(prompt)
+    st.session_state.messages.append({'role': 'user', 'content': prompt})
     
-    # The AI is instructed to answer briefly and in English only
-    full_prompt = f"Answer the following question in one short sentence in English. Question: {prompt} Answer:"
+    # Call the REAL, FAST, FREE Groq AI
+    try:
+        response = requests.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            headers={'Authorization': 'Bearer https://api.groq.com/openai/v1/chat/completions'},
+            json={'model': 'llama-3.1-8b-instant', 'messages': [{'role': 'user', 'content': prompt}]},
+            timeout=20
+        )
+        data = response.json()
+        bot_reply = data['choices'][0]['message']['content']
+    except:
+        bot_reply = 'The AI server is busy, please wait 10 seconds and try again.'
     
-    response = chatbot(full_prompt, max_new_tokens=50, do_sample=False)[0]['generated_text']
-    
-    # Remove the instruction part from the response
-    bot_reply = response.replace(full_prompt, "").strip()
-    
-    st.chat_message("assistant").markdown(bot_reply)
-    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+    with st.chat_message('assistant'):
+        st.markdown(bot_reply)
+    st.session_state.messages.append({'role': 'assistant', 'content': bot_reply})
