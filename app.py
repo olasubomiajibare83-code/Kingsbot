@@ -2,12 +2,18 @@ import streamlit as st
 import torch
 import requests
 import re
+import io
+
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+import speech_recognition as sr
+from gtts import gTTS
 
 
 # ============================================================
 # KINGSBOT AI
 # Real local language model
+# Voice assistant
 # EQ / sentiment
 # Personalized memory
 # Ethical forgetting
@@ -37,7 +43,7 @@ st.set_page_config(
 
 
 # ------------------------------------------------------------
-# LOAD THE MODEL
+# LOAD MODEL
 # ------------------------------------------------------------
 
 @st.cache_resource(show_spinner="🧠 Loading KingsBot's brain...")
@@ -92,9 +98,12 @@ if "personal_memory" not in st.session_state:
 if "last_emotion" not in st.session_state:
     st.session_state.last_emotion = "neutral"
 
+if "last_confidence" not in st.session_state:
+    st.session_state.last_confidence = "Medium"
+
 
 # ------------------------------------------------------------
-# EDUCATION LEVEL DETECTION
+# EDUCATION LEVEL
 # ------------------------------------------------------------
 
 def detect_student_level(text):
@@ -102,36 +111,13 @@ def detect_student_level(text):
     lower = text.lower()
 
     levels = [
-        ("PRIMARY 1", [
-            "primary 1",
-            "primary one",
-            "pry 1"
-        ]),
-        ("PRIMARY 2", [
-            "primary 2",
-            "primary two",
-            "pry 2"
-        ]),
-        ("PRIMARY 3", [
-            "primary 3",
-            "primary three",
-            "pry 3"
-        ]),
-        ("PRIMARY 4", [
-            "primary 4",
-            "primary four",
-            "pry 4"
-        ]),
-        ("PRIMARY 5", [
-            "primary 5",
-            "primary five",
-            "pry 5"
-        ]),
-        ("PRIMARY 6", [
-            "primary 6",
-            "primary six",
-            "pry 6"
-        ]),
+        ("PRIMARY 1", ["primary 1", "primary one", "pry 1"]),
+        ("PRIMARY 2", ["primary 2", "primary two", "pry 2"]),
+        ("PRIMARY 3", ["primary 3", "primary three", "pry 3"]),
+        ("PRIMARY 4", ["primary 4", "primary four", "pry 4"]),
+        ("PRIMARY 5", ["primary 5", "primary five", "pry 5"]),
+        ("PRIMARY 6", ["primary 6", "primary six", "pry 6"]),
+
         ("JSS1", [
             "jss1",
             "jss 1",
@@ -139,6 +125,7 @@ def detect_student_level(text):
             "junior secondary 1",
             "junior secondary one"
         ]),
+
         ("JSS2", [
             "jss2",
             "jss 2",
@@ -146,6 +133,7 @@ def detect_student_level(text):
             "junior secondary 2",
             "junior secondary two"
         ]),
+
         ("JSS3", [
             "jss3",
             "jss 3",
@@ -153,6 +141,7 @@ def detect_student_level(text):
             "junior secondary 3",
             "junior secondary three"
         ]),
+
         ("SS1", [
             "ss1",
             "ss 1",
@@ -162,6 +151,7 @@ def detect_student_level(text):
             "senior secondary 1",
             "senior secondary one"
         ]),
+
         ("SS2", [
             "ss2",
             "ss 2",
@@ -171,6 +161,7 @@ def detect_student_level(text):
             "senior secondary 2",
             "senior secondary two"
         ]),
+
         ("SS3", [
             "ss3",
             "ss 3",
@@ -180,6 +171,7 @@ def detect_student_level(text):
             "senior secondary 3",
             "senior secondary three"
         ]),
+
         ("UNIVERSITY", [
             "university",
             "uni",
@@ -204,7 +196,7 @@ def detect_student_level(text):
 
 
 # ------------------------------------------------------------
-# NAME DETECTION
+# NAME MEMORY
 # ------------------------------------------------------------
 
 def detect_name(text):
@@ -244,77 +236,63 @@ def handle_forgetting(text):
 
     lower = text.lower()
 
-    forget_everything = [
-        "forget everything",
-        "forget all my memory",
-        "forget all my information",
-        "delete everything you remember"
-    ]
+    if (
+        "forget everything" in lower
+        or "forget all my memory" in lower
+        or "forget all my information" in lower
+        or "delete everything you remember" in lower
+    ):
 
-    forget_name = [
-        "forget my name",
-        "delete my name",
-        "don't remember my name"
-    ]
+        st.session_state.user_name = None
+        st.session_state.student_level = None
+        st.session_state.personal_memory = []
 
-    forget_class = [
-        "forget my class",
-        "forget my education level",
-        "delete my class"
-    ]
+        return (
+            "Done. I cleared the personal information "
+            "I had stored for this conversation."
+        )
 
-    for phrase in forget_everything:
+    if (
+        "forget my name" in lower
+        or "delete my name" in lower
+        or "don't remember my name" in lower
+    ):
 
-        if phrase in lower:
+        st.session_state.user_name = None
 
-            st.session_state.user_name = None
-            st.session_state.student_level = None
-            st.session_state.personal_memory = []
+        return "Done. I forgot your saved name."
 
-            return (
-                "Done. I cleared the personal information "
-                "KingsBot had stored for this conversation."
-            )
+    if (
+        "forget my class" in lower
+        or "forget my education level" in lower
+        or "delete my class" in lower
+    ):
 
-    for phrase in forget_name:
+        st.session_state.student_level = None
 
-        if phrase in lower:
-
-            st.session_state.user_name = None
-
-            return (
-                "Done. I forgot your saved name."
-            )
-
-    for phrase in forget_class:
-
-        if phrase in lower:
-
-            st.session_state.student_level = None
-
-            return (
-                "Done. I forgot your saved education level."
-            )
+        return (
+            "Done. I forgot your saved education level."
+        )
 
     return None
 
 
 # ------------------------------------------------------------
-# PERSONAL MEMORY DETECTION
+# PERSONAL MEMORY
 # ------------------------------------------------------------
 
 def remember_user_information(text):
 
     lower = text.lower()
 
-    remember_phrases = [
+    phrases = [
         "remember that",
         "remember this",
         "please remember",
         "keep this in mind"
     ]
 
-    for phrase in remember_phrases:
+    for phrase in phrases:
 
         if phrase in lower:
 
@@ -340,14 +318,14 @@ def remember_user_information(text):
 
 
 # ------------------------------------------------------------
-# EMOTION / SENTIMENT LOGIC
+# EMOTION DETECTION
 # ------------------------------------------------------------
 
 def detect_emotion(text):
 
     lower = text.lower()
 
-    angry_words = [
+    frustrated_words = [
         "angry",
         "mad",
         "annoyed",
@@ -362,23 +340,9 @@ def detect_emotion(text):
         "sad",
         "cry",
         "crying",
-        "depressed",
         "upset",
         "hurt",
         "terrible"
-    ]
-
-    happy_words = [
-        "happy",
-        "great",
-        "awesome",
-        "good",
-        "nice",
-        "love",
-        "thank you",
-        "thanks",
-        "yesss",
-        "yes!"
     ]
 
     confused_words = [
@@ -394,12 +358,22 @@ def detect_emotion(text):
         "worried",
         "scared",
         "afraid",
-        "nervous",
-        "problem",
-        "help me"
+        "nervous"
     ]
 
-    for word in angry_words:
+    happy_words = [
+        "happy",
+        "great",
+        "awesome",
+        "good",
+        "nice",
+        "love",
+        "thank you",
+        "thanks",
+        "yesss"
+    ]
+
+    for word in frustrated_words:
 
         if word in lower:
             return "frustrated"
@@ -436,36 +410,35 @@ def get_tone_instruction(emotion):
     if emotion == "frustrated":
 
         return (
-            "The user seems frustrated. Stay calm, respectful "
-            "and helpful. Do not argue. Give a direct solution."
+            "The user seems frustrated. Be calm, respectful "
+            "and direct. Do not argue."
         )
 
     if emotion == "sad":
 
         return (
-            "The user seems sad. Respond warmly and respectfully. "
-            "Do not be overly dramatic."
+            "The user seems sad. Be warm, kind and supportive."
         )
 
     if emotion == "confused":
 
         return (
-            "The user seems confused. Explain the answer more "
-            "simply and use an easy example."
+            "The user seems confused. Use simpler language "
+            "and explain the idea step by step."
         )
 
     if emotion == "worried":
 
         return (
-            "The user seems worried. Be reassuring and give "
-            "clear practical steps."
+            "The user seems worried. Be reassuring and "
+            "give clear practical steps."
         )
 
     if emotion == "happy":
 
         return (
-            "The user seems happy. You can use a friendly "
-            "and positive tone."
+            "The user seems happy. Use a friendly and "
+            "positive tone."
         )
 
     return (
@@ -480,9 +453,6 @@ def get_tone_instruction(emotion):
 def detect_patterns():
 
     patterns = []
-
-    if not st.session_state.messages:
-        return patterns
 
     user_messages = [
         message["content"].lower()
@@ -530,7 +500,7 @@ def detect_patterns():
 
 
 # ------------------------------------------------------------
-# FACT QUESTION DETECTION
+# FACT CHECK DETECTION
 # ------------------------------------------------------------
 
 def needs_fact_check(text):
@@ -551,7 +521,6 @@ def needs_fact_check(text):
         "where was",
         "where are",
         "how many",
-        "how much",
         "which country",
         "which year",
         "which team",
@@ -560,9 +529,7 @@ def needs_fact_check(text):
         "how old",
         "capital of",
         "president of",
-        "population of",
-        "list the",
-        "name the"
+        "population of"
     ]
 
     for phrase in phrases:
@@ -574,7 +541,7 @@ def needs_fact_check(text):
 
 
 # ------------------------------------------------------------
-# WIKIPEDIA FACT LOOKUP
+# WIKIPEDIA LOOKUP
 # ------------------------------------------------------------
 
 def search_wikipedia(question):
@@ -635,7 +602,7 @@ def search_wikipedia(question):
 
 
 # ------------------------------------------------------------
-# DUCKDUCKGO FACT LOOKUP
+# DUCKDUCKGO LOOKUP
 # ------------------------------------------------------------
 
 def search_duckduckgo(question):
@@ -709,10 +676,13 @@ def get_fact_information(question):
 
 
 # ------------------------------------------------------------
-# CONFIDENCE ESTIMATION
+# CONFIDENCE
 # ------------------------------------------------------------
 
-def get_confidence(fact_information, emotion):
+def get_confidence(
+    fact_information,
+    emotion
+):
 
     if fact_information:
 
@@ -731,7 +701,7 @@ def get_confidence(fact_information, emotion):
 
 
 # ------------------------------------------------------------
-# MEMORY SUMMARY
+# MEMORY
 # ------------------------------------------------------------
 
 def build_memory():
@@ -752,27 +722,21 @@ def build_memory():
             + st.session_state.student_level
         )
 
-    if st.session_state.personal_memory:
+    for item in st.session_state.personal_memory[-10:]:
 
-        for item in st.session_state.personal_memory[-10:]:
-
-            memory.append(
-                "User asked KingsBot to remember: "
-                + item
-            )
+        memory.append(
+            "User asked KingsBot to remember: "
+            + item
+        )
 
     return "\n".join(memory)
 
 
 # ------------------------------------------------------------
-# GENERATE RESPONSE
+# GENERATE AI RESPONSE
 # ------------------------------------------------------------
 
 def generate_response(user_message):
-
-    # --------------------------------------------------------
-    # MEMORY OPERATIONS
-    # --------------------------------------------------------
 
     forget_response = handle_forgetting(
         user_message
@@ -780,7 +744,11 @@ def generate_response(user_message):
 
     if forget_response:
 
-        return forget_response
+        return (
+            forget_response,
+            "High",
+            "neutral"
+        )
 
     detect_name(user_message)
 
@@ -789,10 +757,6 @@ def generate_response(user_message):
     remember_user_information(
         user_message
     )
-
-    # --------------------------------------------------------
-    # EMOTION
-    # --------------------------------------------------------
 
     emotion = detect_emotion(
         user_message
@@ -804,15 +768,7 @@ def generate_response(user_message):
         emotion
     )
 
-    # --------------------------------------------------------
-    # PATTERNS
-    # --------------------------------------------------------
-
     patterns = detect_patterns()
-
-    # --------------------------------------------------------
-    # FACT LOOKUP
-    # --------------------------------------------------------
 
     fact_information = get_fact_information(
         user_message
@@ -823,18 +779,13 @@ def generate_response(user_message):
         emotion
     )
 
-    # --------------------------------------------------------
-    # EDUCATION LEVEL
-    # --------------------------------------------------------
-
     if st.session_state.student_level:
 
         level_instruction = (
             "The user's education level is "
             + st.session_state.student_level
-            + ". Adapt explanations and examples to that "
-              "level. Do not unnecessarily use much higher "
-              "level material."
+            + ". Adapt explanations and examples to "
+              "that level."
         )
 
     else:
@@ -844,20 +795,10 @@ def generate_response(user_message):
             "Answer at a normal general level."
         )
 
-    # --------------------------------------------------------
-    # MEMORY
-    # --------------------------------------------------------
-
-    memory = build_memory()
-
-    # --------------------------------------------------------
-    # SYSTEM INSTRUCTION
-    # --------------------------------------------------------
-
     system_message = (
         "You are KingsBot, a helpful and friendly AI assistant.\n\n"
 
-        "Answer naturally and clearly.\n\n"
+        "Answer clearly and naturally.\n\n"
 
         "Help with mathematics, science, technology, coding, "
         "school subjects, history, general knowledge and "
@@ -872,19 +813,12 @@ def generate_response(user_message):
         "Remember useful information the user has told you "
         "during this conversation.\n\n"
 
-        "When solving a difficult problem, work through the "
-        "problem carefully and give the user a clear explanation "
-        "of the important steps. Do not claim certainty when "
-        "you are unsure.\n\n"
-
-        "If factual information is supplied below, use it as "
-        "evidence and do not invent different dates, names or "
-        "numbers."
+        "For difficult problems, work through the important "
+        "steps carefully and give a clear explanation. "
+        "Do not pretend to be certain when you are unsure."
     )
 
-    # --------------------------------------------------------
-    # ADD PERSONAL MEMORY
-    # --------------------------------------------------------
+    memory = build_memory()
 
     if memory:
 
@@ -893,42 +827,24 @@ def generate_response(user_message):
             + memory
         )
 
-    # --------------------------------------------------------
-    # ADD PATTERNS
-    # --------------------------------------------------------
-
     if patterns:
 
         system_message += (
-            "\n\nUSEFUL CONVERSATION PATTERNS:\n"
+            "\n\nCONVERSATION PATTERNS:\n"
             + "\n".join(patterns)
         )
-
-    # --------------------------------------------------------
-    # ADD FACTS
-    # --------------------------------------------------------
 
     if fact_information:
 
         system_message += (
-            "\n\nFACT INFORMATION FROM LOOKUP:\n"
+            "\n\nFACT INFORMATION:\n"
             + fact_information
         )
 
-    # --------------------------------------------------------
-    # ADD PROACTIVE GUIDANCE
-    # --------------------------------------------------------
-
     system_message += (
-        "\n\nPROACTIVE GUIDANCE:\n"
-        "If the user appears stuck, suggest one useful next "
-        "step. Do not overwhelm the user with unnecessary "
-        "suggestions."
+        "\n\nPROACTIVE HELP:\n"
+        "If the user appears stuck, give one useful next step."
     )
-
-    # --------------------------------------------------------
-    # CREATE MESSAGE LIST
-    # --------------------------------------------------------
 
     messages = [
         {
@@ -937,17 +853,9 @@ def generate_response(user_message):
         }
     ]
 
-    # --------------------------------------------------------
-    # CONVERSATION MEMORY
-    # --------------------------------------------------------
-
     messages.extend(
         st.session_state.messages
     )
-
-    # --------------------------------------------------------
-    # CURRENT QUESTION
-    # --------------------------------------------------------
 
     messages.append(
         {
@@ -956,19 +864,11 @@ def generate_response(user_message):
         }
     )
 
-    # --------------------------------------------------------
-    # CHAT TEMPLATE
-    # --------------------------------------------------------
-
     text = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True
     )
-
-    # --------------------------------------------------------
-    # TOKENIZE
-    # --------------------------------------------------------
 
     model_inputs = tokenizer(
         [text],
@@ -976,10 +876,6 @@ def generate_response(user_message):
         truncation=True,
         max_length=2048
     ).to(model.device)
-
-    # --------------------------------------------------------
-    # GENERATE
-    # --------------------------------------------------------
 
     with torch.no_grad():
 
@@ -993,10 +889,6 @@ def generate_response(user_message):
             pad_token_id=tokenizer.eos_token_id
         )
 
-    # --------------------------------------------------------
-    # REMOVE INPUT PROMPT
-    # --------------------------------------------------------
-
     generated_ids = [
         output_ids[len(input_ids):]
         for input_ids, output_ids
@@ -1005,10 +897,6 @@ def generate_response(user_message):
             generated_ids
         )
     ]
-
-    # --------------------------------------------------------
-    # DECODE
-    # --------------------------------------------------------
 
     response = tokenizer.batch_decode(
         generated_ids,
@@ -1019,355 +907,53 @@ def generate_response(user_message):
 
         response = (
             "I couldn't generate a response. "
-            "Please try asking the question again."
+            "Please try again."
         )
 
     return response, confidence, emotion
 
 
 # ------------------------------------------------------------
-# TITLE
+# VOICE: SPEECH TO TEXT
 # ------------------------------------------------------------
 
-st.title("🤖 KingsBot AI")
+def transcribe_audio(audio_file):
 
-st.caption(
-    "Real local AI with memory, EQ and learning-level adaptation"
-)
+    recognizer = sr.Recognizer()
 
+    try:
 
-# ------------------------------------------------------------
-# SHOW OLD CONVERSATION
-# ------------------------------------------------------------
+        audio_bytes = audio_file.getvalue()
 
-for message in st.session_state.messages:
-
-    with st.chat_message(message["role"]):
-
-        st.markdown(
-            message["content"]
+        audio_source = sr.AudioFile(
+            io.BytesIO(audio_bytes)
         )
 
+        with audio_source as source:
 
-# ------------------------------------------------------------
-# CHAT INPUT
-# ------------------------------------------------------------
-
-prompt = st.chat_input(
-    "Ask KingsBot anything..."
-)
-
-
-if prompt:
-
-    # --------------------------------------------------------
-    # SHOW USER
-    # --------------------------------------------------------
-
-    with st.chat_message("user"):
-
-        st.markdown(prompt)
-
-    # --------------------------------------------------------
-    # GENERATE
-    # --------------------------------------------------------
-
-    with st.chat_message("assistant"):
-
-        with st.spinner(
-            "🧠 Thinking..."
-        ):
-
-            try:
-
-                response, confidence, emotion = (
-                    generate_response(prompt)
-                )
-
-            except Exception as error:
-
-                response = (
-                    "I ran into an error while thinking.\n\n"
-                    f"`{error}`"
-                )
-
-                confidence = "Unknown"
-
-                emotion = "neutral"
-
-        st.markdown(response)
-
-        # Show confidence only when useful
-        st.caption(
-            "Confidence estimate: "
-            + confidence
-        )
-
-    # --------------------------------------------------------
-    # SAVE CONVERSATION
-    # --------------------------------------------------------
-
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": prompt
-        }
-    )
-
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": response
-        }
-    )
-
-
-# ------------------------------------------------------------
-# CREATE SAVED CHAT
-# ------------------------------------------------------------
-
-def create_chat_file():
-
-    lines = []
-
-    lines.append(
-        "KINGSBOT AI - SAVED CONVERSATION"
-    )
-
-    lines.append(
-        "=" * 40
-    )
-
-    lines.append("")
-
-    if st.session_state.user_name:
-
-        lines.append(
-            "Name: "
-            + st.session_state.user_name
-        )
-
-        lines.append("")
-
-    if st.session_state.student_level:
-
-        lines.append(
-            "Education level: "
-            + st.session_state.student_level
-        )
-
-        lines.append("")
-
-    if st.session_state.personal_memory:
-
-        lines.append(
-            "Personal memory:"
-        )
-
-        for item in st.session_state.personal_memory:
-
-            lines.append(
-                "- " + item
+            audio_data = recognizer.record(
+                source
             )
 
-        lines.append("")
-
-    for message in st.session_state.messages:
-
-        if message["role"] == "user":
-
-            lines.append("YOU:")
-
-        else:
-
-            lines.append("KINGSBOT:")
-
-        lines.append(
-            message["content"]
+        text = recognizer.recognize_google(
+            audio_data
         )
 
-        lines.append("")
-        lines.append("-" * 40)
-        lines.append("")
+        return text
 
-    return "\n".join(lines)
+    except sr.UnknownValueError:
+
+        return None
+
+    except sr.RequestError:
+
+        return None
+
+    except Exception:
+
+        return None
 
 
 # ------------------------------------------------------------
-# SIDEBAR
-# ------------------------------------------------------------
-
-with st.sidebar:
-
-    st.header("🤖 KingsBot")
-
-    st.write(
-        "A real AI assistant with memory, EQ, "
-        "fact lookup and education-level adaptation."
-    )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # MEMORY
-    # --------------------------------------------------------
-
-    st.subheader("🧠 Memory")
-
-    if st.session_state.user_name:
-
-        st.write(
-            "👤 Name: "
-            + st.session_state.user_name
-        )
-
-    if st.session_state.student_level:
-
-        st.write(
-            "🎓 Level: "
-            + st.session_state.student_level
-        )
-
-    if st.session_state.personal_memory:
-
-        st.write(
-            "📝 Saved memories: "
-            + str(
-                len(
-                    st.session_state.personal_memory
-                )
-            )
-        )
-
-    if (
-        not st.session_state.user_name
-        and not st.session_state.student_level
-        and not st.session_state.personal_memory
-    ):
-
-        st.info(
-            "KingsBot has not learned personal "
-            "information yet."
-        )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # EMOTION
-    # --------------------------------------------------------
-
-    st.subheader("❤️ EQ")
-
-    st.write(
-        "Current detected tone: "
-        + st.session_state.last_emotion
-    )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # CHAT HISTORY
-    # --------------------------------------------------------
-
-    st.subheader("📚 Conversation History")
-
-    if st.session_state.messages:
-
-        user_messages = 0
-
-        for message in st.session_state.messages:
-
-            if message["role"] == "user":
-
-                user_messages += 1
-
-                preview = message["content"]
-
-                if len(preview) > 60:
-
-                    preview = (
-                        preview[:60]
-                        + "..."
-                    )
-
-                st.write(
-                    f"💬 {user_messages}. {preview}"
-                )
-
-    else:
-
-        st.write(
-            "No conversations yet."
-        )
-
-    # --------------------------------------------------------
-    # SAVE CONVERSATION
-    # --------------------------------------------------------
-
-    if st.session_state.messages:
-
-        chat_file = create_chat_file()
-
-        st.download_button(
-            label="💾 Save conversation",
-            data=chat_file,
-            file_name="kingsbot_conversation.txt",
-            mime="text/plain"
-        )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # FEATURES
-    # --------------------------------------------------------
-
-    st.subheader("Features")
-
-    st.write("🧠 Real language model")
-    st.write("❤️ EQ / sentiment")
-    st.write("🎭 Tone adaptation")
-    st.write("🧠 Personalized memory")
-    st.write("🧹 Ethical forgetting")
-    st.write("🎓 Primary → University")
-    st.write("🔎 Pattern recognition")
-    st.write("🧭 Proactive guidance")
-    st.write("📊 Confidence estimate")
-    st.write("🌐 Fact lookup")
-    st.write("💬 Conversation memory")
-    st.write("💾 Save conversations")
-    st.write("🧮 Mathematics")
-    st.write("💻 Coding help")
-    st.write("🔬 Science")
-    st.write("🌍 General knowledge")
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # CLEAR EVERYTHING
-    # --------------------------------------------------------
-
-    if st.button(
-        "🗑️ Clear conversation"
-    ):
-
-        st.session_state.messages = []
-
-        st.session_state.user_name = None
-
-        st.session_state.student_level = None
-
-        st.session_state.personal_memory = []
-
-        st.session_state.last_emotion = "neutral"
-
-        st.rerun()
-
-    st.divider()
-
-    st.caption(
-        "Model: Qwen2.5-0.5B-Instruct"
-    )
-
-    st.caption(
-        "No Hugging Face token required."
-    )
+# VOICE: TEXT TO SPEECH
+# ----
