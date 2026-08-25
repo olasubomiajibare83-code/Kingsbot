@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import re
@@ -20,9 +19,8 @@ TTS_MODEL = "facebook/mms-tts-eng"
 
 MEMORY_FILE = "kingsbot_memory.json"
 
-NOW = datetime.now()
-CURRENT_DATE = NOW.strftime("%B %d, %Y")
-CURRENT_YEAR = NOW.year
+CURRENT_DATE = datetime.now().strftime("%B %d, %Y")
+CURRENT_YEAR = datetime.now().year
 
 
 # ============================================================
@@ -37,7 +35,7 @@ st.set_page_config(
 
 
 # ============================================================
-# HF TOKEN
+# HUGGING FACE TOKEN
 # ============================================================
 
 try:
@@ -64,11 +62,7 @@ def load_memory():
 
     try:
         if os.path.exists(MEMORY_FILE):
-            with open(
-                MEMORY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as file:
                 saved = json.load(file)
 
             if isinstance(saved, dict):
@@ -83,7 +77,7 @@ def load_memory():
 
 
 def save_memory():
-    memory = {
+    data = {
         "name": st.session_state.name,
         "education_level": st.session_state.education_level,
         "facts": st.session_state.facts[-50:],
@@ -91,13 +85,9 @@ def save_memory():
     }
 
     try:
-        with open(
-            MEMORY_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
+        with open(MEMORY_FILE, "w", encoding="utf-8") as file:
             json.dump(
-                memory,
+                data,
                 file,
                 indent=2,
                 ensure_ascii=False
@@ -106,7 +96,7 @@ def save_memory():
         pass
 
 
-saved = load_memory()
+memory = load_memory()
 
 
 # ============================================================
@@ -115,10 +105,10 @@ saved = load_memory()
 
 defaults = {
     "messages": [],
-    "name": saved["name"],
-    "education_level": saved["education_level"],
-    "facts": saved["facts"],
-    "preferences": saved["preferences"],
+    "name": memory["name"],
+    "education_level": memory["education_level"],
+    "facts": memory["facts"],
+    "preferences": memory["preferences"],
     "emotion": "neutral",
     "tone": "Normal",
     "topic": "general knowledge",
@@ -141,8 +131,7 @@ for key, value in defaults.items():
 
 def has_token():
     return bool(
-        HF_TOKEN and
-        HF_TOKEN.strip()
+        HF_TOKEN and HF_TOKEN.strip()
     )
 
 
@@ -173,7 +162,6 @@ def remember_information(text):
             name_match.group(1).strip()
         )
         save_memory()
-
 
     fact_match = re.search(
         r"\b(?:remember that|remember this|save this)"
@@ -218,10 +206,7 @@ def forget_information(text):
 
         save_memory()
 
-        return (
-            "Done. I cleared your saved personal memory."
-        )
-
+        return "Done. I cleared your saved personal memory."
 
     if (
         "forget my name" in low
@@ -230,10 +215,7 @@ def forget_information(text):
         st.session_state.name = None
         save_memory()
 
-        return (
-            "Done. I forgot your saved name."
-        )
-
+        return "Done. I forgot your saved name."
 
     if (
         "forget my class" in low
@@ -242,16 +224,13 @@ def forget_information(text):
         st.session_state.education_level = None
         save_memory()
 
-        return (
-            "Done. I forgot your saved education level."
-        )
-
+        return "Done. I forgot your saved education level."
 
     return None
 
 
 # ============================================================
-# EDUCATION LEVELS
+# EDUCATION
 # ============================================================
 
 EDUCATION_LEVELS = {
@@ -307,7 +286,6 @@ def detect_emotion(text):
     ):
         return "frustrated"
 
-
     if any(
         word in low
         for word in [
@@ -319,7 +297,6 @@ def detect_emotion(text):
     ):
         return "sad"
 
-
     if any(
         word in low
         for word in [
@@ -329,7 +306,6 @@ def detect_emotion(text):
         ]
     ):
         return "confused"
-
 
     if any(
         word in low
@@ -342,7 +318,6 @@ def detect_emotion(text):
     ):
         return "worried"
 
-
     if any(
         word in low
         for word in [
@@ -350,12 +325,10 @@ def detect_emotion(text):
             "great",
             "awesome",
             "thanks",
-            "thank you",
-            "yess"
+            "thank you"
         ]
     ):
         return "happy"
-
 
     return "neutral"
 
@@ -374,10 +347,7 @@ def select_tone(emotion):
         "neutral": "Normal"
     }
 
-    return tones.get(
-        emotion,
-        "Normal"
-    )
+    return tones.get(emotion, "Normal")
 
 
 def tone_instruction(tone):
@@ -597,7 +567,6 @@ def build_system_prompt(retrieved=None):
             "No saved personal information."
         )
 
-
     retrieved_text = ""
 
     if retrieved:
@@ -607,15 +576,14 @@ def build_system_prompt(retrieved=None):
             + "\n"
         )
 
-
     return f"""
 You are KingsBot AI.
 
 CURRENT DATE:
 Today is {CURRENT_DATE}.
 The current year is {CURRENT_YEAR}.
-Never incorrectly describe 2026 as the future
-when the current date is in 2026.
+If the current year is 2026, do not describe 2026
+as a future year.
 
 GENERAL KNOWLEDGE:
 Answer questions about mathematics, science,
@@ -625,7 +593,7 @@ literature, entertainment, sports, education,
 and everyday life.
 
 Do not invent facts.
-If you are uncertain, say so.
+If uncertain, say that you are uncertain.
 
 PERSONAL MEMORY:
 {chr(10).join(memory_lines)}
@@ -636,9 +604,6 @@ JSS1 through JSS3,
 SS1 through SS3,
 and University.
 
-Match the explanation to the user's level
-when that information is available.
-
 EMOTIONAL INTELLIGENCE:
 Detected emotion: {st.session_state.emotion}
 
@@ -648,30 +613,27 @@ TONE:
 {tone_instruction(st.session_state.tone)}
 
 PROACTIVE GLUE:
-Understand what the user is trying to accomplish.
-Connect relevant information from the conversation.
-Only make suggestions when they are useful.
+Understand the user's goal and connect useful
+information from the conversation.
 
 PATTERN RECOGNITION:
 Current topic: {st.session_state.topic}
 
 MULTI-STEP REASONING:
-For complicated questions, work through the problem
-carefully and check the result.
-Do not reveal private chain-of-thought.
+Solve complicated problems carefully and check
+the result. Do not reveal private chain-of-thought.
 
 RADICAL TRANSPARENCY:
-Do not pretend to know something you do not know.
-Clearly distinguish model knowledge from retrieved
-information and uncertainty.
+Never pretend to know something you do not know.
+Be honest about uncertainty and distinguish
+retrieved information from model knowledge.
 
 CODING:
-When helping with code, check indentation,
-imports, syntax, variable names, and logic.
-When asked for complete code, provide complete code.
+Check indentation, syntax, imports, variables,
+and logic when helping with code.
 
 VOICE:
-Write naturally so that the response sounds good
+Write naturally so the response sounds good
 when spoken aloud.
 
 Answer the user's question directly.
@@ -688,29 +650,25 @@ def ask_ai(user_text, retrieved=None):
         st.session_state.source = "AI connection"
         st.session_state.confidence = "Unavailable"
         st.session_state.reason = (
-            "HF_TOKEN has not been added to the Space Secrets."
+            "HF_TOKEN has not been added to Space Secrets."
         )
 
         return (
-            "KingsBot is loaded, but its AI brain is not connected yet. "
-            "Add HF_TOKEN to your Hugging Face Space Secrets."
+            "KingsBot is loaded, but the AI brain is not "
+            "connected yet. Add HF_TOKEN to your Hugging "
+            "Face Space Secrets."
         )
-
 
     messages = [
         {
             "role": "system",
-            "content": build_system_prompt(
-                retrieved
-            )
+            "content": build_system_prompt(retrieved)
         }
     ]
-
 
     messages.extend(
         st.session_state.messages[-12:]
     )
-
 
     messages.append(
         {
@@ -719,7 +677,6 @@ def ask_ai(user_text, retrieved=None):
         }
     )
 
-
     payload = {
         "model": CHAT_MODEL,
         "messages": messages,
@@ -727,13 +684,10 @@ def ask_ai(user_text, retrieved=None):
         "max_tokens": 700
     }
 
-
     try:
         response = requests.post(
             "https://router.huggingface.co/v1/chat/completions",
-            headers=hf_headers(
-                "application/json"
-            ),
+            headers=hf_headers("application/json"),
             json=payload,
             timeout=120
         )
@@ -742,10 +696,7 @@ def ask_ai(user_text, retrieved=None):
 
         data = response.json()
 
-        choices = data.get(
-            "choices",
-            []
-        )
+        choices = data.get("choices", [])
 
         if not choices:
             raise ValueError(
@@ -764,7 +715,6 @@ def ask_ai(user_text, retrieved=None):
                 "The AI returned an empty answer."
             )
 
-
         if retrieved:
             st.session_state.source = (
                 "AI model + current information"
@@ -774,20 +724,17 @@ def ask_ai(user_text, retrieved=None):
                 "Additional retrieved information "
                 "was supplied to the AI."
             )
-
         else:
             st.session_state.source = (
                 "AI model + memory + conversation"
             )
             st.session_state.confidence = "Medium"
             st.session_state.reason = (
-                "Generated by the AI using conversation "
-                "and saved memory."
+                "Generated using the AI model, "
+                "conversation, and saved memory."
             )
 
-
         return answer
-
 
     except requests.exceptions.Timeout:
         st.session_state.confidence = "Low"
@@ -799,7 +746,6 @@ def ask_ai(user_text, retrieved=None):
             "The AI service took too long to respond. "
             "Please try again."
         )
-
 
     except requests.exceptions.HTTPError:
         st.session_state.confidence = "Low"
@@ -820,7 +766,6 @@ def ask_ai(user_text, retrieved=None):
             "The AI service returned an error:\n\n"
             + message
         )
-
 
     except Exception as error:
         st.session_state.confidence = "Low"
@@ -844,16 +789,13 @@ def speech_to_text(audio_file):
             "Voice recognition needs HF_TOKEN."
         )
 
-
     try:
         audio_bytes = audio_file.getvalue()
 
         response = requests.post(
             "https://router.huggingface.co/hf-inference/models/"
             + WHISPER_MODEL,
-            headers=hf_headers(
-                "audio/wav"
-            ),
+            headers=hf_headers("audio/wav"),
             data=audio_bytes,
             timeout=120
         )
@@ -868,11 +810,9 @@ def speech_to_text(audio_file):
             if text:
                 return text.strip(), None
 
-
         return None, (
             "I could not understand the recording."
         )
-
 
     except Exception as error:
         return None, (
@@ -889,14 +829,11 @@ def text_to_speech(text):
     if not has_token():
         return None
 
-
     try:
         response = requests.post(
             "https://router.huggingface.co/hf-inference/models/"
             + TTS_MODEL,
-            headers=hf_headers(
-                "application/json"
-            ),
+            headers=hf_headers("application/json"),
             json={
                 "inputs": text[:2500]
             },
@@ -907,13 +844,12 @@ def text_to_speech(text):
 
         return response.content
 
-
     except Exception:
         return None
 
 
 # ============================================================
-# CONVERSATION FILE
+# CONVERSATION DOWNLOAD
 # ============================================================
 
 def conversation_text():
@@ -931,17 +867,9 @@ def conversation_text():
             else "KINGSBOT"
         )
 
-        lines.append(
-            role + ":"
-        )
-
-        lines.append(
-            message["content"]
-        )
-
-        lines.append(
-            "-" * 50
-        )
+        lines.append(role + ":")
+        lines.append(message["content"])
+        lines.append("-" * 50)
 
     return "\n".join(lines)
 
@@ -950,9 +878,7 @@ def conversation_text():
 # TITLE
 # ============================================================
 
-st.title(
-    "🤖 KingsBot AI"
-)
+st.title("🤖 KingsBot AI")
 
 st.caption(
     "AI Brain • General Knowledge • Memory • "
@@ -966,136 +892,93 @@ st.caption(
 
 with st.sidebar:
 
-    st.header(
-        "⚙️ Settings"
-    )
+    st.header("⚙️ Settings")
 
-
-    st.subheader(
-        "🎤 Voice Assistant"
-    )
-
+    st.subheader("🎤 Voice Assistant")
 
     st.session_state.voice_enabled = st.toggle(
         "Voice assistant",
         value=st.session_state.voice_enabled
     )
 
-
     st.session_state.auto_speak = st.toggle(
         "Speak answers automatically",
         value=st.session_state.auto_speak
     )
 
-
     st.session_state.voice_speed = st.selectbox(
         "Voice speed",
-        [
-            "Slow",
-            "Normal",
-            "Fast"
-        ],
+        ["Slow", "Normal", "Fast"],
         index=1
     )
 
-
     st.caption(
-        "Default: Normal"
+        "Default voice speed: Normal"
     )
-
 
     st.divider()
 
-
-    st.subheader(
-        "👤 Personal Memory"
-    )
-
+    st.subheader("👤 Personal Memory")
 
     st.write(
         "Name:",
-        st.session_state.name
-        or "Not saved"
+        st.session_state.name or "Not saved"
     )
-
 
     st.write(
         "Education:",
-        st.session_state.education_level
-        or "Not saved"
+        st.session_state.education_level or "Not saved"
     )
-
 
     st.write(
         "Saved facts:",
         len(st.session_state.facts)
     )
 
-
     st.divider()
 
-
-    st.subheader(
-        "❤️ Emotional Intelligence"
-    )
-
+    st.subheader("❤️ Emotional Intelligence")
 
     st.write(
         "Emotion:",
         st.session_state.emotion
     )
 
-
     st.write(
         "Tone:",
         st.session_state.tone
     )
 
-
     st.divider()
 
-
-    st.subheader(
-        "🧩 Pattern Recognition"
-    )
-
+    st.subheader("🧩 Pattern Recognition")
 
     st.write(
         "Topic:",
         st.session_state.topic
     )
 
-
     st.divider()
 
-
-    st.subheader(
-        "🔍 Radical Transparency"
-    )
-
+    st.subheader("🔍 Radical Transparency")
 
     st.write(
         "Source:",
         st.session_state.source
     )
 
-
     st.write(
         "Confidence:",
         st.session_state.confidence
     )
 
-
     st.caption(
         st.session_state.reason
     )
 
-
     st.divider()
 
-
     if st.session_state.messages:
-
         st.download_button(
             "💾 Save conversation",
             conversation_text(),
@@ -1103,17 +986,11 @@ with st.sidebar:
             "text/plain"
         )
 
-
-    if st.button(
-        "🗑️ Clear conversation"
-    ):
+    if st.button("🗑️ Clear conversation"):
         st.session_state.messages = []
         st.rerun()
 
-
-    if st.button(
-        "🧹 Forget personal memory"
-    ):
+    if st.button("🧹 Forget personal memory"):
         st.session_state.name = None
         st.session_state.education_level = None
         st.session_state.facts = []
@@ -1129,13 +1006,8 @@ with st.sidebar:
 # ============================================================
 
 for message in st.session_state.messages:
-
-    with st.chat_message(
-        message["role"]
-    ):
-        st.markdown(
-            message["content"]
-        )
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 
 # ============================================================
@@ -1144,18 +1016,13 @@ for message in st.session_state.messages:
 
 voice_prompt = None
 
-
 if st.session_state.voice_enabled:
 
-    st.subheader(
-        "🎤 Talk to KingsBot"
-    )
-
+    st.subheader("🎤 Talk to KingsBot")
 
     audio_file = st.audio_input(
         "Tap the microphone and speak"
     )
-
 
     if audio_file:
 
@@ -1163,22 +1030,16 @@ if st.session_state.voice_enabled:
             "🎧 Understanding your voice..."
         ):
             voice_prompt, voice_error = (
-                speech_to_text(
-                    audio_file
-                )
+                speech_to_text(audio_file)
             )
-
 
         if voice_prompt:
             st.success(
-                "You said: "
-                + voice_prompt
+                "You said: " + voice_prompt
             )
 
         elif voice_error:
-            st.error(
-                voice_error
-            )
+            st.error(voice_error)
 
 
 # ============================================================
@@ -1188,7 +1049,6 @@ if st.session_state.voice_enabled:
 text_prompt = st.chat_input(
     "Ask KingsBot anything..."
 )
-
 
 prompt = (
     voice_prompt
@@ -1203,26 +1063,15 @@ prompt = (
 
 if prompt:
 
-    remember_information(
-        prompt
-    )
+    remember_information(prompt)
 
-    detect_education(
-        prompt
-    )
+    detect_education(prompt)
 
-
-    forgotten = forget_information(
-        prompt
-    )
-
+    forgotten = forget_information(prompt)
 
     st.session_state.emotion = (
-        detect_emotion(
-            prompt
-        )
+        detect_emotion(prompt)
     )
-
 
     st.session_state.tone = (
         select_tone(
@@ -1230,25 +1079,14 @@ if prompt:
         )
     )
 
-
     st.session_state.topic = (
-        detect_topic(
-            prompt
-        )
+        detect_topic(prompt)
     )
 
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    with st.chat_message(
-        "user"
-    ):
-        st.markdown(
-            prompt
-        )
-
-
-    with st.chat_message(
-        "assistant"
-    ):
+    with st.chat_message("assistant"):
 
         if forgotten:
 
@@ -1269,54 +1107,35 @@ if prompt:
 
             retrieved = None
 
-
-            if needs_current_information(
-                prompt
-            ):
+            if needs_current_information(prompt):
 
                 with st.spinner(
                     "🔎 Checking current information..."
                 ):
-                    retrieved = current_lookup(
-                        prompt
-                    )
+                    retrieved = current_lookup(prompt)
 
-
-            with st.spinner(
-                "🧠 Thinking..."
-            ):
+            with st.spinner("🧠 Thinking..."):
                 answer = ask_ai(
                     prompt,
                     retrieved
                 )
 
-
-        st.markdown(
-            answer
-        )
-
+        st.markdown(answer)
 
         st.caption(
             "🔎 Source: "
             + st.session_state.source
         )
 
-
         st.caption(
             "📊 Confidence: "
             + st.session_state.confidence
         )
 
-
         st.caption(
             "ℹ️ "
             + st.session_state.reason
         )
-
-
-        # ====================================================
-        # VOICE RESPONSE
-        # ====================================================
 
         if (
             st.session_state.voice_enabled
@@ -1324,21 +1143,14 @@ if prompt:
             and has_token()
         ):
 
-            with st.spinner(
-                "🔊 Speaking..."
-            ):
-
-                speech = text_to_speech(
-                    answer
-                )
-
+            with st.spinner("🔊 Speaking..."):
+                speech = text_to_speech(answer)
 
             if speech:
                 st.audio(
                     speech,
                     format="audio/wav"
                 )
-
 
     st.session_state.messages.append(
         {
@@ -1347,19 +1159,9 @@ if prompt:
         }
     )
 
-
     st.session_state.messages.append(
         {
             "role": "assistant",
             "content": answer
         }
     )
-
-"requirements.txt"
-
-streamlit
-requests
-
-One thing you must have: "HF_TOKEN" in your Hugging Face Space's Settings → Secrets. Without that, the interface can load, but the online AI brain and voice models cannot answer.
-
-Also, I did not hard-code answers such as a Spider-Man movie or Messi's World Cup count into the brain. KingsBot should retrieve/check facts rather than pretending every fact is permanently stored in the code.
