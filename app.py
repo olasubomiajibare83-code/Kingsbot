@@ -7,7 +7,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 # ============================================================
 # KINGSBOT AI
 # Real local language model
-# JSS3-aware
+# All-class memory
 # Fact checking
 # Conversation history
 # Save conversation
@@ -74,7 +74,7 @@ if "messages" not in st.session_state:
 
 
 # ------------------------------------------------------------
-# STUDENT LEVEL MEMORY
+# SCHOOL LEVEL MEMORY
 # ------------------------------------------------------------
 
 if "student_level" not in st.session_state:
@@ -82,29 +82,113 @@ if "student_level" not in st.session_state:
 
 
 # ------------------------------------------------------------
-# DETECT JSS3
+# DETECT SCHOOL LEVEL
 # ------------------------------------------------------------
 
 def detect_student_level(text):
 
     lower = text.lower()
 
-    jss3_words = [
-        "jss3",
-        "jss 3",
-        "junior secondary 3",
-        "junior secondary school 3"
+    levels = [
+        ("PRIMARY 1", [
+            "primary 1",
+            "primary one",
+            "pry 1"
+        ]),
+        ("PRIMARY 2", [
+            "primary 2",
+            "primary two",
+            "pry 2"
+        ]),
+        ("PRIMARY 3", [
+            "primary 3",
+            "primary three",
+            "pry 3"
+        ]),
+        ("PRIMARY 4", [
+            "primary 4",
+            "primary four",
+            "pry 4"
+        ]),
+        ("PRIMARY 5", [
+            "primary 5",
+            "primary five",
+            "pry 5"
+        ]),
+        ("PRIMARY 6", [
+            "primary 6",
+            "primary six",
+            "pry 6"
+        ]),
+        ("JSS1", [
+            "jss1",
+            "jss 1",
+            "jss one",
+            "junior secondary 1",
+            "junior secondary one"
+        ]),
+        ("JSS2", [
+            "jss2",
+            "jss 2",
+            "jss two",
+            "junior secondary 2",
+            "junior secondary two"
+        ]),
+        ("JSS3", [
+            "jss3",
+            "jss 3",
+            "jss three",
+            "junior secondary 3",
+            "junior secondary three"
+        ]),
+        ("SS1", [
+            "ss1",
+            "ss 1",
+            "ss one",
+            "sss1",
+            "sss 1",
+            "senior secondary 1",
+            "senior secondary one"
+        ]),
+        ("SS2", [
+            "ss2",
+            "ss 2",
+            "ss two",
+            "sss2",
+            "sss 2",
+            "senior secondary 2",
+            "senior secondary two"
+        ]),
+        ("SS3", [
+            "ss3",
+            "ss 3",
+            "ss three",
+            "sss3",
+            "sss 3",
+            "senior secondary 3",
+            "senior secondary three"
+        ]),
+        ("UNIVERSITY", [
+            "university",
+            "uni",
+            "college",
+            "undergraduate",
+            "bachelor's degree",
+            "bachelors degree"
+        ])
     ]
 
-    for word in jss3_words:
+    for level, words in levels:
 
-        if word in lower:
+        for word in words:
 
-            st.session_state.student_level = "JSS3"
+            if word in lower:
 
-            return True
+                st.session_state.student_level = level
 
-    return False
+                return level
+
+    return None
 
 
 # ------------------------------------------------------------
@@ -115,7 +199,7 @@ def needs_fact_check(text):
 
     lower = text.lower().strip()
 
-    factual_starters = [
+    factual_phrases = [
         "who is",
         "who was",
         "who are",
@@ -135,21 +219,30 @@ def needs_fact_check(text):
         "which team",
         "who won",
         "who has won",
+        "how old",
+        "when did",
+        "date of",
+        "born",
+        "died",
+        "capital of",
+        "president of",
+        "population of",
         "list the",
         "name the",
         "tell me about"
     ]
 
-    for starter in factual_starters:
+    for phrase in factual_phrases:
 
-        if lower.startswith(starter):
+        if phrase in lower:
+
             return True
 
     return False
 
 
 # ------------------------------------------------------------
-# WIKIPEDIA FACT SEARCH
+# WIKIPEDIA SEARCH
 # ------------------------------------------------------------
 
 def search_wikipedia(question):
@@ -214,7 +307,7 @@ def search_wikipedia(question):
 
 
 # ------------------------------------------------------------
-# DUCKDUCKGO FACT SEARCH
+# DUCKDUCKGO SEARCH
 # ------------------------------------------------------------
 
 def search_duckduckgo(question):
@@ -249,7 +342,10 @@ def search_duckduckgo(question):
         if answer:
             return answer
 
-        for topic in data.get("RelatedTopics", []):
+        for topic in data.get(
+            "RelatedTopics",
+            []
+        ):
 
             if isinstance(topic, dict):
 
@@ -265,7 +361,7 @@ def search_duckduckgo(question):
 
 
 # ------------------------------------------------------------
-# FACT CHECK
+# GET FACT INFORMATION
 # ------------------------------------------------------------
 
 def get_fact_information(question):
@@ -316,34 +412,30 @@ for message in st.session_state.messages:
 
 def generate_response(user_message):
 
-    # Remember JSS3 if mentioned
+    # Remember the user's school level
     detect_student_level(user_message)
 
-
     # --------------------------------------------------------
-    # JSS3 INSTRUCTION
+    # SCHOOL LEVEL INSTRUCTION
     # --------------------------------------------------------
 
-    if st.session_state.student_level == "JSS3":
+    if st.session_state.student_level:
+
+        level = st.session_state.student_level
 
         level_instruction = (
-            "The student is in JSS3 (Junior Secondary School 3) "
-            "in Nigeria. Keep school explanations appropriate "
-            "for JSS3. Use simple language, clear examples and "
-            "school-level methods. Do not give university-level "
-            "mathematics such as calculus, L'Hopital's rule, "
-            "Lambert W, improper integrals or advanced series "
-            "unless the student specifically asks for advanced "
-            "mathematics. When asked for JSS3 topics, give "
-            "JSS3-appropriate topics."
+            "The user's current education level is "
+            + level
+            + ". Adjust explanations, examples and vocabulary "
+              "to that level. Do not unnecessarily use material "
+              "from a much higher level."
         )
 
     else:
 
         level_instruction = (
-            "Answer at a normal general-knowledge level. "
-            "If the user gives you a school level, remember it "
-            "and adjust your explanations."
+            "The user's education level has not been provided. "
+            "Answer normally and clearly."
         )
 
 
@@ -364,7 +456,7 @@ def generate_response(user_message):
         "You are KingsBot, a helpful, intelligent and "
         "friendly AI assistant.\n\n"
 
-        "Answer questions clearly and naturally.\n\n"
+        "Answer clearly and naturally.\n\n"
 
         "Help with mathematics, science, technology, coding, "
         "school subjects, history, general knowledge and "
@@ -373,20 +465,20 @@ def generate_response(user_message):
         + level_instruction
         + "\n\n"
 
-        "If reliable information is provided below, use it "
-        "to improve factual accuracy. Do not contradict the "
-        "provided information without a good reason.\n\n"
-
-        "If the information does not answer the question, "
-        "answer using your own knowledge and clearly avoid "
-        "making up facts."
+        "If reliable factual information is provided below, "
+        "use it as the factual basis for your answer. "
+        "Do not invent a different number, date, name or fact."
     )
 
+
+    # --------------------------------------------------------
+    # ADD FACT INFORMATION
+    # --------------------------------------------------------
 
     if fact_information:
 
         system_message += (
-            "\n\nFACT-CHECK INFORMATION:\n"
+            "\n\nFACT INFORMATION:\n"
             + fact_information
         )
 
@@ -461,7 +553,7 @@ def generate_response(user_message):
 
 
     # --------------------------------------------------------
-    # REMOVE ORIGINAL PROMPT
+    # REMOVE PROMPT
     # --------------------------------------------------------
 
     generated_ids = [
@@ -498,18 +590,10 @@ prompt = st.chat_input(
 
 if prompt:
 
-    # --------------------------------------------------------
-    # SHOW USER MESSAGE
-    # --------------------------------------------------------
-
     with st.chat_message("user"):
 
         st.markdown(prompt)
 
-
-    # --------------------------------------------------------
-    # SAVE USER MESSAGE
-    # --------------------------------------------------------
 
     st.session_state.messages.append(
         {
@@ -518,10 +602,6 @@ if prompt:
         }
     )
 
-
-    # --------------------------------------------------------
-    # GENERATE ANSWER
-    # --------------------------------------------------------
 
     with st.chat_message("assistant"):
 
@@ -544,10 +624,6 @@ if prompt:
 
         st.markdown(response)
 
-
-    # --------------------------------------------------------
-    # SAVE ASSISTANT MESSAGE
-    # --------------------------------------------------------
 
     st.session_state.messages.append(
         {
@@ -575,11 +651,10 @@ def create_chat_file():
 
     lines.append("")
 
-
     if st.session_state.student_level:
 
         lines.append(
-            "Student level: "
+            "Education level: "
             + st.session_state.student_level
         )
 
@@ -616,22 +691,18 @@ with st.sidebar:
 
     st.header("🤖 KingsBot")
 
-
     st.write(
         "KingsBot uses a real open-source language model "
-        "with a fact-checking layer."
+        "with education-level memory and factual lookup."
     )
-
 
     st.divider()
 
-
     # --------------------------------------------------------
-    # STUDENT LEVEL
+    # EDUCATION LEVEL
     # --------------------------------------------------------
 
-    st.subheader("🎓 Student Level")
-
+    st.subheader("🎓 Education Level")
 
     if st.session_state.student_level:
 
@@ -647,16 +718,13 @@ with st.sidebar:
             "\"I am in JSS3.\""
         )
 
-
     st.divider()
-
 
     # --------------------------------------------------------
     # CHAT HISTORY
     # --------------------------------------------------------
 
     st.subheader("📚 Conversation History")
-
 
     if st.session_state.messages:
 
@@ -684,7 +752,6 @@ with st.sidebar:
             "No conversations yet."
         )
 
-
     # --------------------------------------------------------
     # SAVE CHAT
     # --------------------------------------------------------
@@ -700,9 +767,7 @@ with st.sidebar:
             mime="text/plain"
         )
 
-
     st.divider()
-
 
     # --------------------------------------------------------
     # FEATURES
@@ -711,8 +776,8 @@ with st.sidebar:
     st.subheader("Features")
 
     st.write("🧠 Real language model")
-    st.write("🎓 JSS3-aware answers")
-    st.write("🌐 Fact checking")
+    st.write("🎓 All-class education memory")
+    st.write("🌐 Factual lookup")
     st.write("💬 Conversation memory")
     st.write("💾 Save conversations")
     st.write("🧮 Mathematics")
@@ -721,9 +786,7 @@ with st.sidebar:
     st.write("🔬 Science")
     st.write("🌍 Everyday questions")
 
-
     st.divider()
-
 
     # --------------------------------------------------------
     # CLEAR CONVERSATION
@@ -739,9 +802,7 @@ with st.sidebar:
 
         st.rerun()
 
-
     st.divider()
-
 
     st.caption(
         "Model: Qwen2.5-0.5B-Instruct"
