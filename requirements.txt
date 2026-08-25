@@ -1,9 +1,8 @@
 streamlit
+requests
 torch
 transformers
-requests
-pandas
-speechrecognition
-gtts
-sentencepiece
 accelerate
+sentencepiece
+SpeechRecognition
+gTTS
