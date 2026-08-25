@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -5,6 +6,7 @@ import re
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import speech_recognition as sr
 from gtts import gTTS
 import torch
@@ -1327,7 +1329,7 @@ def text_to_speech(text):
         audio = io.BytesIO()
 
         speech = gTTS(
-            text=text[:3000],
+            text=str(text)[:3000],
             lang="en",
             slow=False
         )
@@ -1344,6 +1346,66 @@ def text_to_speech(text):
     except Exception:
 
         return None
+
+
+# ============================================================
+# AUTOMATIC VOICE PLAYBACK
+# ============================================================
+
+def play_voice_automatically(audio_bytes):
+
+    if not audio_bytes:
+        return
+
+    try:
+
+        audio_base64 = base64.b64encode(
+            audio_bytes
+        ).decode("utf-8")
+
+        components.html(
+
+            f"""
+            <audio
+                id="kingsbot-auto-voice"
+                autoplay
+                controls
+                style="width:100%;"
+            >
+                <source
+                    src="data:audio/mp3;base64,{audio_base64}"
+                    type="audio/mpeg"
+                >
+            </audio>
+
+            <script>
+                const player =
+                    document.getElementById(
+                        "kingsbot-auto-voice"
+                    );
+
+                if (player) {{
+                    player.play().catch(
+                        function(error) {{
+                            console.log(
+                                "Autoplay was blocked by the browser.",
+                                error
+                            );
+                        }}
+                    );
+                }}
+            </script>
+            """,
+
+            height=75
+        )
+
+    except Exception as error:
+
+        st.warning(
+            "Automatic voice playback failed: "
+            + str(error)
+        )
 
 
 # ============================================================
@@ -1604,7 +1666,9 @@ if prompt:
         )
 
 
-        # Voice response
+        # ====================================================
+        # AUTOMATIC VOICE RESPONSE
+        # ====================================================
 
         with st.spinner(
             "🔊 Preparing voice..."
@@ -1617,9 +1681,8 @@ if prompt:
 
         if audio:
 
-            st.audio(
-                audio,
-                format="audio/mp3"
+            play_voice_automatically(
+                audio
             )
 
 
