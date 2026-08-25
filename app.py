@@ -1,9 +1,18 @@
-  import streamlit as st
-from transformers import pipeline
+import streamlit as st
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# -----------------------------
+# ============================================================
+# KINGSBOT AI
+# Real local language model
+# No Hugging Face token required
+# ============================================================
+
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+# ------------------------------------------------------------
 # PAGE SETTINGS
-# -----------------------------
+# ------------------------------------------------------------
 
 st.set_page_config(
     page_title="KingsBot AI",
@@ -11,142 +20,225 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🤖 KingsBot AI")
-st.caption("Your AI assistant with a real language model")
+# ------------------------------------------------------------
+# LOAD THE MODEL
+# ------------------------------------------------------------
 
-
-# -----------------------------
-# LOAD THE AI MODEL
-# -----------------------------
-
-@st.cache_resource
+@st.cache_resource(show_spinner="🧠 Loading KingsBot's brain...")
 def load_model():
-    return pipeline(
-        "text-generation",
-        model="HuggingFaceTB/SmolLM2-360M-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_NAME
     )
 
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype="auto",
+        device_map="auto"
+    )
 
-# -----------------------------
-# START MODEL
-# -----------------------------
+    model.eval()
 
-with st.spinner("🧠 KingsBot is loading its brain..."):
-    try:
-        generator = load_model()
-        model_ready = True
-    except Exception as error:
-        model_ready = False
-        st.error("The AI model could not be loaded.")
-        st.code(str(error))
+    return tokenizer, model
 
 
-# -----------------------------
+try:
+    tokenizer, model = load_model()
+
+except Exception as error:
+    st.error("KingsBot could not load its AI model.")
+    st.code(str(error))
+    st.stop()
+
+# ------------------------------------------------------------
 # CHAT MEMORY
-# -----------------------------
+# ------------------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# ------------------------------------------------------------
+# TITLE
+# ------------------------------------------------------------
 
-# -----------------------------
-# DISPLAY OLD MESSAGES
-# -----------------------------
+st.title("🤖 KingsBot AI")
+
+st.caption(
+    "Powered by a real open-source language model"
+)
+
+# ------------------------------------------------------------
+# SHOW PREVIOUS MESSAGES
+# ------------------------------------------------------------
 
 for message in st.session_state.messages:
+
     with st.chat_message(message["role"]):
-        st.write(message["content"])
+        st.markdown(message["content"])
 
+# ------------------------------------------------------------
+# GENERATE AI RESPONSE
+# ------------------------------------------------------------
 
-# -----------------------------
-# CLEAR CHAT BUTTON
-# -----------------------------
+def generate_response(user_message):
 
-if st.button("🗑️ Clear Chat"):
-    st.session_state.messages = []
-    st.rerun()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are KingsBot, a helpful, intelligent and "
+                "friendly AI assistant. "
+                "Answer clearly and naturally. "
+                "Help with mathematics, science, technology, "
+                "coding, school subjects, history, general "
+                "knowledge and everyday questions. "
+                "Do not pretend to know something if you do not "
+                "know it. Keep answers understandable."
+            )
+        }
+    ]
 
+    # Add previous conversation
+    messages.extend(st.session_state.messages)
 
-# -----------------------------
-# CHAT INPUT
-# -----------------------------
-
-user_message = st.chat_input("Talk to KingsBot...")
-
-
-if user_message and model_ready:
-
-    # Save user's message
-    st.session_state.messages.append(
+    # Add the new user message
+    messages.append(
         {
             "role": "user",
             "content": user_message
         }
     )
 
-    # Display user's message
-    with st.chat_message("user"):
-        st.write(user_message)
+    # Create the model prompt
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
 
-    # Keep recent conversation
-    recent_messages = st.session_state.messages[-10:]
+    # Convert prompt into model input
+    model_inputs = tokenizer(
+        [text],
+        return_tensors="pt"
+    ).to(model.device)
 
-    # System instruction
-    messages_for_model = [
-        {
-            "role": "system",
-            "content": (
-                "You are KingsBot, a helpful, friendly AI assistant. "
-                "Answer questions clearly and naturally. "
-                "If you do not know something, say that you are not sure. "
-                "Do not pretend to know information you do not know."
-            )
-        }
+    # Generate response
+    with torch.no_grad():
+
+        generated_ids = model.generate(
+            **model_inputs,
+            max_new_tokens=512,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            repetition_penalty=1.05,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    # Remove the prompt from the generated result
+    generated_ids = [
+        output_ids[len(input_ids):]
+        for input_ids, output_ids
+        in zip(
+            model_inputs.input_ids,
+            generated_ids
+        )
     ]
 
-    messages_for_model.extend(recent_messages)
+    # Turn model output into normal text
+    response = tokenizer.batch_decode(
+        generated_ids,
+        skip_special_tokens=True
+    )[0]
 
-    # Generate AI response
+    return response.strip()
+
+
+# ------------------------------------------------------------
+# CHAT INPUT
+# ------------------------------------------------------------
+
+prompt = st.chat_input(
+    "Ask KingsBot anything..."
+)
+
+if prompt:
+
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Save user message
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": prompt
+        }
+    )
+
+    # Generate answer
     with st.chat_message("assistant"):
+
         with st.spinner("🧠 Thinking..."):
 
             try:
-                result = generator(
-                    messages_for_model,
-                    max_new_tokens=256,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9
-                )
-
-                generated = result[0]["generated_text"]
-
-                # Chat models return a list of messages
-                if isinstance(generated, list):
-                    assistant_messages = [
-                        message
-                        for message in generated
-                        if message.get("role") == "assistant"
-                    ]
-
-                    if assistant_messages:
-                        answer = assistant_messages[-1]["content"]
-                    else:
-                        answer = "Sorry, I could not generate an answer."
-
-                else:
-                    answer = generated
-
-                st.write(answer)
-
-                # Save AI response
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": answer
-                    }
-                )
+                response = generate_response(prompt)
 
             except Exception as error:
-                st.error("Something went wrong while generating the answer.")
-                st.code(str(error))      
+                response = (
+                    "I ran into an error while thinking.\n\n"
+                    f"`{error}`"
+                )
+
+        st.markdown(response)
+
+    # Save assistant message
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": response
+        }
+    )
+
+# ------------------------------------------------------------
+# SIDEBAR
+# ------------------------------------------------------------
+
+with st.sidebar:
+
+    st.header("🤖 KingsBot")
+
+    st.write(
+        "KingsBot uses a real open-source language model "
+        "running inside the Space."
+    )
+
+    st.divider()
+
+    st.subheader("Features")
+
+    st.write("🧠 Real language model")
+    st.write("💬 Conversation")
+    st.write("🧮 Mathematics")
+    st.write("💻 Coding help")
+    st.write("📚 General knowledge")
+    st.write("🔬 Science")
+    st.write("🌍 Everyday questions")
+
+    st.divider()
+
+    if st.button("🗑️ Clear conversation"):
+
+        st.session_state.messages = []
+
+        st.rerun()
+
+    st.divider()
+
+    st.caption(
+        "Model: Qwen2.5-0.5B-Instruct"
+    )
+
+    st.caption(
+        "No Hugging Face token required."
+  )                          
+            
