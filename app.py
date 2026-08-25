@@ -8,21 +8,8 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# ============================================================
-# KINGSBOT AI
-# Real local AI + web knowledge + math
-# No Hugging Face token required
-# ============================================================
-
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-
-# Keep generation reasonably small so CPU Spaces do not struggle.
 MAX_NEW_TOKENS = 256
-
-
-# ============================================================
-# STREAMLIT PAGE
-# ============================================================
 
 st.set_page_config(
     page_title="KingsBot AI",
@@ -31,20 +18,14 @@ st.set_page_config(
 )
 
 
-# ============================================================
-# LOAD MODEL SAFELY
-# ============================================================
-
 @st.cache_resource(show_spinner=False)
 def load_ai():
-    tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_NAME
-    )
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype="auto",
-        low_cpu_mem_usage=True,
+        device_map="auto",
     )
 
     model.eval()
@@ -52,9 +33,9 @@ def load_ai():
     return tokenizer, model
 
 
-# ============================================================
+# ------------------------------------------------------------
 # SAFE MATH
-# ============================================================
+# ------------------------------------------------------------
 
 ALLOWED_OPERATORS = {
     ast.Add: operator.add,
@@ -74,35 +55,27 @@ def calculate_expression(expression):
         expression = expression.replace("×", "*")
         expression = expression.replace("÷", "/")
 
-        tree = ast.parse(
-            expression,
-            mode="eval"
-        )
+        tree = ast.parse(expression, mode="eval")
 
         def evaluate(node):
             if isinstance(node, ast.Constant):
                 if isinstance(node.value, (int, float)):
                     return node.value
-
                 raise ValueError("Invalid number")
 
             if isinstance(node, ast.BinOp):
-                operation = ALLOWED_OPERATORS.get(
-                    type(node.op)
-                )
+                operation = ALLOWED_OPERATORS.get(type(node.op))
 
                 if operation is None:
                     raise ValueError("Operator not allowed")
 
-                left = evaluate(node.left)
-                right = evaluate(node.right)
-
-                return operation(left, right)
+                return operation(
+                    evaluate(node.left),
+                    evaluate(node.right),
+                )
 
             if isinstance(node, ast.UnaryOp):
-                operation = ALLOWED_OPERATORS.get(
-                    type(node.op)
-                )
+                operation = ALLOWED_OPERATORS.get(type(node.op))
 
                 if operation is None:
                     raise ValueError("Operator not allowed")
@@ -118,7 +91,6 @@ def calculate_expression(expression):
         if isinstance(result, float):
             if result.is_integer():
                 return str(int(result))
-
             return str(round(result, 10))
 
         return str(result)
@@ -145,10 +117,7 @@ def get_math_expression(text):
     }
 
     for old, new in replacements.items():
-        expression = expression.replace(
-            old,
-            new
-        )
+        expression = expression.replace(old, new)
 
     expression = re.sub(
         r"[^0-9+\-*/().%^×÷ ]",
@@ -162,15 +131,9 @@ def get_math_expression(text):
 def is_math_question(text):
     lower = text.lower()
 
-    has_number = bool(
-        re.search(r"\d", lower)
-    )
-
+    has_number = bool(re.search(r"\d", lower))
     has_operator = bool(
-        re.search(
-            r"[+\-*/%^×÷]",
-            lower,
-        )
+        re.search(r"[+\-*/%^×÷]", lower)
     )
 
     math_words = [
@@ -184,19 +147,17 @@ def is_math_question(text):
     ]
 
     has_math_word = any(
-        word in lower
-        for word in math_words
+        word in lower for word in math_words
     )
 
-    return (
-        has_number
-        and (has_operator or has_math_word)
+    return has_number and (
+        has_operator or has_math_word
     )
 
 
-# ============================================================
-# WEB KNOWLEDGE
-# ============================================================
+# ------------------------------------------------------------
+# WEB SEARCH
+# ------------------------------------------------------------
 
 def search_wikipedia(question):
     try:
@@ -221,8 +182,7 @@ def search_wikipedia(question):
         data = response.json()
 
         results = (
-            data
-            .get("query", {})
+            data.get("query", {})
             .get("search", [])
         )
 
@@ -234,7 +194,7 @@ def search_wikipedia(question):
         if not title:
             return None
 
-        summary_response = requests.get(
+        summary = requests.get(
             "https://en.wikipedia.org/api/rest_v1/page/summary/"
             + requests.utils.quote(title),
             headers={
@@ -243,17 +203,15 @@ def search_wikipedia(question):
             timeout=8,
         )
 
-        summary_response.raise_for_status()
+        summary.raise_for_status()
 
-        summary = summary_response.json()
-
-        extract = summary.get("extract")
+        extract = summary.json().get("extract")
 
         if extract:
             return extract
 
     except Exception:
-        return None
+        pass
 
     return None
 
@@ -288,34 +246,25 @@ def search_duckduckgo(question):
         if answer:
             return answer
 
-        topics = data.get(
-            "RelatedTopics",
-            []
-        )
+        for topic in data.get("RelatedTopics", []):
+            if isinstance(topic, dict):
+                text = topic.get("Text")
 
-        for topic in topics:
-            if not isinstance(topic, dict):
-                continue
-
-            text = topic.get("Text")
-
-            if text:
-                return text
+                if text:
+                    return text
 
     except Exception:
-        return None
+        pass
 
     return None
 
 
-# ============================================================
-# LOAD AI
-# ============================================================
+# ------------------------------------------------------------
+# LOAD MODEL
+# ------------------------------------------------------------
 
 try:
-    with st.spinner(
-        "🧠 Loading KingsBot's brain..."
-    ):
+    with st.spinner("🧠 Loading KingsBot's brain..."):
         tokenizer, model = load_ai()
 
     model_ready = True
@@ -325,35 +274,30 @@ except Exception as error:
     tokenizer = None
     model = None
 
-    st.error(
-        "KingsBot's AI model could not be loaded."
-    )
+    st.error("KingsBot's AI model could not be loaded.")
 
     st.info(
         "The app is still running. "
-        "Web search and other safe features can still work."
+        "Web search can still work."
     )
 
-    with st.expander(
-        "Technical information"
-    ):
+    with st.expander("Technical information"):
         st.code(str(error))
 
 
-# ============================================================
-# SESSION MEMORY
-# ============================================================
+# ------------------------------------------------------------
+# CHAT MEMORY
+# ------------------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
-# ============================================================
-# AI RESPONSE
-# ============================================================
+# ------------------------------------------------------------
+# LOCAL AI
+# ------------------------------------------------------------
 
-def ask_local_ai(user_question):
-
+def ask_local_ai(user_question, extra_information=None):
     if not model_ready:
         return None
 
@@ -361,194 +305,151 @@ def ask_local_ai(user_question):
         {
             "role": "system",
             "content": (
-                "You are KingsBot, a helpful AI assistant. "
-                "Answer clearly and naturally. "
-                "Help with coding, mathematics, science, "
-                "history, technology and everyday questions. "
-                "Do not invent facts when you are unsure."
+                "You are KingsBot, a helpful and friendly AI "
+                "assistant. Answer clearly and naturally. "
+                "Help with mathematics, science, coding, "
+                "technology, history, school subjects and "
+                "everyday questions. Do not invent facts."
             ),
         }
     ]
 
-    # Keep only recent messages.
-    recent_messages = (
-        st.session_state.messages[-8:]
-    )
+    # Only previous messages go here.
+    # The current question is added exactly once below.
+    previous_messages = st.session_state.messages[-8:]
 
-    conversation.extend(
-        recent_messages
-    )
+    conversation.extend(previous_messages)
+
+    if extra_information:
+        user_content = (
+            "Use the following information if it helps "
+            "answer the user's question.\n\n"
+            "Information:\n"
+            + extra_information
+            + "\n\nUser question:\n"
+            + user_question
+        )
+    else:
+        user_content = user_question
 
     conversation.append(
         {
             "role": "user",
-            "content": user_question,
+            "content": user_content,
         }
     )
 
     try:
-        prompt = tokenizer.apply_chat_template(
+        text = tokenizer.apply_chat_template(
             conversation,
             tokenize=False,
             add_generation_prompt=True,
         )
 
-        inputs = tokenizer(
-            prompt,
+        model_inputs = tokenizer(
+            [text],
             return_tensors="pt",
             truncation=True,
             max_length=2048,
         )
 
-        # Put tensors on the same device as the model.
-        device = next(
-            model.parameters()
-        ).device
+        device = next(model.parameters()).device
 
-        inputs = {
+        model_inputs = {
             key: value.to(device)
-            for key, value in inputs.items()
+            for key, value in model_inputs.items()
         }
 
         with torch.no_grad():
-
-            output = model.generate(
-                **inputs,
+            generated_ids = model.generate(
+                **model_inputs,
                 max_new_tokens=MAX_NEW_TOKENS,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
                 repetition_penalty=1.05,
-                pad_token_id=(
-                    tokenizer.eos_token_id
-                ),
+                pad_token_id=tokenizer.eos_token_id,
             )
 
-        input_length = (
-            inputs["input_ids"].shape[1]
-        )
+        input_length = model_inputs["input_ids"].shape[1]
 
-        new_tokens = output[
+        new_tokens = generated_ids[
             0,
             input_length:
         ]
 
-        answer = tokenizer.decode(
+        response = tokenizer.decode(
             new_tokens,
             skip_special_tokens=True,
         ).strip()
 
-        if not answer:
-            return None
-
-        return answer
+        if response:
+            return response
 
     except Exception:
-        return None
+        pass
+
+    return None
 
 
-# ============================================================
+# ------------------------------------------------------------
 # MAIN BRAIN
-# ============================================================
+# ------------------------------------------------------------
 
 def kingsbot(question):
-
     question = question.strip()
 
     if not question:
         return "Please ask me something."
 
-    # --------------------------------------------------------
-    # MATH FIRST
-    # --------------------------------------------------------
-
+    # Math
     if is_math_question(question):
-
-        expression = get_math_expression(
-            question
-        )
-
-        result = calculate_expression(
-            expression
-        )
+        expression = get_math_expression(question)
+        result = calculate_expression(expression)
 
         if result is not None:
-            return (
-                "🧮 **Answer:** "
-                + result
-            )
+            return "🧮 **Answer:** " + result
 
-    # --------------------------------------------------------
-    # SIMPLE BUILT-IN RESPONSES
-    # --------------------------------------------------------
-
+    # Basic greetings
     lower = question.lower()
 
-    if lower in {
-        "hi",
-        "hello",
-        "hey",
-    }:
+    if lower in {"hi", "hello", "hey"}:
         return (
             "Hello! 👋 I'm KingsBot. "
             "What would you like to know?"
         )
 
     if "your name" in lower:
-        return (
-            "My name is KingsBot AI. 🤖"
-        )
+        return "My name is KingsBot AI. 🤖"
 
     if "who are you" in lower:
         return (
-            "I'm KingsBot, an AI assistant "
-            "powered by an open-source language model."
+            "I'm KingsBot, an AI assistant powered by "
+            "an open-source language model."
         )
 
-    # --------------------------------------------------------
-    # WEB KNOWLEDGE
-    # --------------------------------------------------------
-
-    web_answer = search_wikipedia(
-        question
-    )
+    # Web information first
+    web_answer = search_wikipedia(question)
 
     if web_answer:
-
-        # Ask the local model to explain
-        # the information naturally.
-        explanation = ask_local_ai(
-            "Use this information to answer "
-            "the user's question clearly.\n\n"
-            "Information:\n"
-            + web_answer
-            + "\n\nUser question:\n"
-            + question
+        answer = ask_local_ai(
+            question,
+            extra_information=web_answer,
         )
 
-        if explanation:
-            return explanation
+        if answer:
+            return answer
 
         return web_answer
 
-    # --------------------------------------------------------
-    # LOCAL AI
-    # --------------------------------------------------------
+    # Local AI
+    answer = ask_local_ai(question)
 
-    local_answer = ask_local_ai(
-        question
-    )
+    if answer:
+        return answer
 
-    if local_answer:
-        return local_answer
-
-    # --------------------------------------------------------
-    # LAST RESORT WEB SEARCH
-    # --------------------------------------------------------
-
-    web_answer = search_duckduckgo(
-        question
-    )
+    # Last web fallback
+    web_answer = search_duckduckgo(question)
 
     if web_answer:
         return web_answer
@@ -559,30 +460,24 @@ def kingsbot(question):
     )
 
 
-# ============================================================
-# DISPLAY CHAT HISTORY
-# ============================================================
+# ------------------------------------------------------------
+# DISPLAY CHAT
+# ------------------------------------------------------------
 
 for message in st.session_state.messages:
-
-    with st.chat_message(
-        message["role"]
-    ):
-        st.markdown(
-            message["content"]
-        )
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 
-# ============================================================
-# CHAT BOX
-# ============================================================
+# ------------------------------------------------------------
+# CHAT INPUT
+# ------------------------------------------------------------
 
 user_message = st.chat_input(
     "Ask KingsBot anything..."
 )
 
 if user_message:
-
     with st.chat_message("user"):
         st.markdown(user_message)
 
@@ -594,14 +489,8 @@ if user_message:
     )
 
     with st.chat_message("assistant"):
-
-        with st.spinner(
-            "🧠 Thinking..."
-        ):
-
-            answer = kingsbot(
-                user_message
-            )
+        with st.spinner("🧠 Thinking..."):
+            answer = kingsbot(user_message)
 
         st.markdown(answer)
 
@@ -613,22 +502,19 @@ if user_message:
     )
 
 
-# ============================================================
+# ------------------------------------------------------------
 # SIDEBAR
-# ============================================================
+# ------------------------------------------------------------
 
 with st.sidebar:
-
     st.header("🤖 KingsBot AI")
 
     st.write(
-        "A real open-source language model "
-        "with web knowledge and math support."
+        "Real open-source AI with web knowledge "
+        "and mathematics."
     )
 
     st.divider()
-
-    st.subheader("Features")
 
     st.write("🧠 Real AI model")
     st.write("🌐 Web knowledge")
@@ -639,9 +525,7 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button(
-        "🗑️ Clear conversation"
-    ):
+    if st.button("🗑️ Clear conversation"):
         st.session_state.messages = []
         st.rerun()
 
