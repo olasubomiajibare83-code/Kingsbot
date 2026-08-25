@@ -2,3 +2,5 @@ streamlit
 torch
 transformers
 requests
+SpeechRecognition
+gTTS
