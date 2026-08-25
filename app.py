@@ -2,42 +2,21 @@ import io
 import json
 import os
 import re
-from datetime import datetime
 
 import requests
 import streamlit as st
-import torch
 import speech_recognition as sr
 from gtts import gTTS
+import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 # ============================================================
 # KINGSBOT AI
 # ============================================================
-# Real local language model
-# Conversation memory
-# Persistent personal memory
-# Education-level memory
-# EQ / sentiment logic
-# Tone adaptation
-# Proactive glue
-# Pattern recognition
-# Multi-step reasoning
-# Radical transparency
-# Current-information lookup
-# Voice input
-# Voice output
-# Ethical forgetting
-# Conversation saving
-# No Hugging Face token required
-# ============================================================
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-
 CURRENT_DATE = "August 25, 2026"
-CURRENT_YEAR = 2026
-
 MEMORY_FILE = "kingsbot_memory.json"
 
 
@@ -53,23 +32,18 @@ st.set_page_config(
 
 
 # ============================================================
-# DEFAULT MEMORY
+# MEMORY
 # ============================================================
 
-DEFAULT_MEMORY = {
-    "name": None,
-    "education_level": None,
-    "personal_facts": [],
-    "preferences": [],
-    "important_topics": []
-}
+def load_memory():
 
-
-# ============================================================
-# LOAD MEMORY
-# ============================================================
-
-def load_persistent_memory():
+    default_memory = {
+        "name": None,
+        "education_level": None,
+        "facts": [],
+        "preferences": [],
+        "topics": []
+    }
 
     try:
 
@@ -83,46 +57,32 @@ def load_persistent_memory():
 
                 data = json.load(file)
 
-            if not isinstance(data, dict):
+            if isinstance(data, dict):
 
-                return DEFAULT_MEMORY.copy()
+                for key, value in default_memory.items():
 
-            for key in DEFAULT_MEMORY:
+                    if key not in data:
+                        data[key] = value
 
-                if key not in data:
-
-                    data[key] = DEFAULT_MEMORY[key]
-
-            return data
+                return data
 
     except Exception:
+        pass
 
-        return DEFAULT_MEMORY.copy()
+    return default_memory
 
 
-# ============================================================
-# SAVE MEMORY
-# ============================================================
+def save_memory():
 
-def save_persistent_memory():
+    data = {
+        "name": st.session_state.user_name,
+        "education_level": st.session_state.student_level,
+        "facts": st.session_state.personal_memory,
+        "preferences": st.session_state.preferences,
+        "topics": st.session_state.topic_pattern
+    }
 
     try:
-
-        data = {
-            "name": st.session_state.user_name,
-            "education_level": (
-                st.session_state.student_level
-            ),
-            "personal_facts": (
-                st.session_state.personal_memory
-            ),
-            "preferences": (
-                st.session_state.preferences
-            ),
-            "important_topics": (
-                st.session_state.topic_pattern
-            )
-        }
 
         with open(
             MEMORY_FILE,
@@ -137,19 +97,16 @@ def save_persistent_memory():
                 ensure_ascii=False
             )
 
-        return True
-
     except Exception:
+        pass
 
-        return False
+
+saved_memory = load_memory()
 
 
 # ============================================================
-# INITIAL MEMORY
+# SESSION MEMORY
 # ============================================================
-
-saved_memory = load_persistent_memory()
-
 
 if "messages" not in st.session_state:
 
@@ -158,46 +115,35 @@ if "messages" not in st.session_state:
 
 if "user_name" not in st.session_state:
 
-    st.session_state.user_name = (
-        saved_memory.get("name")
-    )
+    st.session_state.user_name = saved_memory["name"]
 
 
 if "student_level" not in st.session_state:
 
-    st.session_state.student_level = (
-        saved_memory.get("education_level")
-    )
+    st.session_state.student_level = saved_memory[
+        "education_level"
+    ]
 
 
 if "personal_memory" not in st.session_state:
 
-    st.session_state.personal_memory = (
-        saved_memory.get(
-            "personal_facts",
-            []
-        )
-    )
+    st.session_state.personal_memory = saved_memory[
+        "facts"
+    ]
 
 
 if "preferences" not in st.session_state:
 
-    st.session_state.preferences = (
-        saved_memory.get(
-            "preferences",
-            []
-        )
-    )
+    st.session_state.preferences = saved_memory[
+        "preferences"
+    ]
 
 
 if "topic_pattern" not in st.session_state:
 
-    st.session_state.topic_pattern = (
-        saved_memory.get(
-            "important_topics",
-            []
-        )
-    )
+    st.session_state.topic_pattern = saved_memory[
+        "topics"
+    ]
 
 
 if "emotion" not in st.session_state:
@@ -207,9 +153,7 @@ if "emotion" not in st.session_state:
 
 if "tone" not in st.session_state:
 
-    st.session_state.tone = (
-        "Natural and friendly"
-    )
+    st.session_state.tone = "Natural and friendly"
 
 
 if "confidence" not in st.session_state:
@@ -224,9 +168,7 @@ if "source" not in st.session_state:
 
 if "reason" not in st.session_state:
 
-    st.session_state.reason = (
-        "Response generated by KingsBot."
-    )
+    st.session_state.reason = "Generated by KingsBot."
 
 
 if "last_topic" not in st.session_state:
@@ -235,7 +177,7 @@ if "last_topic" not in st.session_state:
 
 
 # ============================================================
-# LOAD MODEL
+# LOAD AI MODEL
 # ============================================================
 
 @st.cache_resource(
@@ -280,9 +222,13 @@ except Exception as error:
 def detect_name(text):
 
     patterns = [
+
         r"\bmy name is ([A-Za-z][A-Za-z '\-]{1,40})",
+
         r"\bcall me ([A-Za-z][A-Za-z '\-]{1,40})",
+
         r"\byou can call me ([A-Za-z][A-Za-z '\-]{1,40})"
+
     ]
 
     for pattern in patterns:
@@ -299,7 +245,7 @@ def detect_name(text):
 
             st.session_state.user_name = name
 
-            save_persistent_memory()
+            save_memory()
 
             return name
 
@@ -405,6 +351,7 @@ def detect_student_level(text):
             "undergraduate",
             "college"
         ]
+
     }
 
     for level, words in levels.items():
@@ -415,7 +362,7 @@ def detect_student_level(text):
 
                 st.session_state.student_level = level
 
-                save_persistent_memory()
+                save_memory()
 
                 return level
 
@@ -423,7 +370,7 @@ def detect_student_level(text):
 
 
 # ============================================================
-# EXPLICIT MEMORY
+# PERSONAL MEMORY
 # ============================================================
 
 def remember_information(text):
@@ -434,7 +381,6 @@ def remember_information(text):
         "remember that",
         "remember this",
         "please remember",
-        "keep this in mind",
         "save this"
     ]
 
@@ -444,23 +390,23 @@ def remember_information(text):
 
             position = lower.find(trigger)
 
-            memory = text[
+            information = text[
                 position + len(trigger):
             ].strip(" :,-")
 
-            if memory:
+            if information:
 
-                if memory not in (
+                if information not in (
                     st.session_state.personal_memory
                 ):
 
                     st.session_state.personal_memory.append(
-                        memory
+                        information
                     )
 
-                    save_persistent_memory()
+                    save_memory()
 
-                return memory
+            return information
 
     return None
 
@@ -480,16 +426,19 @@ def forget_information(text):
     ):
 
         st.session_state.user_name = None
+
         st.session_state.student_level = None
+
         st.session_state.personal_memory = []
+
         st.session_state.preferences = []
 
-        save_persistent_memory()
+        save_memory()
 
         return (
-            "Done. I cleared the personal information "
-            "you asked me to forget."
+            "Done. I cleared your saved personal memory."
         )
+
 
     if (
         "forget my name" in lower
@@ -498,11 +447,12 @@ def forget_information(text):
 
         st.session_state.user_name = None
 
-        save_persistent_memory()
+        save_memory()
 
         return (
             "Done. I forgot your saved name."
         )
+
 
     if (
         "forget my class" in lower
@@ -511,22 +461,24 @@ def forget_information(text):
 
         st.session_state.student_level = None
 
-        save_persistent_memory()
+        save_memory()
 
         return (
             "Done. I forgot your saved education level."
         )
 
+
     return None
 
 
 # ============================================================
-# EMOTIONAL / SENTIMENT LOGIC
+# EMOTIONAL INTELLIGENCE
 # ============================================================
 
 def detect_emotion(text):
 
     lower = text.lower()
+
 
     if any(
         word in lower
@@ -542,6 +494,7 @@ def detect_emotion(text):
 
         return "frustrated"
 
+
     if any(
         word in lower
         for word in [
@@ -553,6 +506,7 @@ def detect_emotion(text):
     ):
 
         return "sad"
+
 
     if any(
         word in lower
@@ -566,6 +520,7 @@ def detect_emotion(text):
 
         return "confused"
 
+
     if any(
         word in lower
         for word in [
@@ -577,6 +532,7 @@ def detect_emotion(text):
     ):
 
         return "worried"
+
 
     if any(
         word in lower
@@ -592,6 +548,7 @@ def detect_emotion(text):
 
         return "happy"
 
+
     return "neutral"
 
 
@@ -601,44 +558,43 @@ def detect_emotion(text):
 
 def get_tone(emotion):
 
-    if emotion == "frustrated":
+    tones = {
 
-        return (
-            "Calm, respectful and direct.",
+        "frustrated": (
+            "Be calm, respectful and direct.",
             "Calm and direct"
-        )
+        ),
 
-    if emotion == "sad":
-
-        return (
-            "Warm, kind and supportive.",
+        "sad": (
+            "Be warm, kind and supportive.",
             "Warm and supportive"
-        )
+        ),
 
-    if emotion == "confused":
-
-        return (
-            "Simple, patient and step-by-step.",
+        "confused": (
+            "Be simple, patient and step-by-step.",
             "Simple and step-by-step"
-        )
+        ),
 
-    if emotion == "worried":
-
-        return (
-            "Reassuring, careful and practical.",
+        "worried": (
+            "Be reassuring, careful and practical.",
             "Reassuring and practical"
-        )
+        ),
 
-    if emotion == "happy":
-
-        return (
-            "Friendly, positive and energetic.",
+        "happy": (
+            "Be friendly, positive and energetic.",
             "Friendly and positive"
+        ),
+
+        "neutral": (
+            "Be natural, friendly and clear.",
+            "Natural and friendly"
         )
 
-    return (
-        "Natural, friendly and clear.",
-        "Natural and friendly"
+    }
+
+    return tones.get(
+        emotion,
+        tones["neutral"]
     )
 
 
@@ -646,7 +602,7 @@ def get_tone(emotion):
 # PATTERN RECOGNITION
 # ============================================================
 
-def recognize_pattern(text):
+def recognize_topic(text):
 
     lower = text.lower()
 
@@ -694,7 +650,9 @@ def recognize_pattern(text):
             "primary",
             "university"
         ]
+
     }
+
 
     for category, words in categories.items():
 
@@ -704,12 +662,13 @@ def recognize_pattern(text):
 
                 return category
 
+
     return "general"
 
 
-def update_pattern(text):
+def update_topic(text):
 
-    topic = recognize_pattern(text)
+    topic = recognize_topic(text)
 
     st.session_state.last_topic = topic
 
@@ -719,7 +678,7 @@ def update_pattern(text):
             topic
         )
 
-        save_persistent_memory()
+        save_memory()
 
     return topic
 
@@ -730,44 +689,49 @@ def update_pattern(text):
 
 def proactive_glue(text):
 
-    topic = recognize_pattern(text)
+    topic = recognize_topic(text)
 
     previous = st.session_state.last_topic
+
 
     if previous == topic:
 
         return (
             "The user may be continuing the same topic. "
-            "Use relevant recent context."
+            "Use the relevant recent context."
         )
+
 
     if previous and previous != topic:
 
         return (
             "The user appears to have changed topics. "
-            "Focus primarily on the new question."
+            "Focus on the new question."
         )
 
+
     return (
-        "Understand the user's actual goal and provide "
+        "Understand the user's goal and provide "
         "the most useful next step when appropriate."
     )
 
 
 # ============================================================
-# REASONING INSTRUCTION
+# REASONING INSTRUCTIONS
 # ============================================================
 
 def reasoning_instruction(text):
 
-    topic = recognize_pattern(text)
+    topic = recognize_topic(text)
+
 
     if topic == "mathematics":
 
         return (
-            "Solve carefully. Check arithmetic and logic "
-            "before giving the answer."
+            "Solve carefully and check the arithmetic "
+            "and logic before answering."
         )
+
 
     if topic == "coding":
 
@@ -776,31 +740,32 @@ def reasoning_instruction(text):
             "functions and dependencies before producing code."
         )
 
+
     if topic == "education":
 
         return (
-            "Match the explanation to the user's education "
-            "level and teach progressively."
+            "Match the explanation to the user's "
+            "education level and teach progressively."
         )
+
 
     return (
         "Analyze the question carefully and handle "
-        "multi-part questions logically. Do not expose "
-        "private chain-of-thought."
+        "multi-part questions logically. "
+        "Do not expose private chain-of-thought."
     )
 
 
 # ============================================================
-# HIGH-CONFIDENCE FACT CHECKS
+# VERIFIED FACTS
 # ============================================================
 
 def verified_fact(question):
 
     lower = question.lower()
 
-    # --------------------------------------------------------
-    # MESSI
-    # --------------------------------------------------------
+
+    # Messi World Cup safeguard
 
     if (
         "messi" in lower
@@ -813,9 +778,8 @@ def verified_fact(question):
             "2022 FIFA World Cup."
         )
 
-    # --------------------------------------------------------
-    # CURRENT YEAR
-    # --------------------------------------------------------
+
+    # Current year
 
     if (
         "what year is it" in lower
@@ -827,9 +791,8 @@ def verified_fact(question):
             "The current year is 2026."
         )
 
-    # --------------------------------------------------------
-    # CURRENT DATE
-    # --------------------------------------------------------
+
+    # Current date
 
     if (
         "today's date" in lower
@@ -841,27 +804,28 @@ def verified_fact(question):
             "Today is August 25, 2026."
         )
 
-    # --------------------------------------------------------
-    # SPIDER-MAN 2026
-    # --------------------------------------------------------
+
+    # Spider-Man 2026
 
     if (
-        "spider-man" in lower
-        or "spiderman" in lower
-    ) and (
-        "2026" in lower
+        (
+            "spider-man" in lower
+            or "spiderman" in lower
+        )
+        and "2026" in lower
     ):
 
         return (
-            "The Spider-Man film for 2026 is "
-            "Spider-Man: Brand New Day."
+            "The Spider-Man film scheduled for "
+            "2026 is Spider-Man: Brand New Day."
         )
+
 
     return None
 
 
 # ============================================================
-# CURRENT INFORMATION DETECTION
+# CURRENT INFORMATION LOOKUP
 # ============================================================
 
 def needs_current_information(text):
@@ -874,7 +838,6 @@ def needs_current_information(text):
         "currently",
         "latest",
         "recent",
-        "recently",
         "this year",
         "this month",
         "this week",
@@ -888,16 +851,13 @@ def needs_current_information(text):
     )
 
 
-# ============================================================
-# CURRENT INFORMATION LOOKUP
-# ============================================================
-
 def get_current_information(question):
 
     try:
 
         response = requests.get(
             "https://en.wikipedia.org/w/api.php",
+
             params={
                 "action": "query",
                 "list": "search",
@@ -906,23 +866,26 @@ def get_current_information(question):
                 "utf8": "1",
                 "srlimit": 3
             },
+
             headers={
                 "User-Agent": "KingsBotAI/1.0"
             },
+
             timeout=8
         )
 
         response.raise_for_status()
 
-        data = response.json()
-
         results = []
 
-        search_results = (
-            data
-            .get("query", {})
-            .get("search", [])
+        search_results = response.json().get(
+            "query",
+            {}
+        ).get(
+            "search",
+            []
         )
+
 
         for item in search_results:
 
@@ -931,14 +894,17 @@ def get_current_information(question):
             if not title:
                 continue
 
+
             try:
 
                 page = requests.get(
                     "https://en.wikipedia.org/api/rest_v1/page/summary/"
                     + requests.utils.quote(title),
+
                     headers={
                         "User-Agent": "KingsBotAI/1.0"
                     },
+
                     timeout=8
                 )
 
@@ -957,8 +923,8 @@ def get_current_information(question):
                     )
 
             except Exception:
-
                 continue
+
 
         if results:
 
@@ -966,9 +932,10 @@ def get_current_information(question):
                 results[:3]
             )
 
-    except Exception:
 
+    except Exception:
         pass
+
 
     return None
 
@@ -981,6 +948,7 @@ def build_memory_context():
 
     items = []
 
+
     if st.session_state.user_name:
 
         items.append(
@@ -988,4 +956,1046 @@ def build_memory_context():
             + st.session_state.user_name
         )
 
+
     if st.session_state.student_level:
+
+        items.append(
+            "User's education level: "
+            + st.session_state.student_level
+        )
+
+
+    for fact in (
+        st.session_state.personal_memory[-15:]
+    ):
+
+        items.append(
+            "User explicitly asked KingsBot "
+            "to remember: "
+            + fact
+        )
+
+
+    if not items:
+
+        return (
+            "No personal information has been saved."
+        )
+
+
+    return "\n".join(items)
+
+
+# ============================================================
+# GENERATE RESPONSE
+# ============================================================
+
+def generate_response(user_message):
+
+    detect_name(user_message)
+
+    detect_student_level(
+        user_message
+    )
+
+    remember_information(
+        user_message
+    )
+
+
+    forgotten = forget_information(
+        user_message
+    )
+
+
+    if forgotten:
+
+        st.session_state.source = (
+            "KingsBot memory system"
+        )
+
+        st.session_state.confidence = "High"
+
+        st.session_state.reason = (
+            "The user explicitly requested "
+            "a memory change."
+        )
+
+        return forgotten
+
+
+    emotion = detect_emotion(
+        user_message
+    )
+
+    st.session_state.emotion = emotion
+
+
+    tone_text, tone_name = get_tone(
+        emotion
+    )
+
+    st.session_state.tone = tone_name
+
+
+    topic = update_topic(
+        user_message
+    )
+
+
+    fact = verified_fact(
+        user_message
+    )
+
+
+    if fact:
+
+        st.session_state.source = (
+            "KingsBot verified fact"
+        )
+
+        st.session_state.confidence = "High"
+
+        st.session_state.reason = (
+            "A built-in factual safeguard "
+            "matched the question."
+        )
+
+        return fact
+
+
+    current_information = None
+
+
+    if needs_current_information(
+        user_message
+    ):
+
+        current_information = (
+            get_current_information(
+                user_message
+            )
+        )
+
+
+    if st.session_state.student_level:
+
+        education_instruction = (
+            "The user's current education level is "
+            + st.session_state.student_level
+            + ". Match educational answers to this "
+              "level. Do not give university-level "
+              "material when the user asks for a "
+              "junior-school syllabus."
+        )
+
+    else:
+
+        education_instruction = (
+            "The user's education level is unknown. "
+            "Use a clear general explanation."
+        )
+
+
+    system_prompt = (
+
+        "You are KingsBot, a helpful, intelligent "
+        "and friendly AI assistant.\n\n"
+
+        "DATE AWARENESS:\n"
+        "Today is August 25, 2026. "
+        "The current year is 2026. "
+        "2026 is the current year, not the future.\n\n"
+
+        "FACTUAL ACCURACY:\n"
+        "Do not invent facts. "
+        "If you are unsure, say so.\n\n"
+
+        "EDUCATION:\n"
+        + education_instruction
+        + "\n\n"
+
+        "EMOTIONAL INTELLIGENCE:\n"
+        "Recognize the user's apparent emotion "
+        "and respond appropriately.\n\n"
+
+        "TONE ADAPTATION:\n"
+        + tone_text
+        + "\n\n"
+
+        "PROACTIVE GLUE:\n"
+        + proactive_glue(user_message)
+        + "\n\n"
+
+        "PATTERN RECOGNITION:\n"
+        "Detected topic: "
+        + topic
+        + "\n\n"
+
+        "MULTI-STEP REASONING:\n"
+        + reasoning_instruction(
+            user_message
+        )
+        + "\n\n"
+
+        "PERSONAL MEMORY:\n"
+        + build_memory_context()
+    )
+
+
+    if current_information:
+
+        system_prompt += (
+
+            "\n\nCURRENT RETRIEVED INFORMATION:\n"
+            + current_information
+            + "\n\n"
+            "Use this retrieved information carefully."
+        )
+
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": system_prompt
+        }
+
+    ]
+
+
+    # Add previous conversation only
+
+    messages.extend(
+        st.session_state.messages[-12:]
+    )
+
+
+    # Add current question exactly once
+
+    messages.append(
+        {
+            "role": "user",
+            "content": user_message
+        }
+    )
+
+
+    # ========================================================
+    # CHAT TEMPLATE
+    # ========================================================
+
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+
+    # ========================================================
+    # TOKENIZE
+    # ========================================================
+
+    model_inputs = tokenizer(
+        [text],
+        return_tensors="pt",
+        truncation=True,
+        max_length=2048
+    ).to(model.device)
+
+
+    # ========================================================
+    # GENERATE
+    # ========================================================
+
+    with torch.no_grad():
+
+        generated_ids = model.generate(
+            **model_inputs,
+            max_new_tokens=512,
+            do_sample=True,
+            temperature=0.6,
+            top_p=0.9,
+            repetition_penalty=1.05,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+
+    # ========================================================
+    # REMOVE PROMPT
+    # ========================================================
+
+    generated_ids = [
+
+        output_ids[len(input_ids):]
+
+        for input_ids, output_ids in zip(
+            model_inputs.input_ids,
+            generated_ids
+        )
+
+    ]
+
+
+    # ========================================================
+    # DECODE
+    # ========================================================
+
+    response = tokenizer.batch_decode(
+        generated_ids,
+        skip_special_tokens=True
+    )[0].strip()
+
+
+    if not response:
+
+        response = (
+            "I couldn't generate an answer. "
+            "Please try again."
+        )
+
+
+    if current_information:
+
+        st.session_state.source = (
+            "Current information lookup + Qwen"
+        )
+
+        st.session_state.confidence = (
+            "Medium-High"
+        )
+
+        st.session_state.reason = (
+            "KingsBot retrieved additional "
+            "information before generating "
+            "this response."
+        )
+
+    else:
+
+        st.session_state.source = (
+            "Qwen2.5-0.5B-Instruct"
+        )
+
+        st.session_state.confidence = "Medium"
+
+        st.session_state.reason = (
+            "Generated from the language model, "
+            "conversation context and KingsBot "
+            "instructions."
+        )
+
+
+    return response
+
+
+# ============================================================
+# VOICE: SPEECH TO TEXT
+# ============================================================
+
+def speech_to_text(audio_file):
+
+    try:
+
+        recognizer = sr.Recognizer()
+
+        audio_file.seek(0)
+
+        with sr.AudioFile(
+            audio_file
+        ) as source:
+
+            audio_data = recognizer.record(
+                source
+            )
+
+
+        text = recognizer.recognize_google(
+            audio_data,
+            language="en-US"
+        )
+
+        return text
+
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# VOICE: TEXT TO SPEECH
+# ============================================================
+
+def text_to_speech(text):
+
+    try:
+
+        audio = io.BytesIO()
+
+        speech = gTTS(
+            text=text[:3000],
+            lang="en",
+            slow=False
+        )
+
+        speech.write_to_fp(
+            audio
+        )
+
+        audio.seek(0)
+
+        return audio.getvalue()
+
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# SAVE CHAT
+# ============================================================
+
+def create_chat_file():
+
+    lines = [
+
+        "KINGSBOT AI - SAVED CONVERSATION",
+
+        "=" * 50,
+
+        "Date: " + CURRENT_DATE,
+
+        ""
+    ]
+
+
+    if st.session_state.user_name:
+
+        lines.append(
+            "Name: "
+            + st.session_state.user_name
+        )
+
+
+    if st.session_state.student_level:
+
+        lines.append(
+            "Education level: "
+            + st.session_state.student_level
+        )
+
+
+    lines.extend(
+        [
+            "",
+            "PERSONAL MEMORY",
+            "-" * 40
+        ]
+    )
+
+
+    for fact in (
+        st.session_state.personal_memory
+    ):
+
+        lines.append(fact)
+
+
+    lines.extend(
+        [
+            "",
+            "CONVERSATION",
+            "=" * 50
+        ]
+    )
+
+
+    for message in (
+        st.session_state.messages
+    ):
+
+        if message["role"] == "user":
+
+            lines.append("YOU:")
+
+        else:
+
+            lines.append("KINGSBOT:")
+
+
+        lines.append(
+            message["content"]
+        )
+
+        lines.append("")
+
+        lines.append(
+            "-" * 50
+        )
+
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# TITLE
+# ============================================================
+
+st.title(
+    "🤖 KingsBot AI"
+)
+
+st.caption(
+    "Real AI • Memory • EQ • Reasoning • Voice"
+)
+
+
+# ============================================================
+# SHOW CHAT HISTORY
+# ============================================================
+
+for message in (
+    st.session_state.messages
+):
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
+        )
+
+
+# ============================================================
+# VOICE INPUT
+# ============================================================
+
+st.subheader(
+    "🎤 Voice Assistant"
+)
+
+
+audio_file = st.audio_input(
+    "Tap the microphone and speak",
+    sample_rate=16000,
+    key="kingsbot_microphone"
+)
+
+
+voice_prompt = None
+
+
+if audio_file:
+
+    with st.spinner(
+        "🎧 Understanding your voice..."
+    ):
+
+        voice_prompt = speech_to_text(
+            audio_file
+        )
+
+
+    if voice_prompt:
+
+        st.success(
+            "You said: "
+            + voice_prompt
+        )
+
+    else:
+
+        st.error(
+            "I couldn't understand that recording. "
+            "Please try again."
+        )
+
+
+# ============================================================
+# TEXT INPUT
+# ============================================================
+
+text_prompt = st.chat_input(
+    "Ask KingsBot anything..."
+)
+
+
+# Voice takes priority when a recording exists
+
+prompt = (
+    voice_prompt
+    if voice_prompt
+    else text_prompt
+)
+
+
+# ============================================================
+# PROCESS MESSAGE
+# ============================================================
+
+if prompt:
+
+    # IMPORTANT:
+    # The current message is NOT added to history
+    # until after the AI generates its response.
+    # This prevents duplicate user messages.
+
+    with st.chat_message(
+        "assistant"
+    ):
+
+        with st.spinner(
+            "🧠 Thinking..."
+        ):
+
+            try:
+
+                response = generate_response(
+                    prompt
+                )
+
+            except Exception as error:
+
+                response = (
+                    "KingsBot encountered an error:\n\n"
+                    + str(error)
+                )
+
+                st.session_state.source = (
+                    "Error handler"
+                )
+
+                st.session_state.confidence = (
+                    "Unknown"
+                )
+
+                st.session_state.reason = (
+                    "An error occurred while "
+                    "processing the request."
+                )
+
+
+        st.markdown(
+            response
+        )
+
+
+        # Radical transparency
+
+        st.caption(
+            "🔎 Source: "
+            + st.session_state.source
+        )
+
+        st.caption(
+            "📊 Confidence: "
+            + st.session_state.confidence
+        )
+
+        st.caption(
+            "ℹ️ "
+            + st.session_state.reason
+        )
+
+
+        # AI voice response
+
+        with st.spinner(
+            "🔊 Preparing voice..."
+        ):
+
+            audio = text_to_speech(
+                response
+            )
+
+
+        if audio:
+
+            st.audio(
+                audio,
+                format="audio/mp3"
+            )
+
+
+    # Save conversation AFTER generation
+
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": prompt
+        }
+    )
+
+
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": response
+        }
+    )
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.header(
+        "🤖 KingsBot"
+    )
+
+
+    st.write(
+        "Your AI assistant."
+    )
+
+
+    st.divider()
+
+
+    # ========================================================
+    # PERSONAL MEMORY
+    # ========================================================
+
+    st.subheader(
+        "👤 Personal Memory"
+    )
+
+
+    if st.session_state.user_name:
+
+        st.write(
+            "Name: "
+            + st.session_state.user_name
+        )
+
+    else:
+
+        st.write(
+            "Name: Not saved"
+        )
+
+
+    if st.session_state.student_level:
+
+        st.write(
+            "Class: "
+            + st.session_state.student_level
+        )
+
+    else:
+
+        st.write(
+            "Class: Not saved"
+        )
+
+
+    st.write(
+        "Saved facts: "
+        + str(
+            len(
+                st.session_state.personal_memory
+            )
+        )
+    )
+
+
+    st.divider()
+
+
+    # ========================================================
+    # CHAT HISTORY
+    # ========================================================
+
+    st.subheader(
+        "📚 Conversation History"
+    )
+
+
+    if st.session_state.messages:
+
+        number = 0
+
+
+        for message in (
+            st.session_state.messages
+        ):
+
+            if message["role"] == "user":
+
+                number += 1
+
+                preview = (
+                    message["content"]
+                )
+
+
+                if len(preview) > 55:
+
+                    preview = (
+                        preview[:55]
+                        + "..."
+                    )
+
+
+                st.write(
+                    f"💬 {number}. {preview}"
+                )
+
+    else:
+
+        st.write(
+            "No conversations yet."
+        )
+
+
+    if st.session_state.messages:
+
+        st.download_button(
+
+            label="💾 Save conversation",
+
+            data=create_chat_file(),
+
+            file_name=(
+                "kingsbot_conversation.txt"
+            ),
+
+            mime="text/plain"
+        )
+
+
+    st.divider()
+
+
+    # ========================================================
+    # EMOTIONAL INTELLIGENCE
+    # ========================================================
+
+    st.subheader(
+        "❤️ Emotional Intelligence"
+    )
+
+
+    st.write(
+        "Emotion: "
+        + st.session_state.emotion
+    )
+
+
+    # ========================================================
+    # TONE
+    # ========================================================
+
+    st.subheader(
+        "🎭 Tone Adaptation"
+    )
+
+
+    st.write(
+        st.session_state.tone
+    )
+
+
+    # ========================================================
+    # RADICAL TRANSPARENCY
+    # ========================================================
+
+    st.subheader(
+        "🔍 Radical Transparency"
+    )
+
+
+    st.write(
+        "Source: "
+        + st.session_state.source
+    )
+
+
+    st.write(
+        "Confidence: "
+        + st.session_state.confidence
+    )
+
+
+    st.caption(
+        st.session_state.reason
+    )
+
+
+    # ========================================================
+    # PATTERN RECOGNITION
+    # ========================================================
+
+    st.subheader(
+        "🧩 Pattern Recognition"
+    )
+
+
+    if st.session_state.last_topic:
+
+        st.write(
+            "Topic: "
+            + st.session_state.last_topic
+        )
+
+    else:
+
+        st.write(
+            "Topic: None"
+        )
+
+
+    st.divider()
+
+
+    # ========================================================
+    # FEATURES
+    # ========================================================
+
+    st.subheader(
+        "Features"
+    )
+
+
+    st.write(
+        "🧠 Real language model"
+    )
+
+    st.write(
+        "🧩 Proactive glue"
+    )
+
+    st.write(
+        "🔎 Pattern recognition"
+    )
+
+    st.write(
+        "🧠 Multi-step reasoning"
+    )
+
+    st.write(
+        "👤 Personal memory"
+    )
+
+    st.write(
+        "💬 Conversation memory"
+    )
+
+    st.write(
+        "🎓 Primary → University"
+    )
+
+    st.write(
+        "🧹 Ethical forgetting"
+    )
+
+    st.write(
+        "❤️ EQ / sentiment"
+    )
+
+    st.write(
+        "🎭 Tone adaptation"
+    )
+
+    st.write(
+        "🔍 Radical transparency"
+    )
+
+    st.write(
+        "🌍 General knowledge"
+    )
+
+    st.write(
+        "📅 2026 awareness"
+    )
+
+    st.write(
+        "🔎 Current lookup"
+    )
+
+    st.write(
+        "🎤 Voice input"
+    )
+
+    st.write(
+        "🔊 Voice output"
+    )
+
+    st.write(
+        "💾 Save conversations"
+    )
+
+    st.write(
+        "🧮 Mathematics"
+    )
+
+    st.write(
+        "💻 Coding"
+    )
+
+    st.write(
+        "📚 Education"
+    )
+
+    st.write(
+        "🔬 Science"
+    )
+
+
+    st.divider()
+
+
+    # ========================================================
+    # CLEAR CHAT
+    # ========================================================
+
+    if st.button(
+        "🗑️ Clear conversation"
+    ):
+
+        st.session_state.messages = []
+
+        st.rerun()
+
+
+    # ========================================================
+    # FORGET MEMORY
+    # ========================================================
+
+    if st.button(
+        "🧹 Forget personal memory"
+    ):
+
+        st.session_state.user_name = None
+
+        st.session_state.student_level = None
+
+        st.session_state.personal_memory = []
+
+        st.session_state.preferences = []
+
+        save_memory()
+
+        st.success(
+            "Personal memory cleared."
+        )
+
+        st.rerun()
+
+
+    st.divider()
+
+
+    st.caption(
+        "Model: Qwen2.5-0.5B-Instruct"
+    )
+
+
+    st.caption(
+        "No Hugging Face token required."
+    )
