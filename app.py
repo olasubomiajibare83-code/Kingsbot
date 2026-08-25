@@ -1,885 +1,563 @@
-import base64
-import json
-import os
+import streamlit as st
+import requests
+import ast
+import operator as op
 import re
 from datetime import datetime
 
-import requests
-import streamlit as st
-
 
 # ============================================================
-# KINGSBOT AI
-# ============================================================
-
-APP_NAME = "KingsBot AI"
-
-HF_TOKEN = st.secrets.get("HF_TOKEN", "")
-
-CHAT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-
-WHISPER_MODEL = "openai/whisper-large-v3"
-
-TTS_MODEL = "facebook/mms-tts-eng"
-
-MEMORY_FILE = "kingsbot_memory.json"
-
-TODAY = datetime.now()
-CURRENT_DATE = TODAY.strftime("%B %d, %Y")
-CURRENT_YEAR = TODAY.year
-
-
-# ============================================================
-# PAGE
+# KINGSBOT
+# Full upgraded version - no API token required
 # ============================================================
 
 st.set_page_config(
-    page_title=APP_NAME,
+    page_title="KingsBot",
     page_icon="🤖",
-    layout="centered"
+    layout="centered",
+    initial_sidebar_state="expanded",
 )
 
 
 # ============================================================
-# MEMORY
+# SAFE CALCULATOR
 # ============================================================
 
-def default_memory():
-    return {
-        "name": None,
-        "education_level": None,
-        "facts": [],
-        "preferences": []
+BINARY_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.FloorDiv: op.floordiv,
+    ast.Mod: op.mod,
+    ast.Pow: op.pow,
+}
+
+UNARY_OPERATORS = {
+    ast.UAdd: op.pos,
+    ast.USub: op.neg,
+}
+
+
+def calculate(expression):
+    expression = expression.replace("^", "**").strip()
+
+    if len(expression) > 120:
+        raise ValueError("Expression is too long.")
+
+    tree = ast.parse(expression, mode="eval")
+
+    def solve(node):
+        if isinstance(node, ast.Expression):
+            return solve(node.body)
+
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ValueError("Invalid number.")
+
+        if isinstance(node, ast.BinOp):
+            operator_type = type(node.op)
+
+            if operator_type not in BINARY_OPERATORS:
+                raise ValueError("Operator not allowed.")
+
+            left = solve(node.left)
+            right = solve(node.right)
+
+            if operator_type is ast.Pow and abs(right) > 100:
+                raise ValueError("Power is too large.")
+
+            return BINARY_OPERATORS[operator_type](left, right)
+
+        if isinstance(node, ast.UnaryOp):
+            operator_type = type(node.op)
+
+            if operator_type not in UNARY_OPERATORS:
+                raise ValueError("Operator not allowed.")
+
+            return UNARY_OPERATORS[operator_type](
+                solve(node.operand)
+            )
+
+        raise ValueError("Invalid calculation.")
+
+    return solve(tree)
+
+
+def find_calculation(text):
+    value = text.strip()
+
+    prefixes = [
+        "calculate ",
+        "calc ",
+        "compute ",
+        "solve ",
+    ]
+
+    lower_value = value.lower()
+
+    for prefix in prefixes:
+        if lower_value.startswith(prefix):
+            value = value[len(prefix):].strip()
+            break
+
+    if re.fullmatch(r"[0-9+\-*/().%^ ]+", value):
+        return value
+
+    return None
+
+
+# ============================================================
+# LOCAL KNOWLEDGE
+# ============================================================
+
+def local_brain(question):
+    text = re.sub(
+        r"\s+",
+        " ",
+        question.strip().lower()
+    )
+
+    clean = text.rstrip("?!., ")
+
+    facts = {
+        "hello": "Hello! 👋 I am KingsBot. How can I help you?",
+        "hi": "Hi! 👋 I am KingsBot. What would you like to know?",
+        "hey": "Hey! 👋 I am ready to help.",
+        "who are you": "I am KingsBot, your personal AI assistant.",
+        "what is your name": "My name is KingsBot.",
+        "thank you": "You're welcome! 😊",
+        "thanks": "You're welcome! 😊",
+        "good morning": "Good morning! ☀️",
+        "good afternoon": "Good afternoon! 👋",
+        "good evening": "Good evening! 🌙",
+        "good night": "Good night! 🌙",
     }
 
+    if clean in facts:
+        return facts[clean]
 
-def load_memory():
-    data = default_memory()
+    if clean == "how are you":
+        return "I am working properly and ready to help you."
 
+    if "what can you do" in text:
+        return (
+            "I can answer questions, solve mathematics, "
+            "explain topics, search public information, "
+            "and read answers aloud."
+        )
+
+    if "capital of nigeria" in text:
+        return "The capital of Nigeria is Abuja."
+
+    if "capital of ghana" in text:
+        return "The capital of Ghana is Accra."
+
+    if "capital of kenya" in text:
+        return "The capital of Kenya is Nairobi."
+
+    if "capital of england" in text:
+        return "The capital of England is London."
+
+    if "capital of france" in text:
+        return "The capital of France is Paris."
+
+    if "largest planet" in text:
+        return "Jupiter is the largest planet in our Solar System."
+
+    if "smallest planet" in text:
+        return "Mercury is the smallest planet in our Solar System."
+
+    if "how many planets" in text:
+        return (
+            "There are eight officially recognized planets "
+            "in our Solar System."
+        )
+
+    if "speed of light" in text:
+        return (
+            "The speed of light in a vacuum is approximately "
+            "299,792,458 metres per second."
+        )
+
+    if "davido" in text:
+        return (
+            "Davido is a Nigerian singer, songwriter, "
+            "and record producer known for Afrobeats."
+        )
+
+    if "wizkid" in text:
+        return (
+            "Wizkid is a Nigerian singer and songwriter "
+            "known internationally for Afrobeats."
+        )
+
+    if "burna boy" in text:
+        return (
+            "Burna Boy is a Nigerian singer, songwriter, "
+            "and record producer."
+        )
+
+    if "elon musk" in text:
+        return (
+            "Elon Musk is a technology entrepreneur "
+            "associated with Tesla and SpaceX."
+        )
+
+    if "what time is it" in text or clean == "time":
+        current_time = datetime.now().strftime("%I:%M %p")
+        return "The current server time is " + current_time + "."
+
+    if (
+        "what date is it" in text
+        or clean == "today"
+        or "what day is it" in text
+    ):
+        current_date = datetime.now().strftime(
+            "%A, %B %d, %Y"
+        )
+        return "Today is " + current_date + "."
+
+    return None
+
+
+# ============================================================
+# WIKIPEDIA
+# ============================================================
+
+def wikipedia_search(question):
     try:
-        if os.path.exists(MEMORY_FILE):
-            with open(
-                MEMORY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
-                saved = json.load(file)
+        encoded = requests.utils.quote(
+            question.replace(" ", "_")
+        )
 
-            if isinstance(saved, dict):
-                for key in data:
-                    if key in saved:
-                        data[key] = saved[key]
+        url = (
+            "https://en.wikipedia.org/api/rest_v1/page/summary/"
+            + encoded
+        )
 
-    except Exception:
-        pass
+        response = requests.get(
+            url,
+            timeout=8,
+            headers={
+                "User-Agent": "KingsBot/2.0"
+            }
+        )
 
-    return data
+        if response.status_code != 200:
+            return None
 
+        data = response.json()
 
-def save_memory():
-    data = {
-        "name": st.session_state.name,
-        "education_level": st.session_state.education_level,
-        "facts": st.session_state.facts[-50:],
-        "preferences": st.session_state.preferences[-30:]
-    }
+        summary = data.get("extract")
 
-    try:
-        with open(
-            MEMORY_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
-            json.dump(
-                data,
-                file,
-                indent=2,
-                ensure_ascii=False
+        if summary:
+            title = data.get(
+                "title",
+                "Wikipedia"
+            )
+
+            return (
+                "According to Wikipedia, "
+                + title
+                + ":\n\n"
+                + summary
             )
 
     except Exception:
-        pass
-
-
-saved_memory = load_memory()
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-state_defaults = {
-    "messages": [],
-    "name": saved_memory["name"],
-    "education_level": saved_memory["education_level"],
-    "facts": saved_memory["facts"],
-    "preferences": saved_memory["preferences"],
-    "emotion": "neutral",
-    "tone": "Normal",
-    "topic": "general knowledge",
-    "confidence": "Medium",
-    "source": "KingsBot AI",
-    "reason": "Generated by KingsBot.",
-    "voice_enabled": True,
-    "auto_speak": True,
-    "voice_speed": "Normal",
-    "voice_language": "English",
-    "last_audio": None
-}
-
-for key, value in state_defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
-
-
-# ============================================================
-# API CHECK
-# ============================================================
-
-def api_headers():
-    return {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-
-def token_available():
-    return bool(
-        HF_TOKEN and
-        HF_TOKEN.strip()
-    )
-
-
-# ============================================================
-# MEMORY
-# ============================================================
-
-def remember_user_information(text):
-    name_match = re.search(
-        r"\b(?:my name is|call me)\s+([A-Za-z][A-Za-z '\-]{1,40})",
-        text,
-        re.IGNORECASE
-    )
-
-    if name_match:
-        st.session_state.name = (
-            name_match.group(1).strip()
-        )
-        save_memory()
-
-
-    fact_match = re.search(
-        r"\b(?:remember that|remember this|save this)\s*[:,-]?\s*(.+)",
-        text,
-        re.IGNORECASE
-    )
-
-    if fact_match:
-        fact = fact_match.group(1).strip()
-
-        if fact and fact not in st.session_state.facts:
-            st.session_state.facts.append(fact)
-
-        st.session_state.facts = (
-            st.session_state.facts[-50:]
-        )
-
-        save_memory()
-
-        return fact
+        return None
 
     return None
 
 
 # ============================================================
-# ETHICAL FORGETTING
+# DUCKDUCKGO
 # ============================================================
 
-def handle_forgetting(text):
-    low = text.lower()
-
-    if (
-        "forget everything" in low
-        or "forget all my memory" in low
-        or "delete all my memory" in low
-    ):
-        st.session_state.name = None
-        st.session_state.education_level = None
-        st.session_state.facts = []
-        st.session_state.preferences = []
-
-        save_memory()
-
-        return (
-            "Done. I cleared your saved personal memory."
-        )
-
-
-    if (
-        "forget my name" in low
-        or "delete my name" in low
-    ):
-        st.session_state.name = None
-
-        save_memory()
-
-        return (
-            "Done. I forgot your saved name."
-        )
-
-
-    if (
-        "forget my class" in low
-        or "forget my education level" in low
-    ):
-        st.session_state.education_level = None
-
-        save_memory()
-
-        return (
-            "Done. I forgot your saved education level."
-        )
-
-
-    return None
-
-
-# ============================================================
-# EDUCATION LEVELS
-# ============================================================
-
-EDUCATION_LEVELS = {
-    "Primary 1": ["primary 1", "primary one", "pry 1"],
-    "Primary 2": ["primary 2", "primary two", "pry 2"],
-    "Primary 3": ["primary 3", "primary three", "pry 3"],
-    "Primary 4": ["primary 4", "primary four", "pry 4"],
-    "Primary 5": ["primary 5", "primary five", "pry 5"],
-    "Primary 6": ["primary 6", "primary six", "pry 6"],
-    "JSS1": ["jss1", "jss 1", "jss one"],
-    "JSS2": ["jss2", "jss 2", "jss two"],
-    "JSS3": ["jss3", "jss 3", "jss three"],
-    "SS1": ["ss1", "ss 1", "ss one", "sss1", "sss 1"],
-    "SS2": ["ss2", "ss 2", "ss two", "sss2", "sss 2"],
-    "SS3": ["ss3", "ss 3", "ss three", "sss3", "sss 3"],
-    "University": [
-        "university",
-        "undergraduate",
-        "college"
-    ]
-}
-
-
-def detect_education_level(text):
-    low = text.lower()
-
-    for level, names in EDUCATION_LEVELS.items():
-        if any(name in low for name in names):
-            st.session_state.education_level = level
-            save_memory()
-            return level
-
-    return None
-
-
-# ============================================================
-# EMOTIONAL INTELLIGENCE
-# ============================================================
-
-def detect_emotion(text):
-    low = text.lower()
-
-    if any(
-        word in low
-        for word in [
-            "angry",
-            "mad",
-            "annoyed",
-            "frustrated",
-            "mistake",
-            "wrong"
-        ]
-    ):
-        return "frustrated"
-
-
-    if any(
-        word in low
-        for word in [
-            "sad",
-            "crying",
-            "hurt",
-            "upset"
-        ]
-    ):
-        return "sad"
-
-
-    if any(
-        word in low
-        for word in [
-            "confused",
-            "don't understand",
-            "do not understand"
-        ]
-    ):
-        return "confused"
-
-
-    if any(
-        word in low
-        for word in [
-            "worried",
-            "scared",
-            "afraid",
-            "nervous"
-        ]
-    ):
-        return "worried"
-
-
-    if any(
-        word in low
-        for word in [
-            "happy",
-            "great",
-            "awesome",
-            "thanks",
-            "thank you",
-            "yess"
-        ]
-    ):
-        return "happy"
-
-
-    return "neutral"
-
-
-# ============================================================
-# TONE ADAPTATION
-# ============================================================
-
-def choose_tone(emotion):
-    tones = {
-        "frustrated": "Calm",
-        "sad": "Supportive",
-        "confused": "Simple",
-        "worried": "Reassuring",
-        "happy": "Friendly",
-        "neutral": "Normal"
-    }
-
-    return tones.get(
-        emotion,
-        "Normal"
-    )
-
-
-def tone_instruction(tone):
-    instructions = {
-        "Normal": "Speak naturally and clearly.",
-        "Calm": "Be calm, patient, and direct.",
-        "Supportive": "Be warm and supportive.",
-        "Simple": "Explain things simply and step by step.",
-        "Reassuring": "Be reassuring and practical.",
-        "Friendly": "Be friendly and positive."
-    }
-
-    return instructions.get(
-        tone,
-        instructions["Normal"]
-    )
-
-
-# ============================================================
-# PATTERN RECOGNITION
-# ============================================================
-
-def detect_topic(text):
-    low = text.lower()
-
-    topics = {
-        "coding": [
-            "code",
-            "python",
-            "programming",
-            "streamlit",
-            "app"
-        ],
-        "mathematics": [
-            "math",
-            "calculate",
-            "equation",
-            "algebra",
-            "geometry",
-            "calculus"
-        ],
-        "science": [
-            "science",
-            "biology",
-            "chemistry",
-            "physics"
-        ],
-        "sports": [
-            "football",
-            "soccer",
-            "world cup",
-            "messi",
-            "fifa"
-        ],
-        "education": [
-            "school",
-            "class",
-            "jss",
-            "sss",
-            "primary",
-            "university"
-        ],
-        "history": [
-            "history",
-            "historical",
-            "war",
-            "empire"
-        ],
-        "geography": [
-            "country",
-            "capital",
-            "continent",
-            "geography"
-        ],
-        "technology": [
-            "technology",
-            "computer",
-            "phone",
-            "internet",
-            "ai"
-        ],
-        "entertainment": [
-            "movie",
-            "film",
-            "actor",
-            "music",
-            "song"
-        ]
-    }
-
-    for topic, words in topics.items():
-        if any(word in low for word in words):
-            return topic
-
-    return "general knowledge"
-
-
-# ============================================================
-# CURRENT INFORMATION LOOKUP
-# ============================================================
-
-def needs_current_information(text):
-    low = text.lower()
-
-    return any(
-        word in low
-        for word in [
-            "today",
-            "currently",
-            "right now",
-            "latest",
-            "recent",
-            "this year",
-            "this month",
-            "this week",
-            "2026",
-            "news"
-        ]
-    )
-
-
-def web_lookup(question):
+def duckduckgo_search(question):
     try:
         response = requests.get(
-            "https://en.wikipedia.org/w/api.php",
+            "https://api.duckduckgo.com/",
             params={
-                "action": "query",
-                "list": "search",
-                "srsearch": question,
+                "q": question,
                 "format": "json",
-                "utf8": "1",
-                "srlimit": 3
+                "no_html": "1",
+                "skip_disambig": "0",
             },
+            timeout=8,
             headers={
-                "User-Agent": "KingsBotAI/1.0"
-            },
-            timeout=8
+                "User-Agent": "KingsBot/2.0"
+            }
         )
 
-        response.raise_for_status()
+        if response.status_code != 200:
+            return None
 
-        results = (
-            response.json()
-            .get("query", {})
-            .get("search", [])
-        )
+        data = response.json()
 
-        information = []
+        abstract = data.get("AbstractText")
 
-        for result in results:
-            title = result.get("title")
-
-            if not title:
-                continue
-
-            try:
-                page = requests.get(
-                    "https://en.wikipedia.org/api/rest_v1/page/summary/"
-                    + requests.utils.quote(title),
-                    headers={
-                        "User-Agent": "KingsBotAI/1.0"
-                    },
-                    timeout=8
-                )
-
-                if page.ok:
-                    summary = page.json().get(
-                        "extract"
-                    )
-
-                    if summary:
-                        information.append(
-                            f"{title}: {summary}"
-                        )
-
-            except Exception:
-                continue
-
-        if information:
-            return "\n\n".join(
-                information[:3]
+        if abstract:
+            source = data.get(
+                "AbstractSource",
+                "DuckDuckGo"
             )
 
+            return (
+                abstract
+                + "\n\nSource: "
+                + source
+            )
+
+        definition = data.get("Definition")
+
+        if definition:
+            return definition
+
+        topics = data.get(
+            "RelatedTopics",
+            []
+        )
+
+        results = []
+
+        for item in topics:
+            if isinstance(item, dict):
+                value = item.get("Text")
+
+                if value:
+                    results.append(value)
+
+            if len(results) >= 3:
+                break
+
+        if results:
+            return "\n\n".join(results)
+
     except Exception:
-        pass
+        return None
 
     return None
 
 
 # ============================================================
-# SYSTEM PROMPT
+# MAIN BRAIN
 # ============================================================
 
-def build_system_prompt(retrieved):
-    memory_lines = []
+def get_answer(question):
+    question = question.strip()
 
-    if st.session_state.name:
-        memory_lines.append(
-            f"User's name: {st.session_state.name}"
-        )
+    if not question:
+        return "Please type a question."
 
-    if st.session_state.education_level:
-        memory_lines.append(
-            "Education level: "
-            + st.session_state.education_level
-        )
+    calculation = find_calculation(question)
 
-    for fact in st.session_state.facts[-20:]:
-        memory_lines.append(
-            "Saved fact: " + fact
-        )
+    if calculation:
+        try:
+            result = calculate(calculation)
 
-    if not memory_lines:
-        memory_lines.append(
-            "No personal memory is currently saved."
-        )
+            if isinstance(result, float):
+                if result.is_integer():
+                    result = int(result)
 
+            return (
+                "The answer is **"
+                + str(result)
+                + "**."
+            )
 
-    current_info = ""
+        except Exception:
+            pass
 
-    if retrieved:
-        current_info = (
-            "\nCURRENT RETRIEVED INFORMATION:\n"
-            + retrieved
-            + "\n"
-        )
+    local_answer = local_brain(question)
 
+    if local_answer:
+        return local_answer
 
-    return f"""
-You are KingsBot AI.
+    wiki_answer = wikipedia_search(question)
 
-CURRENT DATE:
-Today is {CURRENT_DATE}.
-The current year is {CURRENT_YEAR}.
-Treat 2026 as the present year when the current
-date is in 2026. Never incorrectly describe 2026
-as a future year.
+    if wiki_answer:
+        return wiki_answer
 
-GENERAL KNOWLEDGE:
-Answer questions about science, mathematics,
-history, geography, technology, computers,
-sports, entertainment, culture, languages,
-animals, space, education, and everyday life.
+    web_answer = duckduckgo_search(question)
 
-Do not invent facts.
-When you are uncertain, clearly say so.
+    if web_answer:
+        return web_answer
 
-PERSONAL MEMORY:
-{chr(10).join(memory_lines)}
-
-EDUCATION:
-Support every level from Primary 1 through
-Primary 6, JSS1 through JSS3, SS1 through SS3,
-and University.
-
-Use the user's education level when it helps,
-but do not make an advanced question childish.
-
-EMOTIONAL INTELLIGENCE:
-The detected emotion is:
-{st.session_state.emotion}
-
-TONE:
-Use this tone:
-{st.session_state.tone}
-
-{tone_instruction(st.session_state.tone)}
-
-PROACTIVE GLUE:
-Understand the user's goal and connect relevant
-parts of the conversation. Offer useful next steps
-only when genuinely relevant.
-
-PATTERN RECOGNITION:
-Current topic:
-{st.session_state.topic}
-
-Use recurring context only when it actually helps.
-
-MULTI-STEP REASONING:
-For difficult questions, solve the problem carefully,
-check the result, and explain the useful steps.
-Do not reveal private chain-of-thought.
-
-RADICAL TRANSPARENCY:
-Never pretend to know something you do not know.
-Distinguish between model knowledge, retrieved
-information, and calculated answers.
-
-CODING:
-Check syntax, indentation, imports, and logic.
-Give complete code when the user requests complete code.
-
-MATHEMATICS:
-Check calculations carefully.
-
-VOICE:
-Write natural conversational answers that sound good
-when spoken aloud.
-
-{current_info}
-
-Answer the user's question directly.
-"""
-
-
-# ============================================================
-# CHAT API
-# ============================================================
-
-def ask_ai(user_text, retrieved=None):
-    if not token_available():
-        return (
-            "KingsBot's AI brain is not connected yet. "
-            "Add your Hugging Face token as HF_TOKEN "
-            "in your Space Secrets, then restart the app."
-        )
-
-
-    system_prompt = build_system_prompt(
-        retrieved
+    return (
+        "I could not find a reliable answer to that "
+        "right now. Try asking the question another way."
     )
 
 
-    messages = [
+# ============================================================
+# VOICE OUTPUT
+# ============================================================
+
+def speak_text(text):
+    clean_text = text.replace("**", "")
+    clean_text = clean_text.replace("`", "")
+    clean_text = clean_text.replace("\n", " ")
+
+    javascript_text = repr(clean_text)
+
+    html_code = """
+<script>
+const message = %s;
+
+if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+
+    const speech = new SpeechSynthesisUtterance(message);
+
+    speech.rate = 1.0;
+    speech.pitch = 1.0;
+    speech.volume = 1.0;
+
+    window.speechSynthesis.speak(speech);
+}
+</script>
+""" % javascript_text
+
+    st.components.v1.html(
+        html_code,
+        height=0
+    )
+
+
+# ============================================================
+# SESSION MEMORY
+# ============================================================
+
+if "messages" not in st.session_state:
+    st.session_state.messages = [
         {
-            "role": "system",
-            "content": system_prompt
+            "role": "assistant",
+            "content": (
+                "Hello! 👋 I am KingsBot. "
+                "I am ready to answer your questions."
+            )
         }
     ]
 
 
-    messages.extend(
-        st.session_state.messages[-12:]
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = True
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.title("⚙️ KingsBot")
+
+    st.session_state.voice_enabled = st.toggle(
+        "🔊 Voice answers",
+        value=st.session_state.voice_enabled
+    )
+
+    st.divider()
+
+    st.subheader("🧠 Capabilities")
+
+    st.write("• General knowledge")
+    st.write("• Mathematics")
+    st.write("• Explanations")
+    st.write("• Wikipedia")
+    st.write("• Public web information")
+    st.write("• Conversation memory")
+    st.write("• Voice answers")
+
+    st.divider()
+
+    if st.button(
+        "🗑️ Clear conversation",
+        use_container_width=True
+    ):
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": (
+                    "Conversation cleared. "
+                    "What would you like to ask?"
+                )
+            }
+        ]
+
+        st.rerun()
+
+    st.divider()
+
+    st.info(
+        "No API token is required for this version."
     )
 
 
-    messages.append(
+# ============================================================
+# MAIN SCREEN
+# ============================================================
+
+st.title("🤖 KingsBot")
+
+st.caption(
+    "Your personal AI assistant"
+)
+
+
+# ============================================================
+# DISPLAY CHAT
+# ============================================================
+
+for message in st.session_state.messages:
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
+        )
+
+
+# ============================================================
+# USER INPUT
+# ============================================================
+
+prompt = st.chat_input(
+    "Message KingsBot..."
+)
+
+
+if prompt:
+
+    st.session_state.messages.append(
         {
             "role": "user",
-            "content": user_text
+            "content": prompt
         }
     )
 
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    payload = {
-        "model": CHAT_MODEL,
-        "messages": messages,
-        "temperature": 0.6,
-        "max_tokens": 700
-    }
+    with st.chat_message("assistant"):
 
+        with st.spinner(
+            "KingsBot is thinking..."
+        ):
+            answer = get_answer(prompt)
 
-    try:
-        response = requests.post(
-            "https://router.huggingface.co/v1/chat/completions",
-            headers=api_headers(),
-            json=payload,
-            timeout=90
-        )
+        st.markdown(answer)
 
-        response.raise_for_status()
+        if st.session_state.voice_enabled:
+            speak_text(answer)
 
-        data = response.json()
-
-        answer = (
-            data["choices"][0]["message"]["content"]
-            .strip()
-        )
-
-        if retrieved:
-            st.session_state.source = (
-                "AI model + retrieved information"
-            )
-            st.session_state.confidence = "Medium-High"
-            st.session_state.reason = (
-                "The answer used additional retrieved information."
-            )
-        else:
-            st.session_state.source = (
-                "AI model + memory + conversation"
-            )
-            st.session_state.confidence = "Medium"
-            st.session_state.reason = (
-                "The answer was generated by the AI model "
-                "using conversation and saved memory."
-            )
-
-        return answer
-
-    except requests.exceptions.Timeout:
-        st.session_state.confidence = "Low"
-        st.session_state.reason = (
-            "The AI service took too long to respond."
-        )
-
-        return (
-            "The AI service took too long to respond. "
-            "Please try again."
-        )
-
-    except requests.exceptions.HTTPError as exc:
-        st.session_state.confidence = "Low"
-        st.session_state.reason = (
-            "The AI service returned an HTTP error."
-        )
-
-        try:
-            details = response.json()
-        except Exception:
-            details = str(exc)
-
-        return (
-            "The AI service returned an error.\n\n"
-            + str(details)
-        )
-
-    except Exception as exc:
-        st.session_state.confidence = "Low"
-        st.session_state.reason = (
-            "An unexpected error occurred."
-        )
-
-        return (
-            "KingsBot encountered an error:\n\n"
-            + str(exc)
-        )
-
-
-# ============================================================
-# VOICE TO TEXT
-# ============================================================
-
-def speech_to_text(audio_file):
-    if not token_available():
-        return None, (
-            "Voice recognition needs your Hugging Face token."
-        )
-
-
-    try:
-        audio_bytes = audio_file.getvalue()
-
-        response = requests.post(
-            f"https://router.huggingface.co/hf-inference/models/{WHISPER_MODEL}",
-            headers={
-                "Authorization": f"Bearer {HF_TOKEN}",
-                "Content-Type": "audio/wav"
-            },
-            data=audio_bytes,
-            timeout=90
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if isinstance(data, dict):
-            text = data.get("text")
-
-            if text:
-                return text.strip(), None
-
-        return None, "I couldn't understand the recording."
-
-    except Exception as exc:
-        return None, (
-            "Voice recognition failed: "
-            + str(exc)
-        )
-
-
-# ============================================================
-# TEXT TO SPEECH
-# ============================================================
-
-def text_to_speech(text):
-    if not token_available():
-        return None
-
-
-    try:
-        response = requests.post(
-            f"https://router.huggingface.co/hf-inference/models/{TTS_MODEL}",
-            headers={
-                "Authorization": f"Bearer {HF_TOKEN}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "inputs": text[:3000]
-            },
-            timeout=90
-        )
-
-        response.raise_for_status()
-
-        return response.content
-
-    except Exception:
-        return None
-
-
-# ============================================================
-# CONVERSATION DOWNLOAD
-# ============================================================
-
-def conversation_file():
-    lines = [
-        "KINGSBOT AI CONVERSATION",
-        "=" * 50,
-        f"Dat
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": answer
+        }
+    )
