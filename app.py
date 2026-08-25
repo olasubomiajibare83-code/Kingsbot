@@ -1,629 +1,553 @@
 import streamlit as st
 import requests
+import re
+import ast
+import operator as op
 import html
-import base64
-
+import json
+import urllib.parse
+import random
+from datetime import datetime
 
 # ============================================================
-# PAGE CONFIGURATION
+# KINGSBOT — NO TOKEN VERSION
 # ============================================================
 
 st.set_page_config(
-    page_title="My AI",
+    page_title="Kingsbot",
     page_icon="🤖",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-
 # ============================================================
-# CUSTOM DESIGN
+# STYLE
 # ============================================================
 
-st.markdown(
-    """
-    <style>
+st.markdown("""
+<style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 
     .stApp {
-        background: #212121;
-        color: white;
+        background: #ffffff;
     }
 
     .block-container {
-        max-width: 1000px;
-        padding-top: 2rem;
-        padding-bottom: 5rem;
+        max-width: 900px;
+        padding-top: 1rem;
+        padding-bottom: 6rem;
     }
 
     .title {
         text-align: center;
-        font-size: 38px;
+        font-size: 32px;
         font-weight: 700;
-        color: #10a37f;
-        margin-bottom: 5px;
+        margin-bottom: 4px;
     }
 
     .subtitle {
         text-align: center;
-        color: #999;
-        margin-bottom: 30px;
+        color: #777;
+        margin-bottom: 25px;
     }
 
-    .user-box {
-        background: #343541;
-        border-radius: 12px;
-        padding: 15px;
+    .bot-message {
+        background: #f1f1f1;
+        padding: 14px 18px;
+        border-radius: 18px;
         margin: 10px 0;
+        line-height: 1.5;
     }
 
-    .ai-box {
-        background: #2a2a2a;
-        border-left: 4px solid #10a37f;
-        border-radius: 12px;
-        padding: 15px;
-        margin: 10px 0 20px;
+    .user-message {
+        background: #e8f0fe;
+        padding: 14px 18px;
+        border-radius: 18px;
+        margin: 10px 0;
+        line-height: 1.5;
     }
 
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# ============================================================
-# HUGGING FACE TOKEN
-# ============================================================
-
-try:
-    HF_TOKEN = st.secrets["HF_TOKEN"]
-except Exception:
-    HF_TOKEN = ""
-
-
-# ============================================================
-# AI MODEL
-# ============================================================
-
-MODEL = "deepseek-ai/DeepSeek-V3-0324"
-
-CHAT_URL = "https://router.huggingface.co/v1/chat/completions"
-
-WHISPER_URL = (
-    "https://router.huggingface.co/"
-    "hf-inference/models/openai/whisper-large-v3"
-)
-
-
-# ============================================================
-# AI SYSTEM PROMPT
-# ============================================================
-
-SYSTEM_PROMPT = """
-You are My AI.
-
-You are a helpful, intelligent, friendly general-purpose AI assistant.
-
-You can help with:
-
-- General knowledge
-- Mathematics
-- Science
-- History
-- Geography
-- Programming
-- Computer science
-- Website development
-- AI development
-- Game development
-- Writing
-- Rewriting
-- Summarizing
-- Translation
-- Learning
-- Explanations
-- Brainstorming
-- Problem solving
-- Creative work
-- Everyday questions
-
-Behavior:
-
-1. Give accurate and useful answers.
-2. Never intentionally invent facts.
-3. If you are uncertain, say that you are uncertain.
-4. Solve mathematics carefully.
-5. Show mathematical steps when useful.
-6. Write clean, working code.
-7. Explain difficult subjects clearly.
-8. Remember information from the conversation supplied to you.
-9. Be friendly and natural.
-10. Do not claim to have searched the internet unless a search tool was actually used.
-11. If the user asks for current information and you do not have live web access, say that clearly.
-"""
-
+    .small {
+        color: #777;
+        font-size: 13px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ============================================================
 # SESSION MEMORY
 # ============================================================
 
 if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    st.session_state.messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        }
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = True
+
+if "bot_name" not in st.session_state:
+    st.session_state.bot_name = "Kingsbot"
+
+if "temperature" not in st.session_state:
+    st.session_state.temperature = 0.7
+
+# ============================================================
+# SAFE MATH CALCULATOR
+# ============================================================
+
+allowed_operators = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.Mod: op.mod,
+    ast.USub: op.neg,
+    ast.UAdd: op.pos,
+    ast.FloorDiv: op.floordiv,
+}
+
+
+def safe_math(expression):
+    try:
+        expression = expression.replace("^", "**")
+        expression = expression.replace("×", "*")
+        expression = expression.replace("÷", "/")
+
+        tree = ast.parse(expression, mode="eval")
+
+        def calculate(node):
+            if isinstance(node, ast.Expression):
+                return calculate(node.body)
+
+            if isinstance(node, ast.Constant):
+                if isinstance(node.value, (int, float)):
+                    return node.value
+                raise ValueError()
+
+            if isinstance(node, ast.BinOp):
+                left = calculate(node.left)
+                right = calculate(node.right)
+
+                operator_type = type(node.op)
+
+                if operator_type not in allowed_operators:
+                    raise ValueError()
+
+                return allowed_operators[operator_type](left, right)
+
+            if isinstance(node, ast.UnaryOp):
+                value = calculate(node.operand)
+                operator_type = type(node.op)
+
+                if operator_type not in allowed_operators:
+                    raise ValueError()
+
+                return allowed_operators[operator_type](value)
+
+            raise ValueError()
+
+        result = calculate(tree)
+
+        if isinstance(result, float) and result.is_integer():
+            return str(int(result))
+
+        return str(round(result, 10))
+
+    except Exception:
+        return None
+
+
+def looks_like_math(text):
+    text = text.lower().strip()
+
+    patterns = [
+        r"^[0-9\s\+\-\*\/\(\)\.\%\^\×\÷]+$",
+        r"^what is [0-9\s\+\-\*\/\(\)\.\%\^\×\÷]+$",
+        r"^calculate [0-9\s\+\-\*\/\(\)\.\%\^\×\÷]+$",
+        r"^solve [0-9\s\+\-\*\/\(\)\.\%\^\×\÷]+$"
     ]
 
-
-# ============================================================
-# LAST AI RESPONSE
-# ============================================================
-
-if "last_ai_response" not in st.session_state:
-    st.session_state.last_ai_response = ""
+    return any(re.match(pattern, text) for pattern in patterns)
 
 
 # ============================================================
-# SIDEBAR
+# LOCAL KNOWLEDGE
+# ============================================================
+
+knowledge = {
+    "who are you": "I'm Kingsbot, your AI assistant. I can chat with you, solve maths, answer questions, and use your microphone and speaker when voice mode is available.",
+
+    "what is your name": "My name is Kingsbot.",
+
+    "who made you": "I'm Kingsbot, a chatbot built using Streamlit.",
+
+    "hello": "Hello! 👋 I'm Kingsbot. How are you doing?",
+
+    "hi": "Hi! 👋 What would you like to talk about?",
+
+    "hey": "Hey! 😎 I'm here. What can I help you with?",
+
+    "how are you": "I'm doing great and ready to chat with you!",
+
+    "what can you do": "I can chat with you, remember our conversation while the app is open, solve many maths expressions, answer common questions, and support voice input and spoken replies.",
+
+    "what is ai": "AI means artificial intelligence. It is technology that allows computers to perform tasks that normally require human intelligence, such as understanding language, recognizing images, solving problems, and making predictions.",
+
+    "what is artificial intelligence": "Artificial intelligence is the field of creating computer systems that can perform tasks involving learning, reasoning, language, perception, and decision-making.",
+
+    "what is python": "Python is a popular programming language known for being relatively easy to learn and useful for web apps, automation, data science, and artificial intelligence.",
+
+    "what is streamlit": "Streamlit is a Python framework that makes it easy to build interactive web applications, especially for data and AI projects.",
+
+    "what is huggging face": "Hugging Face is a platform and community for machine-learning models, datasets, and AI tools.",
+
+    "what is hugging face": "Hugging Face is a platform and community for machine-learning models, datasets, and AI tools.",
+
+    "what is nigeria": "Nigeria is a country in West Africa. Its capital is Abuja and Lagos is its largest city.",
+
+    "capital of nigeria": "The capital of Nigeria is Abuja.",
+
+    "largest city in nigeria": "Lagos is the largest city in Nigeria.",
+
+    "capital of ghana": "The capital of Ghana is Accra.",
+
+    "capital of uk": "The capital of the United Kingdom is London.",
+
+    "capital of england": "London is the capital of England.",
+
+    "capital of france": "The capital of France is Paris.",
+
+    "capital of usa": "Washington, D.C. is the capital of the United States.",
+
+    "capital of america": "Washington, D.C. is the capital of the United States.",
+
+    "who is davido": "Davido is a Nigerian Afrobeats singer and songwriter.",
+
+    "who is wizkid": "Wizkid is a Nigerian singer and songwriter known internationally for Afrobeats.",
+
+    "who is burna boy": "Burna Boy is a Nigerian singer and songwriter known for Afrofusion and Afrobeats.",
+
+    "what is football": "Football is a team sport where players try to score by putting a ball into the opposing team's goal.",
+
+    "what is soccer": "Soccer, also called football in many countries, is a sport played between two teams that try to score goals.",
+
+    "good morning": "Good morning! ☀️ I hope you're having a great day.",
+
+    "good afternoon": "Good afternoon! ☀️ What can Kingsbot help you with?",
+
+    "good evening": "Good evening! 🌙 What would you like to talk about?",
+
+    "thank you": "You're welcome! 😊",
+
+    "thanks": "You're welcome! 😊",
+
+    "bye": "Goodbye! 👋 Come back whenever you want to chat.",
+
+    "goodbye": "Goodbye! 👋 See you next time."
+}
+
+# ============================================================
+# RESPONSE ENGINE
+# ============================================================
+
+def get_response(user_text):
+
+    original = user_text.strip()
+    text = original.lower().strip()
+
+    # Empty input
+    if not text:
+        return "I'm listening. What would you like to say?"
+
+    # --------------------------------------------------------
+    # MATH
+    # --------------------------------------------------------
+
+    math_text = text
+
+    for prefix in [
+        "what is ",
+        "calculate ",
+        "solve ",
+        "answer ",
+        "compute "
+    ]:
+        if math_text.startswith(prefix):
+            math_text = math_text[len(prefix):].strip()
+
+    if looks_like_math(text) or re.match(
+        r"^[0-9\s\+\-\*\/\(\)\.\%\^\×\÷]+$",
+        math_text
+    ):
+        result = safe_math(math_text)
+
+        if result is not None:
+            return f"The answer is **{result}**."
+
+    # --------------------------------------------------------
+    # TIME
+    # --------------------------------------------------------
+
+    if "what time" in text or text == "time":
+        return f"The current time on this app's server is {datetime.now().strftime('%I:%M %p')}."
+
+    # --------------------------------------------------------
+    # DATE
+    # --------------------------------------------------------
+
+    if "what date" in text or "today's date" in text:
+        return f"Today's date is {datetime.now().strftime('%B %d, %Y')}."
+
+    # --------------------------------------------------------
+    # MEMORY
+    # --------------------------------------------------------
+
+    if "what did i say" in text:
+        previous_user_messages = [
+            m["content"]
+            for m in st.session_state.messages
+            if m["role"] == "user"
+        ]
+
+        if len(previous_user_messages) >= 2:
+            return f"You previously said: **{previous_user_messages[-2]}**"
+
+        return "We haven't talked enough yet for me to recall an earlier message."
+
+    # --------------------------------------------------------
+    # KNOWLEDGE MATCH
+    # --------------------------------------------------------
+
+    if text in knowledge:
+        return knowledge[text]
+
+    # Partial knowledge matching
+    for question, answer in knowledge.items():
+        if question in text:
+            return answer
+
+    # --------------------------------------------------------
+    # SIMPLE PATTERNS
+    # --------------------------------------------------------
+
+    if "your name" in text:
+        return "I'm Kingsbot. 🤖"
+
+    if "who is" in text:
+        person = text.replace("who is", "").strip()
+
+        if person:
+            return (
+                f"I don't have detailed information about **{person}** "
+                "in my offline knowledge yet."
+            )
+
+    if text.startswith("tell me about"):
+        topic = text.replace("tell me about", "").strip()
+
+        return (
+            f"I can help with **{topic}**, but my current no-token brain "
+            "uses local knowledge rather than a live AI model."
+        )
+
+    if "joke" in text:
+        jokes = [
+            "Why did the computer go to the doctor? Because it had a virus! 😂",
+            "Why was the computer cold? It left its Windows open! 😂",
+            "What do computers eat? Microchips! 😄"
+        ]
+        return random.choice(jokes)
+
+    # --------------------------------------------------------
+    # FALLBACK
+    # --------------------------------------------------------
+
+    return (
+        "I understand what you're asking, but my current brain works "
+        "without an external AI model, so my knowledge is limited. "
+        "Try asking me a maths question, a common general question, "
+        "or something from my built-in knowledge."
+    )
+
+
+# ============================================================
+# JAVASCRIPT VOICE OUTPUT
+# ============================================================
+
+def speak_text(text):
+    safe_text = html.escape(
+        re.sub(r"[*_`#]", "", text)
+    )
+
+    js = f"""
+    <script>
+    const text = {json.dumps(re.sub(r'[*_`#]', '', text))};
+
+    if ('speechSynthesis' in window) {{
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        window.speechSynthesis.speak(utterance);
+    }}
+    </script>
+    """
+
+    st.components.v1.html(js, height=0)
+
+
+# ============================================================
+# SIDEBAR / SETTINGS
 # ============================================================
 
 with st.sidebar:
 
-    st.title("🤖 My AI")
+    st.markdown("## ⚙️ Settings")
 
-    st.write("Your personal AI assistant")
+    st.session_state.bot_name = st.text_input(
+        "Bot name",
+        value=st.session_state.bot_name
+    )
+
+    st.session_state.voice_enabled = st.toggle(
+        "🔊 Voice replies",
+        value=st.session_state.voice_enabled
+    )
+
+    st.session_state.temperature = st.slider(
+        "Response style",
+        min_value=0.0,
+        max_value=1.0,
+        value=st.session_state.temperature,
+        step=0.1
+    )
 
     st.divider()
 
-    if st.button(
-        "🆕 New chat",
-        use_container_width=True
-    ):
-
-        st.session_state.messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            }
-        ]
-
-        st.session_state.last_ai_response = ""
-
+    if st.button("🗑️ Clear conversation", use_container_width=True):
+        st.session_state.messages = []
         st.rerun()
 
-
     st.divider()
 
-    st.subheader("Abilities")
-
-    st.write("🧠 Real AI")
-    st.write("🧮 Mathematics")
-    st.write("💻 Programming")
-    st.write("📚 Learning")
-    st.write("✍️ Writing")
-    st.write("🎤 Voice input")
-    st.write("🔊 Voice output")
+    st.caption(
+        "Kingsbot is running in no-token mode. "
+        "Its brain is local and does not require an API key."
+    )
 
 
 # ============================================================
-# TITLE
+# HEADER
 # ============================================================
 
 st.markdown(
-    '<div class="title">🤖 My AI</div>',
+    f'<div class="title">🤖 {html.escape(st.session_state.bot_name)}</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="subtitle">'
-    'Talk to your AI assistant'
-    '</div>',
+    '<div class="subtitle">Your personal AI assistant</div>',
     unsafe_allow_html=True
 )
 
-
 # ============================================================
-# AI REQUEST FUNCTION
-# ============================================================
-
-def ask_ai(messages):
-
-    if not HF_TOKEN:
-
-        return (
-            "⚠️ My AI is not connected yet.\n\n"
-            "Please add your Hugging Face token as "
-            "HF_TOKEN in your app Secrets."
-        )
-
-
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 2048
-    }
-
-
-    try:
-
-        response = requests.post(
-            CHAT_URL,
-            headers=headers,
-            json=payload,
-            timeout=120
-        )
-
-
-        if response.status_code != 200:
-
-            return (
-                "❌ The AI service returned an error.\n\n"
-                f"HTTP {response.status_code}\n\n"
-                f"{response.text}"
-            )
-
-
-        data = response.json()
-
-
-        choices = data.get("choices", [])
-
-
-        if not choices:
-
-            return (
-                "❌ The AI returned no answer."
-            )
-
-
-        message = choices[0].get(
-            "message",
-            {}
-        )
-
-
-        answer = message.get(
-            "content",
-            ""
-        )
-
-
-        if not answer:
-
-            return (
-                "❌ The AI returned an empty answer."
-            )
-
-
-        return answer
-
-
-    except requests.exceptions.Timeout:
-
-        return (
-            "⏳ The AI took too long to respond. "
-            "Please try again."
-        )
-
-
-    except requests.exceptions.RequestException as error:
-
-        return (
-            "❌ I couldn't connect to the AI service.\n\n"
-            f"{error}"
-        )
-
-
-    except Exception as error:
-
-        return (
-            "❌ Something went wrong.\n\n"
-            f"{error}"
-        )
-
-
-# ============================================================
-# DISPLAY CHAT
+# CHAT HISTORY
 # ============================================================
 
 for message in st.session_state.messages:
 
-    if message["role"] == "system":
-        continue
-
-
     if message["role"] == "user":
 
-        safe_text = html.escape(
-            message["content"]
-        )
-
         st.markdown(
             f"""
-            <div class="user-box">
-                <b>👤 You</b><br><br>
-                {safe_text}
+            <div class="user-message">
+                <b>You</b><br>
+                {html.escape(message["content"])}
             </div>
             """,
             unsafe_allow_html=True
         )
 
-
-    elif message["role"] == "assistant":
-
-        safe_text = html.escape(
-            message["content"]
-        )
+    else:
 
         st.markdown(
             f"""
-            <div class="ai-box">
-                <b>🤖 My AI</b><br><br>
-                {safe_text}
+            <div class="bot-message">
+                <b>🤖 {html.escape(st.session_state.bot_name)}</b><br>
+                {message["content"]}
             </div>
             """,
             unsafe_allow_html=True
         )
-
-
-# ============================================================
-# TEXT CHAT
-# ============================================================
-
-user_message = st.chat_input(
-    "Message My AI..."
-)
-
-
-if user_message:
-
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": user_message
-        }
-    )
-
-
-    with st.spinner("🧠 Thinking..."):
-
-        answer = ask_ai(
-            st.session_state.messages
-        )
-
-
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": answer
-        }
-    )
-
-
-    st.session_state.last_ai_response = answer
-
-    st.rerun()
 
 
 # ============================================================
 # VOICE INPUT
 # ============================================================
 
-st.divider()
+st.markdown("### 🎤 Voice")
 
-st.subheader("🎤 Talk to My AI")
-
-audio = st.audio_input(
-    "Press the microphone and speak",
-    sample_rate=16000,
-    key="voice_input"
+audio_value = st.audio_input(
+    "Talk to Kingsbot"
 )
 
+if audio_value is not None:
 
-if audio:
-
-    st.audio(audio)
-
-
-    if not HF_TOKEN:
-
-        st.warning(
-            "⚠️ Add HF_TOKEN to your Secrets first."
-        )
-
-    else:
-
-        if st.button(
-            "🧠 Understand my voice",
-            key="process_voice"
-        ):
-
-            with st.spinner(
-                "🎧 Understanding your voice..."
-            ):
-
-                try:
-
-                    audio_bytes = audio.getvalue()
-
-
-                    headers = {
-                        "Authorization":
-                            f"Bearer {HF_TOKEN}"
-                    }
-
-
-                    speech_response = requests.post(
-                        WHISPER_URL,
-                        headers=headers,
-                        data=audio_bytes,
-                        timeout=120
-                    )
-
-
-                    if speech_response.status_code != 200:
-
-                        st.error(
-                            "❌ Speech recognition failed.\n\n"
-                            + speech_response.text
-                        )
-
-                    else:
-
-                        speech_data = (
-                            speech_response.json()
-                        )
-
-
-                        spoken_text = (
-                            speech_data
-                            .get("text", "")
-                            .strip()
-                        )
-
-
-                        if not spoken_text:
-
-                            st.warning(
-                                "I couldn't understand "
-                                "the recording."
-                            )
-
-                        else:
-
-                            st.success(
-                                "You said: "
-                                + spoken_text
-                            )
-
-
-                            st.session_state.messages.append(
-                                {
-                                    "role": "user",
-                                    "content": spoken_text
-                                }
-                            )
-
-
-                            with st.spinner(
-                                "🧠 My AI is thinking..."
-                            ):
-
-                                answer = ask_ai(
-                                    st.session_state.messages
-                                )
-
-
-                            st.session_state.messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": answer
-                                }
-                            )
-
-
-                            st.session_state.last_ai_response = (
-                                answer
-                            )
-
-
-                            st.rerun()
-
-
-                except requests.exceptions.Timeout:
-
-                    st.error(
-                        "⏳ Voice processing timed out."
-                    )
-
-
-                except requests.exceptions.RequestException as error:
-
-                    st.error(
-                        "❌ Network error:\n\n"
-                        + str(error)
-                    )
-
-
-                except Exception as error:
-
-                    st.error(
-                        "❌ Voice error:\n\n"
-                        + str(error)
-                    )
+    st.info(
+        "Your microphone recording was received. "
+        "This no-token version does not contain a speech-to-text AI model, "
+        "so type the message below for now."
+    )
 
 
 # ============================================================
-# VOICE OUTPUT
+# TEXT INPUT
 # ============================================================
 
-if st.session_state.last_ai_response:
+user_input = st.chat_input(
+    "Message Kingsbot..."
+)
 
-    st.divider()
+if user_input:
 
-    st.subheader("🔊 My AI can speak")
+    # Add user message
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": user_input
+        }
+    )
 
-    if st.button(
-        "🔊 Speak latest answer",
-        key="speak_answer"
-    ):
+    # Generate response
+    response = get_response(user_input)
 
-        text = st.session_state.last_ai_response
+    # Add bot response
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": response
+        }
+    )
 
-        escaped_text = (
-            text
-            .replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
-        )
-
-
-        speech_html = f"""
-        <script>
-
-        const text = `{escaped_text}`;
-
-        if ("speechSynthesis" in window) {{
-
-            window.speechSynthesis.cancel();
-
-            const speech =
-                new SpeechSynthesisUtterance(text);
-
-            speech.lang = "en-US";
-            speech.rate = 1;
-            speech.pitch = 1;
-
-            window.speechSynthesis.speak(speech);
-
-        }}
-
-        </script>
-        """
-
-
-        st.components.v1.html(
-            speech_html,
-            height=1
-        )
-
-
-        st.success(
-            "🔊 Speaking..."
-        )
+    # Refresh
+    st.rerun()
 
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.caption(
-    "My AI • Real AI model + voice input + voice output"
-)
+st.markdown(
+    """
+    <div style="text-align:center; margin-top:30px;"
+         class="small">
+        Kingsbot • No API token required
+    </div>
+    """,
+    unsafe_allow_html=True
+)    
