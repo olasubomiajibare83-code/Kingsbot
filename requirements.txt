@@ -1,2 +1,8 @@
 streamlit
 requests
+torch
+transformers
+accelerate
+sentencepiece
+SpeechRecognition
+gTTS
