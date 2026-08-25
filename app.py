@@ -1,140 +1,152 @@
-                        
   import streamlit as st
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+from transformers import pipeline
+
+# -----------------------------
+# PAGE SETTINGS
+# -----------------------------
 
 st.set_page_config(
     page_title="KingsBot AI",
-    page_icon="🧠",
+    page_icon="🤖",
     layout="centered"
 )
 
+st.title("🤖 KingsBot AI")
+st.caption("Your AI assistant with a real language model")
+
+
 # -----------------------------
-# AI MODEL
+# LOAD THE AI MODEL
 # -----------------------------
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
 @st.cache_resource
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        torch_dtype=torch.float32
+    return pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct"
     )
 
-    return tokenizer, model
-
 
 # -----------------------------
-# LOAD BRAIN
+# START MODEL
 # -----------------------------
+
 with st.spinner("🧠 KingsBot is loading its brain..."):
-    tokenizer, model = load_model()
+    try:
+        generator = load_model()
+        model_ready = True
+    except Exception as error:
+        model_ready = False
+        st.error("The AI model could not be loaded.")
+        st.code(str(error))
 
 
 # -----------------------------
-# PAGE
+# CHAT MEMORY
 # -----------------------------
-st.title("🧠 KingsBot AI")
-st.caption("Your personal AI assistant")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
 # -----------------------------
-# SHOW CHAT
+# DISPLAY OLD MESSAGES
 # -----------------------------
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
 
 # -----------------------------
+# CLEAR CHAT BUTTON
+# -----------------------------
+
+if st.button("🗑️ Clear Chat"):
+    st.session_state.messages = []
+    st.rerun()
+
+
+# -----------------------------
 # CHAT INPUT
 # -----------------------------
-user_text = st.chat_input("Ask KingsBot anything...")
 
-if user_text:
+user_message = st.chat_input("Talk to KingsBot...")
 
-    # Show user message
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_text
-    })
 
+if user_message and model_ready:
+
+    # Save user's message
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": user_message
+        }
+    )
+
+    # Display user's message
     with st.chat_message("user"):
-        st.write(user_text)
+        st.write(user_message)
 
-    # Prepare conversation
-    messages = [
+    # Keep recent conversation
+    recent_messages = st.session_state.messages[-10:]
+
+    # System instruction
+    messages_for_model = [
         {
             "role": "system",
             "content": (
-                "You are KingsBot, a helpful, intelligent AI assistant. "
+                "You are KingsBot, a helpful, friendly AI assistant. "
                 "Answer questions clearly and naturally. "
-                "Help with mathematics, science, coding, history, "
-                "technology, general knowledge and everyday questions. "
-                "If you don't know something, say so instead of making it up."
+                "If you do not know something, say that you are not sure. "
+                "Do not pretend to know information you do not know."
             )
         }
     ]
 
-    messages.extend(st.session_state.messages)
+    messages_for_model.extend(recent_messages)
 
-    # Convert conversation to model input
-    prompt = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True
-    )
-
-    inputs = tokenizer(
-        prompt,
-        return_tensors="pt"
-    )
-
-    # Generate answer
+    # Generate AI response
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("🧠 Thinking..."):
 
-            with torch.no_grad():
-                output = model.generate(
-                    **inputs,
-                    max_new_tokens=300,
+            try:
+                result = generator(
+                    messages_for_model,
+                    max_new_tokens=256,
+                    do_sample=True,
                     temperature=0.7,
-                    top_p=0.9,
-                    do_sample=True
+                    top_p=0.9
                 )
 
-            # Remove the original prompt
-            generated_tokens = output[0][inputs["input_ids"].shape[1]:]
+                generated = result[0]["generated_text"]
 
-            answer = tokenizer.decode(
-                generated_tokens,
-                skip_special_tokens=True
-            ).strip()
+                # Chat models return a list of messages
+                if isinstance(generated, list):
+                    assistant_messages = [
+                        message
+                        for message in generated
+                        if message.get("role") == "assistant"
+                    ]
 
-            if not answer:
-                answer = "I'm sorry, I couldn't generate an answer."
+                    if assistant_messages:
+                        answer = assistant_messages[-1]["content"]
+                    else:
+                        answer = "Sorry, I could not generate an answer."
 
-            st.write(answer)
+                else:
+                    answer = generated
 
-    # Save answer
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer
-    })
+                st.write(answer)
 
+                # Save AI response
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": answer
+                    }
+                )
 
-# -----------------------------
-# CLEAR CHAT
-# -----------------------------
-if st.button("🗑️ Clear conversation"):
-    st.session_state.messages = []
-    st.rerun()      
-
-    
-
-
+            except Exception as error:
+                st.error("Something went wrong while generating the answer.")
+                st.code(str(error))      
