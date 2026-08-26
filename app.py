@@ -29,15 +29,18 @@ st.set_page_config(
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
 MODEL_NAME = "groq/compound"
 
-MAX_MEMORY_ITEMS = 40
-MAX_CONTEXT_MESSAGES = 16
-MAX_FILE_CHARS = 50000
-MAX_TOTAL_FILE_CHARS = 100000
+# These limits prevent 413 Request Entity Too Large errors.
+MAX_MEMORY_ITEMS = 25
+MAX_CONTEXT_MESSAGES = 8
+MAX_MESSAGE_CHARS = 6000
+MAX_FILE_CHARS = 12000
+MAX_TOTAL_FILE_CHARS = 24000
+MAX_SYSTEM_CHARS = 7000
 
 
 # ============================================================
@@ -47,24 +50,26 @@ MAX_TOTAL_FILE_CHARS = 100000
 def init_state():
     defaults = {
         "messages": [],
-        "memory": {},
         "memory_notes": [],
+        "memory": {},
         "user_name": "",
-        "emotion": "neutral",
         "topic": "general",
+        "emotion": "neutral",
         "last_voice_audio": None,
         "last_voice_hash": "",
-        "last_answer": "",
         "last_user_prompt": "",
-        "chat_started": datetime.now().isoformat(timespec="seconds"),
+        "last_answer": "",
+        "chat_started": datetime.now().isoformat(
+            timespec="seconds"
+        ),
         "uploaded_files": {},
         "file_context": "",
         "selected_language": "English",
         "turbo_mode": True,
-        "web_search": True,
         "factual_grounding": True,
         "deep_reasoning": True,
         "coding_mode": True,
+        "web_search": True,
         "voice_output": True,
         "show_tool_status": True,
         "auto_memory": True,
@@ -79,7 +84,7 @@ init_state()
 
 
 # ============================================================
-# SECRETS / API
+# API
 # ============================================================
 
 def get_secret(name):
@@ -98,17 +103,21 @@ def get_api_key():
     return get_secret("GROQ_API_KEY")
 
 
-def get_client():
-    key = get_api_key()
+def get_wolfram_key():
+    return get_secret("WOLFRAM_ALPHA_APPID")
 
-    if not key:
+
+def get_client():
+    api_key = get_api_key()
+
+    if not api_key:
         raise RuntimeError(
-            "GROQ_API_KEY is missing. "
-            "Add GROQ_API_KEY to Streamlit Secrets."
+            "GROQ_API_KEY is missing. Add your GROQ_API_KEY "
+            "to Streamlit Secrets."
         )
 
     return Groq(
-        api_key=key,
+        api_key=api_key,
         default_headers={
             "Groq-Model-Version": "latest"
         },
@@ -147,11 +156,13 @@ def detect_name(text):
         match = re.search(
             pattern,
             text,
-            re.IGNORECASE,
+            re.IGNORECASE
         )
 
         if match:
-            name = match.group(1).strip(" .,!?")
+            name = match.group(1).strip(
+                " .,!?;"
+            )
 
             if name:
                 st.session_state.user_name = name
@@ -178,6 +189,7 @@ def remember_information(text):
 
     for trigger in triggers:
         if trigger in lowered:
+
             position = lowered.find(trigger)
 
             note = text[
@@ -185,9 +197,10 @@ def remember_information(text):
             ].strip()
 
             if note:
-                note = note[:1000]
+                note = note[:700]
 
                 st.session_state.memory["note"] = note
+
                 add_memory_note(note)
 
                 return
@@ -206,13 +219,13 @@ def remember_information(text):
         match = re.search(
             pattern,
             text,
-            re.IGNORECASE,
+            re.IGNORECASE
         )
 
         if match:
             preference = match.group(0).strip()
 
-            if len(preference) < 300:
+            if len(preference) <= 250:
                 add_memory_note(preference)
 
 
@@ -224,7 +237,10 @@ def forget_information(text):
         "forget my name please",
     }:
         st.session_state.user_name = ""
-        st.session_state.memory.pop("name", None)
+        st.session_state.memory.pop(
+            "name",
+            None
+        )
 
         st.session_state.memory_notes = [
             note
@@ -235,7 +251,10 @@ def forget_information(text):
         return "Done. I forgot your name."
 
     if lowered.startswith("forget that"):
-        st.session_state.memory.pop("note", None)
+        st.session_state.memory.pop(
+            "note",
+            None
+        )
 
         if st.session_state.memory_notes:
             st.session_state.memory_notes.pop()
@@ -267,7 +286,7 @@ def detect_emotion(text):
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "sad",
             "angry",
             "upset",
@@ -275,19 +294,19 @@ def detect_emotion(text):
             "worried",
             "scared",
             "frustrated",
-        )
+        ]
     ):
         return "supportive"
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "happy",
             "excited",
             "great",
             "amazing",
             "awesome",
-        )
+        ]
     ):
         return "positive"
 
@@ -299,7 +318,7 @@ def detect_topic(text):
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "python",
             "javascript",
             "html",
@@ -311,14 +330,13 @@ def detect_topic(text):
             "error",
             "api",
             "streamlit",
-            "github",
-        )
+        ]
     ):
         return "coding"
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "math",
             "calculate",
             "equation",
@@ -327,13 +345,13 @@ def detect_topic(text):
             "algebra",
             "geometry",
             "calculus",
-        )
+        ]
     ):
         return "math"
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "news",
             "today",
             "latest",
@@ -341,31 +359,31 @@ def detect_topic(text):
             "recent",
             "yesterday",
             "tomorrow",
-        )
+        ]
     ):
         return "current information"
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "school",
             "study",
             "exam",
             "homework",
             "learn",
-        )
+        ]
     ):
         return "learning"
 
     if any(
         word in lowered
-        for word in (
+        for word in [
             "business",
             "money",
             "company",
             "startup",
             "sell",
-        )
+        ]
     ):
         return "business"
 
@@ -373,16 +391,12 @@ def detect_topic(text):
 
 
 # ============================================================
-# FILE LAB
+# FILE SUPPORT
 # ============================================================
 
 def extract_file_text(uploaded_file):
     filename = uploaded_file.name
-
-    if "." not in filename:
-        extension = ""
-    else:
-        extension = filename.rsplit(".", 1)[1].lower()
+    extension = filename.lower().split(".")[-1]
 
     try:
         raw = uploaded_file.getvalue()
@@ -412,14 +426,15 @@ def extract_file_text(uploaded_file):
         if extension in text_extensions:
             return raw.decode(
                 "utf-8",
-                errors="replace",
+                errors="replace"
             )[:MAX_FILE_CHARS]
 
         if extension == "pdf":
+
             if not PDF_SUPPORT:
                 return (
-                    "PDF support is unavailable. "
-                    "Install pypdf."
+                    "PDF support requires pypdf. "
+                    "Add pypdf to requirements.txt."
                 )
 
             reader = PdfReader(
@@ -429,27 +444,33 @@ def extract_file_text(uploaded_file):
             pages = []
 
             for page in reader.pages:
+
                 try:
-                    pages.append(
-                        page.extract_text() or ""
-                    )
+                    page_text = page.extract_text()
+
+                    if page_text:
+                        pages.append(page_text)
+
                 except Exception:
-                    pass
+                    continue
 
             return "\n\n".join(
                 pages
             )[:MAX_FILE_CHARS]
 
         return (
-            f"KingsBot received '{filename}', "
-            f"but text extraction for .{extension} "
-            f"files is not currently supported."
+            "KingsBot received "
+            + filename
+            + ", but this file type is not "
+              "currently supported for text extraction."
         )
 
     except Exception as exc:
         return (
-            f"Could not read '{filename}'. "
-            f"Error: {str(exc)}"
+            "Could not read "
+            + filename
+            + ". Error: "
+            + str(exc)
         )
 
 
@@ -460,36 +481,49 @@ def process_uploaded_files(files):
         st.session_state.file_context = ""
         return
 
-    all_text = []
+    combined_parts = []
+    total_chars = 0
 
     for uploaded_file in files:
+
+        if total_chars >= MAX_TOTAL_FILE_CHARS:
+            break
+
         text = extract_file_text(
             uploaded_file
         )
+
+        remaining = (
+            MAX_TOTAL_FILE_CHARS
+            - total_chars
+        )
+
+        text = text[:remaining]
 
         st.session_state.uploaded_files[
             uploaded_file.name
         ] = text
 
-        all_text.append(
+        combined_parts.append(
             "===== FILE: "
             + uploaded_file.name
             + " =====\n"
             + text
         )
 
-    combined = "\n\n".join(all_text)
+        total_chars += len(text)
 
     st.session_state.file_context = (
-        combined[:MAX_TOTAL_FILE_CHARS]
-    )
+        "\n\n".join(combined_parts)
+    )[:MAX_TOTAL_FILE_CHARS]
 
 
 # ============================================================
-# COMPOUND TOOLS
+# TOOLS
 # ============================================================
 
 def get_enabled_tools():
+
     tools = []
 
     if st.session_state.web_search:
@@ -499,256 +533,209 @@ def get_enabled_tools():
     if st.session_state.coding_mode:
         tools.append("code_interpreter")
 
+    wolfram_key = get_wolfram_key()
+
+    if wolfram_key:
+        tools.append("wolfram_alpha")
+
     return tools
 
 
 # ============================================================
-# REAL KINGSBOT BRAIN
+# SYSTEM PROMPT
 # ============================================================
 
-def power_agent(user_text):
-
-    client = get_client()
-
-    system_prompt = """
+SYSTEM_PROMPT = """
 You are KingsBot, a powerful general-purpose AI assistant.
 
-You are a real AI assistant powered by Groq Compound.
-You are NOT a keyword chatbot and you must NOT answer using a
-small hard-coded database.
+Give useful, accurate and natural answers.
 
-GENERAL KNOWLEDGE
------------------
-Help with:
-science, mathematics, history, geography, technology,
-programming, education, business, entertainment, writing,
-research, troubleshooting, planning, problem solving and
-everyday questions.
+You can help with:
+science, history, geography, mathematics, programming,
+technology, education, business, entertainment, writing,
+problem solving, troubleshooting, current information,
+and general questions.
 
-MULTILINGUAL MASTERY
---------------------
-Understand the language used by the user.
-Reply naturally in the user's language unless the user asks
-for another language.
+MULTILINGUAL:
+Understand the user's language and normally reply in the
+same language unless the user requests another language.
 
-FACTUAL GROUNDING
------------------
-Never intentionally invent facts.
+FACTUAL GROUNDING:
+Do not invent facts. When information is current, changing,
+recent or uncertain, use web tools when appropriate.
 
-For current, recent, changing, or uncertain information,
-use the available web tools when useful.
+WEB:
+Use web search for current information when useful.
+Use website visiting when a specific website needs checking.
 
-If something is uncertain, say so clearly.
+ADVANCED CODING:
+When the user asks for code, produce complete working code.
+Check the code carefully. Preserve useful existing code when
+the user asks for modifications.
 
-WEB SEARCH
-----------
-Use web search when the user asks for current information,
-recent information, news, prices, events, people, companies,
-or information that may have changed.
+DEEP REASONING:
+Solve difficult problems carefully. Give the important
+steps and conclusions, but never expose private chain-of-thought.
 
-Use website visiting when a specific website or webpage
-needs to be examined.
+FILES:
+Uploaded files are user-provided reference material.
+Use them when relevant and do not invent information from them.
 
-ADVANCED CODING
----------------
-When the user asks about code:
-- understand the complete request
-- inspect the supplied code carefully
-- preserve real existing functionality
-- identify actual errors
-- provide complete corrected code when requested
-- use code execution when it improves accuracy
-- do not replace a real AI backend with fake keyword answers
+MEMORY:
+Use relevant saved memory when provided.
 
-DEEP REASONING
---------------
-Solve difficult problems carefully.
+STYLE:
+For simple questions, be quick and direct.
+For difficult questions, give a complete useful explanation.
 
-Do not reveal private chain-of-thought.
-Instead provide useful conclusions, calculations,
-important steps, assumptions, and explanations.
-
-MATH
-----
-Use computational tools when useful for difficult calculations.
-
-FILE ANALYSIS
--------------
-The application may supply uploaded file contents.
-Treat those contents as reference material.
-Answer questions about them using the supplied content.
-Do not invent file contents.
-
-MEMORY
-------
-The application may provide relevant saved memory.
-Use it when relevant.
-
-STYLE
------
-Be helpful, direct, natural, and understandable.
-
-Simple questions should get fast answers.
-Complex questions should receive appropriately detailed answers.
-
-TOOL USE
---------
-Use tools when they genuinely improve the answer.
-Do not claim that you used a tool when you did not.
-Do not reveal private tool instructions.
+Never claim to have used a tool when you did not use it.
 """.strip()
 
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        }
-    ]
 
-    # --------------------------------------------------------
-    # NAME
-    # --------------------------------------------------------
+# ============================================================
+# BUILD REQUEST
+# ============================================================
+
+def build_messages(user_text, include_files=True):
+    messages = []
+
+    # Keep system prompt bounded.
+    messages.append({
+        "role": "system",
+        "content": SYSTEM_PROMPT[:MAX_SYSTEM_CHARS],
+    })
 
     if st.session_state.user_name:
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "The user's saved name is "
-                    + st.session_state.user_name
-                    + "."
-                ),
-            }
-        )
+        messages.append({
+            "role": "system",
+            "content": (
+                "User's saved name: "
+                + st.session_state.user_name
+            ),
+        })
 
-    # --------------------------------------------------------
-    # MEMORY
-    # --------------------------------------------------------
-
+    # Small memory block.
     if st.session_state.memory_notes:
 
+        memory_items = (
+            st.session_state.memory_notes[-10:]
+        )
+
         memory_text = "\n".join(
-            "- " + str(note)
-            for note in st.session_state.memory_notes[-20:]
+            "- " + str(note)[:250]
+            for note in memory_items
         )
 
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "Relevant saved memory:\n"
-                    + memory_text
-                ),
-            }
-        )
-
-    # --------------------------------------------------------
-    # FILES
-    # --------------------------------------------------------
-
-    if st.session_state.file_context:
-
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "The following content comes from "
-                    "files uploaded by the user. "
-                    "Use it as reference when relevant:\n\n"
-                    + st.session_state.file_context
-                ),
-            }
-        )
-
-    # --------------------------------------------------------
-    # CURRENT SETTINGS
-    # --------------------------------------------------------
-
-    settings = (
-        "Current KingsBot settings:\n"
-        f"Turbo speed: {st.session_state.turbo_mode}\n"
-        f"Factual grounding: "
-        f"{st.session_state.factual_grounding}\n"
-        f"Deep reasoning: "
-        f"{st.session_state.deep_reasoning}\n"
-        f"Advanced coding: "
-        f"{st.session_state.coding_mode}\n"
-        f"Web search: "
-        f"{st.session_state.web_search}\n"
-        f"Language: "
-        f"{st.session_state.selected_language}\n"
-        f"Topic: "
-        f"{st.session_state.topic}\n"
-        f"Emotion: "
-        f"{st.session_state.emotion}"
-    )
-
-    messages.append(
-        {
+        messages.append({
             "role": "system",
-            "content": settings,
-        }
+            "content": (
+                "Relevant saved memory:\n"
+                + memory_text
+            ),
+        })
+
+    # File context is deliberately limited.
+    if (
+        include_files
+        and st.session_state.file_context
+    ):
+        file_text = (
+            st.session_state.file_context[
+                :MAX_TOTAL_FILE_CHARS
+            ]
+        )
+
+        messages.append({
+            "role": "system",
+            "content": (
+                "Relevant uploaded file content:\n\n"
+                + file_text
+            ),
+        })
+
+    # Current settings.
+    messages.append({
+        "role": "system",
+        "content": (
+            "Settings: "
+            "Turbo="
+            + str(st.session_state.turbo_mode)
+            + ", Grounding="
+            + str(st.session_state.factual_grounding)
+            + ", DeepReasoning="
+            + str(st.session_state.deep_reasoning)
+            + ", Coding="
+            + str(st.session_state.coding_mode)
+            + ", Web="
+            + str(st.session_state.web_search)
+            + ", Language="
+            + str(st.session_state.selected_language)
+            + ", Topic="
+            + str(st.session_state.topic)
+        ),
+    })
+
+    # Only recent conversation.
+    recent_messages = (
+        st.session_state.messages[
+            -MAX_CONTEXT_MESSAGES:
+        ]
     )
 
-    # --------------------------------------------------------
-    # PREVIOUS CONVERSATION
-    # --------------------------------------------------------
-
-    # The latest user message has already been stored in
-    # st.session_state.messages before this function runs.
-    # Exclude it here so it isn't sent twice.
-
-    previous_messages = (
-        st.session_state.messages[:-1]
-    )
-
-    for message in previous_messages[
-        -MAX_CONTEXT_MESSAGES:
-    ]:
+    for message in recent_messages:
 
         role = message.get("role")
 
-        content = str(
-            message.get(
-                "content",
-                "",
-            )
-        ).strip()
-
-        if role in (
+        if role not in {
             "user",
             "assistant",
-        ) and content:
+        }:
+            continue
 
-            messages.append(
-                {
-                    "role": role,
-                    "content": content,
-                }
-            )
+        content = str(
+            message.get("content", "")
+        ).strip()
 
-    # --------------------------------------------------------
-    # CURRENT MESSAGE
-    # --------------------------------------------------------
+        if not content:
+            continue
 
-    messages.append(
-        {
-            "role": "user",
-            "content": user_text,
-        }
-    )
+        # Each old message is capped.
+        content = content[
+            :MAX_MESSAGE_CHARS
+        ]
 
-    # --------------------------------------------------------
-    # REQUEST
-    # --------------------------------------------------------
+        messages.append({
+            "role": role,
+            "content": content,
+        })
+
+    # Current question.
+    messages.append({
+        "role": "user",
+        "content": str(user_text)[
+            :MAX_MESSAGE_CHARS
+        ],
+    })
+
+    return messages
+
+
+# ============================================================
+# REAL AI BRAIN
+# ============================================================
+
+def call_groq(messages):
+    client = get_client()
+
+    enabled_tools = get_enabled_tools()
 
     request_args = {
         "model": MODEL_NAME,
         "messages": messages,
+        "max_completion_tokens": 8192,
     }
 
-    enabled_tools = get_enabled_tools()
-
+    # Only send tool configuration when tools are enabled.
     if enabled_tools:
 
         request_args["compound_custom"] = {
@@ -757,34 +744,138 @@ Do not reveal private tool instructions.
             }
         }
 
-    response = client.chat.completions.create(
+        wolfram_key = get_wolfram_key()
+
+        if (
+            "wolfram_alpha"
+            in enabled_tools
+            and wolfram_key
+        ):
+            request_args[
+                "compound_custom"
+            ]["tools"][
+                "wolfram_settings"
+            ] = {
+                "authorization": wolfram_key
+            }
+
+    return client.chat.completions.create(
         **request_args
     )
 
-    assistant_message = (
-        response.choices[0].message
+
+def power_agent(user_text):
+    """
+    Real Groq Compound AI.
+    Uses aggressive request-size protection.
+    """
+
+    # First attempt: recent conversation + limited files.
+    messages = build_messages(
+        user_text,
+        include_files=True,
+    )
+
+    try:
+        response = call_groq(messages)
+
+    except Exception as first_error:
+
+        error_text = str(first_error)
+
+        # 413 = request body too large.
+        # Retry with files removed and a much smaller context.
+        if (
+            "413" in error_text
+            or "Request Entity Too Large"
+            in error_text
+            or "request body is too large"
+            in error_text.lower()
+        ):
+
+            messages = build_messages(
+                user_text,
+                include_files=False,
+            )
+
+            # Extra emergency reduction.
+            reduced = []
+
+            for message in messages:
+
+                content = str(
+                    message.get(
+                        "content",
+                        ""
+                    )
+                )
+
+                if (
+                    message.get("role")
+                    == "system"
+                    and len(content) > 3500
+                ):
+                    content = content[:3500]
+
+                if (
+                    message.get("role")
+                    in {"user", "assistant"}
+                    and len(content) > 3500
+                ):
+                    content = content[:3500]
+
+                reduced.append({
+                    "role": message["role"],
+                    "content": content,
+                })
+
+            # Keep only the system messages and
+            # latest few conversation messages.
+            system_messages = [
+                item
+                for item in reduced
+                if item["role"] == "system"
+            ]
+
+            conversation = [
+                item
+                for item in reduced
+                if item["role"] != "system"
+            ]
+
+            messages = (
+                system_messages[:5]
+                + conversation[-4:]
+            )
+
+            response = call_groq(messages)
+
+        else:
+            raise first_error
+
+    message = response.choices[0].message
+
+    answer = getattr(
+        message,
+        "content",
+        ""
     )
 
     answer = str(
-        getattr(
-            assistant_message,
-            "content",
-            "",
-        )
-        or ""
+        answer or ""
     ).strip()
-
-    executed_tools = getattr(
-        assistant_message,
-        "executed_tools",
-        None,
-    )
 
     if not answer:
         answer = (
-            "I couldn't generate an answer. "
-            "Please try again."
+            "I did not receive a text answer. "
+            "Please try the question again."
         )
+
+    executed_tools = getattr(
+        message,
+        "executed_tools",
+        None
+    )
 
     return answer, executed_tools
 
@@ -832,7 +923,7 @@ def transcribe_audio(audio_file):
             getattr(
                 result,
                 "text",
-                "",
+                ""
             )
             or ""
         ).strip()
@@ -840,7 +931,7 @@ def transcribe_audio(audio_file):
     except Exception as exc:
 
         st.error(
-            "Voice transcription failed: "
+            "Voice transcription error: "
             + str(exc)
         )
 
@@ -877,13 +968,13 @@ def make_voice(text):
 
         language = LANGUAGE_CODES.get(
             st.session_state.selected_language,
-            "en",
+            "en"
         )
 
         output = io.BytesIO()
 
         gTTS(
-            text=str(text)[:4500],
+            text=str(text)[:4000],
             lang=language,
             slow=False,
         ).write_to_fp(output)
@@ -891,62 +982,7 @@ def make_voice(text):
         return output.getvalue()
 
     except Exception:
-
         return None
-
-
-# ============================================================
-# EXPORT
-# ============================================================
-
-def build_transcript():
-
-    lines = [
-        "# KingsBot AI Conversation",
-        "",
-        "Started: "
-        + str(
-            st.session_state.chat_started
-        ),
-        "",
-    ]
-
-    if st.session_state.user_name:
-
-        lines.append(
-            "User name: "
-            + st.session_state.user_name
-        )
-
-        lines.append("")
-
-    for message in st.session_state.messages:
-
-        role = str(
-            message.get(
-                "role",
-                "",
-            )
-        ).upper()
-
-        content = message.get(
-            "content",
-            "",
-        )
-
-        lines.append(
-            "## " + role
-        )
-
-        lines.append("")
-
-        lines.append(
-            str(content)
-        )
-
-        lines.append("")
-
-    return "\n".join(lines)
 
 
 # ============================================================
@@ -967,34 +1003,25 @@ def describe_tools(executed_tools):
 
         try:
 
-            tool_type = getattr(
-                tool,
-                "type",
-                None,
-            )
+            if isinstance(tool, dict):
+                tool_type = tool.get(
+                    "type"
+                )
+
+            else:
+                tool_type = getattr(
+                    tool,
+                    "type",
+                    None
+                )
 
             if tool_type:
                 names.append(
                     str(tool_type)
                 )
-                continue
-
-            if isinstance(
-                tool,
-                dict,
-            ):
-
-                tool_type = tool.get(
-                    "type"
-                )
-
-                if tool_type:
-                    names.append(
-                        str(tool_type)
-                    )
 
         except Exception:
-            pass
+            continue
 
     if names:
 
@@ -1009,6 +1036,56 @@ def describe_tools(executed_tools):
 
 
 # ============================================================
+# EXPORT
+# ============================================================
+
+def build_transcript():
+
+    lines = [
+        "# KingsBot AI Conversation",
+        "",
+        "Started: "
+        + str(
+            st.session_state.chat_started
+        ),
+        "",
+    ]
+
+    if st.session_state.user_name:
+        lines.append(
+            "User name: "
+            + st.session_state.user_name
+        )
+        lines.append("")
+
+    for message in st.session_state.messages:
+
+        role = str(
+            message.get(
+                "role",
+                ""
+            )
+        ).upper()
+
+        content = str(
+            message.get(
+                "content",
+                ""
+            )
+        )
+
+        lines.append(
+            "## " + role
+        )
+
+        lines.append("")
+        lines.append(content)
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ============================================================
 # SIDEBAR
 # ============================================================
 
@@ -1017,11 +1094,11 @@ with st.sidebar:
     st.title("🤖 KingsBot")
 
     st.caption(
-        "Real AI • Memory • Web • Code • Voice"
+        "AI Brain • Memory • Web • Code • Voice"
     )
 
     # --------------------------------------------------------
-    # NEW CHAT
+    # CHAT CONTROLS
     # --------------------------------------------------------
 
     if st.button(
@@ -1033,9 +1110,8 @@ with st.sidebar:
         st.session_state.topic = "general"
         st.session_state.emotion = "neutral"
         st.session_state.last_voice_audio = None
-        st.session_state.last_answer = ""
         st.session_state.last_user_prompt = ""
-        st.session_state.last_voice_hash = ""
+        st.session_state.last_answer = ""
 
         st.session_state.chat_started = (
             datetime.now().isoformat(
@@ -1045,10 +1121,6 @@ with st.sidebar:
 
         st.rerun()
 
-    # --------------------------------------------------------
-    # CLEAR CONVERSATION
-    # --------------------------------------------------------
-
     if st.button(
         "🧹 Clear conversation",
         use_container_width=True,
@@ -1056,20 +1128,18 @@ with st.sidebar:
 
         st.session_state.messages = []
         st.session_state.last_voice_audio = None
-        st.session_state.last_answer = ""
         st.session_state.last_user_prompt = ""
+        st.session_state.last_answer = ""
 
         st.rerun()
 
     st.divider()
 
-    # ========================================================
+    # --------------------------------------------------------
     # POWER SETTINGS
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "⚙️ Power Settings"
-    )
+    st.subheader("⚙️ Power Settings")
 
     st.session_state.turbo_mode = st.toggle(
         "⚡ Turbo Speed",
@@ -1111,42 +1181,43 @@ with st.sidebar:
         value=st.session_state.show_tool_status,
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # LANGUAGE
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "🌍 Multilingual"
-    )
+    st.subheader("🌍 Multilingual Mastery")
 
-    languages = list(
+    language_list = list(
         LANGUAGE_CODES.keys()
     )
 
-    current_language_index = languages.index(
+    current_language = (
         st.session_state.selected_language
     )
+
+    if current_language not in language_list:
+        current_language = "English"
 
     st.session_state.selected_language = (
         st.selectbox(
             "Response language",
-            languages,
-            index=current_language_index,
+            language_list,
+            index=language_list.index(
+                current_language
+            ),
         )
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # FILE LAB
-    # ========================================================
+    # --------------------------------------------------------
 
     st.divider()
 
-    st.subheader(
-        "📁 File Lab"
-    )
+    st.subheader("📁 File Lab")
 
     st.caption(
-        "File tools are separate from the main typing box."
+        "File upload is here, separate from the chat box."
     )
 
     uploaded_files = st.file_uploader(
@@ -1190,13 +1261,12 @@ with st.sidebar:
         for filename in (
             st.session_state.uploaded_files
         ):
-
             st.caption(
                 "📄 " + filename
             )
 
         if st.button(
-            "🗑️ Remove files",
+            "🗑️ Remove uploaded files",
             use_container_width=True,
         ):
 
@@ -1205,25 +1275,20 @@ with st.sidebar:
 
             st.rerun()
 
-    # ========================================================
+    # --------------------------------------------------------
     # MEMORY CENTER
-    # ========================================================
+    # --------------------------------------------------------
 
     st.divider()
 
-    st.subheader(
-        "🧠 Memory Center"
-    )
+    st.subheader("🧠 Memory Center")
 
     if st.session_state.user_name:
-
         st.write(
             "👤 Name: "
             + st.session_state.user_name
         )
-
     else:
-
         st.caption(
             "No name saved."
         )
@@ -1246,7 +1311,6 @@ with st.sidebar:
             for note in (
                 st.session_state.memory_notes[-10:]
             ):
-
                 st.write(
                     "• " + str(note)
                 )
@@ -1262,15 +1326,13 @@ with st.sidebar:
 
         st.rerun()
 
-    # ========================================================
-    # CONVERSATION TOOLS
-    # ========================================================
+    # --------------------------------------------------------
+    # EXPORT
+    # --------------------------------------------------------
 
     st.divider()
 
-    st.subheader(
-        "💾 Conversation"
-    )
+    st.subheader("💾 Conversation")
 
     st.download_button(
         "⬇️ Download conversation",
@@ -1280,27 +1342,18 @@ with st.sidebar:
         use_container_width=True,
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # STATUS
-    # ========================================================
+    # --------------------------------------------------------
 
     st.divider()
 
     st.caption(
-        "🧠 Brain: Groq Compound"
+        "Brain: Groq Compound"
     )
 
     st.caption(
-        "⚡ Turbo: "
-        + (
-            "ON"
-            if st.session_state.turbo_mode
-            else "OFF"
-        )
-    )
-
-    st.caption(
-        "🔎 Web: "
+        "Web: "
         + (
             "ON"
             if st.session_state.web_search
@@ -1309,7 +1362,7 @@ with st.sidebar:
     )
 
     st.caption(
-        "💻 Coding: "
+        "Coding: "
         + (
             "ON"
             if st.session_state.coding_mode
@@ -1318,7 +1371,7 @@ with st.sidebar:
     )
 
     st.caption(
-        "🧠 Memory: "
+        "Memory: "
         + (
             "ON"
             if st.session_state.auto_memory
@@ -1326,18 +1379,25 @@ with st.sidebar:
         )
     )
 
+    if get_wolfram_key():
+        st.caption(
+            "Math engine: Wolfram Alpha"
+        )
+    else:
+        st.caption(
+            "Math engine: Compound Code"
+        )
+
 
 # ============================================================
-# MAIN PAGE
+# MAIN SCREEN
 # ============================================================
 
-st.title(
-    "🤖 KingsBot AI"
-)
+st.title("🤖 KingsBot AI")
 
 st.caption(
-    "Real AI with web search, coding, reasoning, "
-    "memory, multilingual support, files and voice."
+    "Fast • Intelligent • Multilingual • "
+    "Web • Coding • Memory • Files • Voice"
 )
 
 
@@ -1350,7 +1410,6 @@ for message in st.session_state.messages:
     with st.chat_message(
         message["role"]
     ):
-
         st.markdown(
             message["content"]
         )
@@ -1403,7 +1462,7 @@ if prompt:
         st.stop()
 
     # --------------------------------------------------------
-    # MEMORY / PROFILE
+    # LOCAL UNDERSTANDING
     # --------------------------------------------------------
 
     detect_name(prompt)
@@ -1427,32 +1486,20 @@ if prompt:
 
     if forget_result:
 
-        st.session_state.messages.append(
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        )
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt,
+        })
 
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": forget_result,
-            }
-        )
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": forget_result,
+        })
 
-        with st.chat_message(
-            "user"
-        ):
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-            st.markdown(
-                prompt
-            )
-
-        with st.chat_message(
-            "assistant"
-        ):
-
+        with st.chat_message("assistant"):
             st.markdown(
                 forget_result
             )
@@ -1460,33 +1507,24 @@ if prompt:
         st.rerun()
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE
+    # USER MESSAGE
     # --------------------------------------------------------
 
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": prompt,
-        }
-    )
+    st.session_state.messages.append({
+        "role": "user",
+        "content": prompt,
+    })
 
     st.session_state.last_user_prompt = prompt
 
-    with st.chat_message(
-        "user"
-    ):
-
-        st.markdown(
-            prompt
-        )
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
     # --------------------------------------------------------
-    # REAL AI
+    # AI
     # --------------------------------------------------------
 
-    with st.chat_message(
-        "assistant"
-    ):
+    with st.chat_message("assistant"):
 
         with st.spinner(
             "⚡ KingsBot is thinking..."
@@ -1500,20 +1538,55 @@ if prompt:
 
             except Exception as exc:
 
-                answer = (
-                    "KingsBot could not reach "
-                    "the AI service.\n\n"
-                    "Please check your "
-                    "GROQ_API_KEY in Streamlit Secrets.\n\n"
-                    "Error:\n"
-                    + str(exc)
-                )
+                # Do NOT say "KingsBot could not reach
+                # the AI service."
+                #
+                # Give the actual useful error instead.
+
+                error_text = str(exc)
+
+                if "413" in error_text:
+                    answer = (
+                        "⚠️ The request was too large. "
+                        "KingsBot automatically limits "
+                        "conversation and file data, "
+                        "so please try the message again "
+                        "or upload a smaller file."
+                    )
+
+                elif "401" in error_text:
+                    answer = (
+                        "🔐 The Groq API key was rejected. "
+                        "Please check GROQ_API_KEY in "
+                        "Streamlit Secrets."
+                    )
+
+                elif "429" in error_text:
+                    answer = (
+                        "⏳ Groq rate limit reached. "
+                        "Please wait a moment and try again."
+                    )
+
+                elif "400" in error_text:
+                    answer = (
+                        "⚠️ Groq rejected the request. "
+                        "The application request settings "
+                        "need to be checked.\n\n"
+                        "Technical details: "
+                        + error_text
+                    )
+
+                else:
+                    answer = (
+                        "⚠️ Something went wrong while "
+                        "processing your request.\n\n"
+                        "Technical details:\n"
+                        + error_text
+                    )
 
                 executed_tools = None
 
-        st.markdown(
-            answer
-        )
+        st.markdown(answer)
 
         describe_tools(
             executed_tools
@@ -1537,20 +1610,118 @@ if prompt:
 
                 st.audio(
                     audio,
-                    format="audio/mp3",
+                    format="audio/mp3"
                 )
 
     # --------------------------------------------------------
-    # SAVE ASSISTANT RESPONSE
+    # SAVE ANSWER
     # --------------------------------------------------------
 
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": answer,
-        }
-    )
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": answer,
+    })
 
     st.session_state.last_answer = answer
 
     st.rerun()
+
+
+# ============================================================
+# LAST VOICE RESPONSE
+# ============================================================
+
+if (
+    st.session_state.last_voice_audio
+    and not prompt
+):
+
+    st.divider()
+
+    st.caption(
+        "🔊 Last voice response"
+    )
+
+    st.audio(
+        st.session_state.last_voice_audio,
+        format="audio/mp3"
+    )
+
+
+# ============================================================
+# REGENERATE
+# ============================================================
+
+if (
+    st.session_state.last_user_prompt
+    and st.session_state.messages
+):
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        if st.button(
+            "🔄 Regenerate",
+            use_container_width=True,
+        ):
+
+            # Remove previous assistant response.
+            if (
+                st.session_state.messages
+                and st.session_state.messages[-1][
+                    "role"
+                ] == "assistant"
+            ):
+                st.session_state.messages.pop()
+
+            with st.spinner(
+                "⚡ Regenerating..."
+            ):
+
+                try:
+
+                    answer, executed_tools = (
+                        power_agent(
+                            st.session_state.last_user_prompt
+                        )
+                    )
+
+                except Exception as exc:
+
+                    error_text = str(exc)
+
+                    if "413" in error_text:
+                        answer = (
+                            "⚠️ The request was too large. "
+                            "The conversation context has "
+                            "been reduced. Please try again."
+                        )
+                    else:
+                        answer = (
+                            "⚠️ Regeneration error:\n"
+                            + error_text
+                        )
+
+                    executed_tools = None
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": answer,
+            })
+
+            st.session_state.last_answer = answer
+
+            st.rerun()
+
+    with col2:
+
+        st.download_button(
+            "💾 Save chat",
+            data=build_transcript(),
+            file_name="kingsbot_conversation.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
