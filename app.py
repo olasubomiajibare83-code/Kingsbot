@@ -419,3 +419,64 @@ if prompt:
 
     save_current_chat()
     st.rerun()
+
+# ============================================================
+# PRIVATE POWER AGENT
+# ============================================================
+
+def run_power_agent(user_message, conversation):
+    messages = [{
+        "role": "system",
+        "content": (
+            "You are KingsBot, a highly capable general AI assistant. "
+            "Use Groq Compound's built-in tools automatically when useful: "
+            "web search for current information, website visiting for "
+            "specific pages, code execution for calculations/data/code "
+            "verification, and Wolfram Alpha when appropriate. Verify "
+            "changing facts. Never reveal private chain-of-thought."
+        ),
+    }]
+
+    for item in conversation[-12:]:
+        if isinstance(item, dict) and item.get("role") in ("user", "assistant"):
+            messages.append({
+                "role": item["role"],
+                "content": str(item.get("content", "")),
+            })
+
+    messages.append({"role": "user", "content": str(user_message)})
+
+    response = get_client().chat.completions.create(
+        model="groq/compound",
+        messages=messages,
+        max_completion_tokens=8192,
+    )
+
+    content = getattr(response.choices[0].message, "content", None)
+    return (content or "").strip() or "I couldn't generate an answer. Please try again."
+
+
+def generate_response(user_message):
+    detect_name(user_message)
+    detect_student_level(user_message)
+    remember_information(user_message)
+
+    forgotten = forget_information(user_message)
+    if forgotten:
+        return forgotten
+
+    st.session_state.emotion = detect_emotion(user_message)
+    st.session_state.last_topic = detect_topic(user_message)
+
+    try:
+        answer = run_power_agent(user_message, st.session_state.messages)
+        st.session_state.source = "Groq Compound"
+        return answer
+    except Exception as error:
+        return (
+            "I couldn't reach the AI brain. Check that your GROQ_API_KEY "
+            "is saved correctly in Streamlit Secrets and try again.\n\n"
+            "Technical error: " + str(error)
+        )
+
+
