@@ -10,10 +10,8 @@ from datetime import datetime
 import streamlit as st
 from groq import Groq
 from gtts import gTTS
-from streamlit_mic_recorder import mic_recorder
 
 MODEL_NAME = "groq/compound-mini"
-VISION_MODEL = "qwen/qwen3.6-27b"
 MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
 
@@ -181,6 +179,9 @@ if "emotion" not in st.session_state:
 
 if "source" not in st.session_state:
     st.session_state.source = "Ready"
+
+if "last_voice_audio" not in st.session_state:
+    st.session_state.last_voice_audio = None
 
 
 # ============================================================
@@ -361,52 +362,8 @@ def memory_context():
 
 
 # ============================================================
-# IMAGE RECOGNITION
+# KNOWLEDGE WORKSPACE
 # ============================================================
-
-def image_to_data_url(uploaded_file):
-    raw = uploaded_file.getvalue()
-    mime = uploaded_file.type or "image/jpeg"
-    encoded = base64.b64encode(raw).decode("utf-8")
-    return f"data:{mime};base64,{encoded}"
-
-
-def analyze_image(uploaded_file, question):
-    client = get_client()
-    image_url = image_to_data_url(uploaded_file)
-
-    response = client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are KingsBot Vision. Analyze the user's image accurately. "
-                    "Read visible text when possible, describe important objects, "
-                    "explain screenshots and diagrams, and answer the user's "
-                    "question. Do not invent details that are not visible."
-                ),
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": question or "Describe and analyze this image.",
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": image_url},
-                    },
-                ],
-            },
-        ],
-        temperature=0.2,
-        max_tokens=4096,
-    )
-
-    return (response.choices[0].message.content or "").strip()
-
 
 # ============================================================
 # FILE READING
@@ -588,7 +545,7 @@ def conversation_text():
 
 st.title("🤖 KingsBot AI")
 st.caption(
-    "⚡ Fast AI • 🌐 Live information • 🖼️ Vision • 🎤 Voice • 💬 Memory"
+    "⚡ Fast AI • 🌐 Live information • 📚 Workspace • 🎤 Voice • 💬 Memory"
 )
 
 with st.sidebar:
@@ -645,7 +602,7 @@ with st.sidebar:
     st.divider()
     st.header("⚙️ AI")
     st.write("Brain:", MODEL_NAME)
-    st.write("Vision:", VISION_MODEL)
+    st.write("Workspace:", "PDF + code + CSV + text")
     st.write("Topic:", st.session_state.last_topic)
     st.write("Emotion:", st.session_state.emotion)
     st.write("Source:", st.session_state.source)
@@ -658,16 +615,11 @@ for message in st.session_state.messages:
 
 
 # ============================================================
-# IMAGE / FILE AREA
+# KNOWLEDGE WORKSPACE
 # ============================================================
 
-st.subheader("🖼️ Images and Files")
-
-uploaded_image = st.file_uploader(
-    "Upload an image for KingsBot to understand",
-    type=["png", "jpg", "jpeg", "webp"],
-    key="image_upload",
-)
+st.subheader("📚 Knowledge Workspace")
+st.caption("Upload PDFs, notes, code, JSON, CSV or text and ask KingsBot to summarize, explain, debug, compare or create study material.")
 
 uploaded_file = st.file_uploader(
     "Upload a document or code file",
@@ -675,72 +627,73 @@ uploaded_file = st.file_uploader(
     key="document_upload",
 )
 
-image_question = ""
-if uploaded_image:
-    st.image(uploaded_image, caption="Image for KingsBot", use_container_width=True)
-    image_question = st.text_input(
-        "What do you want KingsBot to tell you about this image?",
-        placeholder="e.g. Read the text in this screenshot.",
-    )
-
-    if st.button("🔎 Analyze image", use_container_width=True):
-        with st.spinner("🖼️ Analyzing image..."):
-            try:
-                answer = analyze_image(uploaded_image, image_question)
-                st.session_state.messages.append(
-                    {"role": "user", "content": image_question or "Analyze this image."}
-                )
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": answer}
-                )
-                save_current_chat()
-                st.rerun()
-            except Exception as error:
-                st.error("Image recognition error: " + str(error))
-
 file_text = ""
 if uploaded_file:
     file_text = extract_text_from_file(uploaded_file)
     if file_text:
-        st.success(
-            f"Loaded {uploaded_file.name}. Ask a question about it below."
+        st.success(f"Loaded {uploaded_file.name}")
+        task = st.text_input(
+            "What should KingsBot do with this file?",
+            placeholder="Summarize it, explain it, find mistakes, make study questions...",
+            key="workspace_task",
         )
+        if st.button("🧠 Analyze file", use_container_width=True):
+            try:
+                with st.spinner("Analyzing your file..."):
+                    result = get_client().chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are KingsBot's Knowledge Workspace. "
+                                    "Use the supplied document as the source of truth. "
+                                    "Summarize, explain, compare, debug code, extract facts, "
+                                    "make study guides and answer questions accurately. "
+                                    "Never invent information not present in the file."
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    (task or "Give me a useful summary of this file.")
+                                    + "\n\nDOCUMENT:\n"
+                                    + file_text[:120000]
+                                ),
+                            },
+                        ],
+                        max_completion_tokens=8192,
+                    )
+                    answer = (result.choices[0].message.content or "").strip()
+                    st.markdown(answer)
+                    st.session_state.messages.append({"role": "user", "content": task or "Analyze this file."})
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                    save_current_chat()
+            except Exception as error:
+                st.error("File analysis error: " + str(error))
     else:
-        st.warning(
-            "This file could not be converted to readable text. "
-            "Try a TXT, PDF, CSV, or code file."
-        )
-
+        st.warning("I could not extract readable text from this file.")
 
 # ============================================================
 # VOICE + CHAT
 # ============================================================
 
 st.subheader("🎤 Voice Assistant")
+st.caption("Tap the microphone, speak, then stop the recording. KingsBot will transcribe and send it.")
 
+audio_input = st.audio_input("🎤 Record your message", sample_rate=16000)
 voice_prompt = None
 
-st.caption("Press 🎤 to start speaking, then press ⏹️ when you finish.")
-
-recorded_audio = mic_recorder(
-    start_prompt="🎤 Start speaking",
-    stop_prompt="⏹️ Finish and send",
-    just_once=True,
-    use_container_width=True,
-    format="webm",
-    key="kingsbot_voice_recorder",
-)
-
-if recorded_audio:
-    with st.spinner("🎤 Transcribing your voice..."):
-        audio_bytes = recorded_audio.get("bytes")
-        voice_prompt = transcribe_audio(audio_bytes) if audio_bytes else None
-
+if audio_input:
+    with st.spinner("🎤 Transcribing..."):
+        voice_prompt = transcribe_audio(audio_input)
     if voice_prompt:
         st.success("You said: " + voice_prompt)
     else:
-        st.warning("I couldn't understand that recording. Please try again.")
+        st.error("I couldn't understand the recording. Check microphone permission and try again.")
 
+if st.session_state.get("last_voice_audio"):
+    st.audio(st.session_state.last_voice_audio, format="audio/mp3")
 
 text_prompt = st.chat_input("Ask KingsBot anything...")
 
@@ -770,6 +723,7 @@ if prompt:
 
         voice_output = text_to_speech(answer)
         if voice_output:
+            st.session_state.last_voice_audio = voice_output
             st.audio(voice_output, format="audio/mp3")
 
     st.session_state.messages.append(
