@@ -1,8 +1,8 @@
 streamlit
 requests
+speechrecognition
+gTTS
 torch
 transformers
 accelerate
-sentencepiece
-SpeechRecognition
-gTTS
+streamlit-mic-recorder
