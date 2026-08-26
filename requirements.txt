@@ -6,3 +6,4 @@ accelerate
 sentencepiece
 SpeechRecognition
 gTTS
+pyaudio
