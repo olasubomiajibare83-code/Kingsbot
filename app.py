@@ -10,6 +10,7 @@ from datetime import datetime
 import streamlit as st
 from groq import Groq
 from gtts import gTTS
+from streamlit_mic_recorder import mic_recorder
 
 MODEL_NAME = "groq/compound-mini"
 VISION_MODEL = "qwen/qwen3.6-27b"
@@ -527,8 +528,9 @@ def transcribe_audio(audio_file):
         return None
 
     try:
-        temp = io.BytesIO(audio_file.getvalue())
-        temp.name = "voice.wav"
+        raw = audio_file.getvalue() if hasattr(audio_file, "getvalue") else audio_file
+        temp = io.BytesIO(raw)
+        temp.name = "kingsbot_voice.webm"
 
         result = get_client().audio.transcriptions.create(
             file=temp,
@@ -716,23 +718,28 @@ if uploaded_file:
 
 st.subheader("🎤 Voice Assistant")
 
-audio_input = st.audio_input(
-    "Tap the microphone and speak",
-    sample_rate=16000,
-)
-
 voice_prompt = None
 
-if audio_input:
-    with st.spinner("🎤 Transcribing..."):
-        voice_prompt = transcribe_audio(audio_input)
+st.caption("Press 🎤 to start speaking, then press ⏹️ when you finish.")
+
+recorded_audio = mic_recorder(
+    start_prompt="🎤 Start speaking",
+    stop_prompt="⏹️ Finish and send",
+    just_once=True,
+    use_container_width=True,
+    format="webm",
+    key="kingsbot_voice_recorder",
+)
+
+if recorded_audio:
+    with st.spinner("🎤 Transcribing your voice..."):
+        audio_bytes = recorded_audio.get("bytes")
+        voice_prompt = transcribe_audio(audio_bytes) if audio_bytes else None
 
     if voice_prompt:
         st.success("You said: " + voice_prompt)
     else:
-        st.warning(
-            "I couldn't understand that recording. Please try speaking again."
-        )
+        st.warning("I couldn't understand that recording. Please try again.")
 
 
 text_prompt = st.chat_input("Ask KingsBot anything...")
