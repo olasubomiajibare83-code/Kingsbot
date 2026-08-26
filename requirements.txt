@@ -2,3 +2,4 @@ streamlit
 groq
 gTTS
 pypdf
+streamlit-mic-recorder
