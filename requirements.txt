@@ -1,5 +1,5 @@
 streamlit
 requests
-speechrecognition
-gtts
-openai
+SpeechRecognition
+gTTS
+groq
