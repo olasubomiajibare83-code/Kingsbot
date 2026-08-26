@@ -1,3 +1,4 @@
+import ast
 import base64
 import io
 import json
@@ -9,34 +10,32 @@ import streamlit as st
 import streamlit.components.v1 as components
 import speech_recognition as sr
 from gtts import gTTS
-from streamlit_mic_recorder import mic_recorder
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 # ============================================================
-# KINGSBOT AI
+# KINGSBOT AI - UPGRADED EDITION
 # ============================================================
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-CURRENT_DATE = "August 25, 2026"
+CURRENT_DATE = "August 26, 2026"
 MEMORY_FILE = "kingsbot_memory.json"
 
 
 # ============================================================
-# PAGE SETTINGS
+# PAGE
 # ============================================================
 
 st.set_page_config(
     page_title="KingsBot AI",
     page_icon="🤖",
-    layout="centered"
+    layout="centered",
 )
 
 
 # ============================================================
-# MEMORY SYSTEM
+# MEMORY
 # ============================================================
 
 def default_memory():
@@ -45,145 +44,112 @@ def default_memory():
         "education_level": None,
         "facts": [],
         "preferences": [],
-        "topics": []
+        "topics": [],
+        "project": None,
+        "question_mode": True,
     }
 
 
 def load_memory():
-
     data = default_memory()
 
     try:
-
         if os.path.exists(MEMORY_FILE):
-
-            with open(
-                MEMORY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
-
+            with open(MEMORY_FILE, "r", encoding="utf-8") as file:
                 saved = json.load(file)
 
             if isinstance(saved, dict):
-
                 for key in data:
-
                     if key in saved:
-
                         data[key] = saved[key]
 
     except Exception:
-
         pass
 
     return data
 
 
+saved = load_memory()
+
+
 def save_memory():
-
     data = {
-
-        "name":
-            st.session_state.user_name,
-
-        "education_level":
-            st.session_state.student_level,
-
-        "facts":
-            st.session_state.personal_memory,
-
-        "preferences":
-            st.session_state.preferences,
-
-        "topics":
-            st.session_state.topic_pattern
-
+        "name": st.session_state.user_name,
+        "education_level": st.session_state.student_level,
+        "facts": st.session_state.personal_memory,
+        "preferences": st.session_state.preferences,
+        "topics": st.session_state.topic_pattern,
+        "project": st.session_state.project,
+        "question_mode": st.session_state.question_mode,
     }
 
     try:
-
         with open(
             MEMORY_FILE,
             "w",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as file:
-
             json.dump(
                 data,
                 file,
                 indent=2,
-                ensure_ascii=False
+                ensure_ascii=False,
             )
 
     except Exception:
-
         pass
-
-
-saved = load_memory()
 
 
 # ============================================================
 # SESSION STATE
 # ============================================================
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "user_name" not in st.session_state:
-    st.session_state.user_name = saved["name"]
-
-if "student_level" not in st.session_state:
-    st.session_state.student_level = saved["education_level"]
-
-if "personal_memory" not in st.session_state:
-    st.session_state.personal_memory = saved["facts"]
-
-if "preferences" not in st.session_state:
-    st.session_state.preferences = saved["preferences"]
-
-if "topic_pattern" not in st.session_state:
-    st.session_state.topic_pattern = saved["topics"]
-
-if "emotion" not in st.session_state:
-    st.session_state.emotion = "neutral"
-
-if "tone" not in st.session_state:
-    st.session_state.tone = "Natural and friendly"
-
-if "confidence" not in st.session_state:
-    st.session_state.confidence = "Medium"
-
-if "source" not in st.session_state:
-    st.session_state.source = "Qwen2.5-0.5B-Instruct"
-
-if "reason" not in st.session_state:
-    st.session_state.reason = (
+initial_state = {
+    "messages": [],
+    "user_name": saved["name"],
+    "student_level": saved["education_level"],
+    "personal_memory": (
+        saved["facts"]
+        if isinstance(saved["facts"], list)
+        else []
+    ),
+    "preferences": (
+        saved["preferences"]
+        if isinstance(saved["preferences"], list)
+        else []
+    ),
+    "topic_pattern": (
+        saved["topics"]
+        if isinstance(saved["topics"], list)
+        else []
+    ),
+    "project": saved["project"],
+    "question_mode": bool(
+        saved["question_mode"]
+    ),
+    "emotion": "neutral",
+    "tone": "Natural and friendly",
+    "confidence": "Medium",
+    "source": "Qwen2.5-0.5B-Instruct",
+    "reason": (
         "Generated from the local language model."
-    )
+    ),
+    "last_topic": "general knowledge",
+    "last_task": "conversation",
+    "last_question": "",
+    "last_voice_prompt": "",
+}
 
-if "last_topic" not in st.session_state:
-    st.session_state.last_topic = "general knowledge"
 
-if "voice_enabled" not in st.session_state:
-    st.session_state.voice_enabled = True
+for key, value in initial_state.items():
 
-if "voice_speed" not in st.session_state:
-    st.session_state.voice_speed = "Normal"
+    if key not in st.session_state:
 
-if "response_style" not in st.session_state:
-    st.session_state.response_style = "Balanced"
-
-if "last_voice_text" not in st.session_state:
-    st.session_state.last_voice_text = ""
-
-if "last_voice_audio" not in st.session_state:
-    st.session_state.last_voice_audio = None
+        st.session_state[key] = value
 
 
 # ============================================================
-# LOAD MODEL
+# LOAD BRAIN
 # ============================================================
 
 @st.cache_resource(
@@ -195,11 +161,20 @@ def load_model():
         MODEL_NAME
     )
 
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        torch_dtype="auto",
-        device_map="auto"
-    )
+    if torch.cuda.is_available():
+
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float16,
+            device_map="auto",
+        )
+
+    else:
+
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float32,
+        )
 
     model.eval()
 
@@ -221,6 +196,13 @@ except Exception as error:
     st.stop()
 
 
+def model_device():
+
+    return next(
+        model.parameters()
+    ).device
+
+
 # ============================================================
 # NAME MEMORY
 # ============================================================
@@ -233,7 +215,7 @@ def detect_name(text):
 
         r"\bcall me ([A-Za-z][A-Za-z '\-]{1,40})",
 
-        r"\byou can call me ([A-Za-z][A-Za-z '\-]{1,40})"
+        r"\byou can call me ([A-Za-z][A-Za-z '\-]{1,40})",
 
     ]
 
@@ -242,7 +224,7 @@ def detect_name(text):
         match = re.search(
             pattern,
             text,
-            re.IGNORECASE
+            re.IGNORECASE,
         )
 
         if match:
@@ -267,58 +249,58 @@ LEVELS = {
     "PRIMARY 1": [
         "primary 1",
         "primary one",
-        "pry 1"
+        "pry 1",
     ],
 
     "PRIMARY 2": [
         "primary 2",
         "primary two",
-        "pry 2"
+        "pry 2",
     ],
 
     "PRIMARY 3": [
         "primary 3",
         "primary three",
-        "pry 3"
+        "pry 3",
     ],
 
     "PRIMARY 4": [
         "primary 4",
         "primary four",
-        "pry 4"
+        "pry 4",
     ],
 
     "PRIMARY 5": [
         "primary 5",
         "primary five",
-        "pry 5"
+        "pry 5",
     ],
 
     "PRIMARY 6": [
         "primary 6",
         "primary six",
-        "pry 6"
+        "pry 6",
     ],
 
     "JSS1": [
         "jss1",
         "jss 1",
         "jss one",
-        "junior secondary 1"
+        "junior secondary 1",
     ],
 
     "JSS2": [
         "jss2",
         "jss 2",
         "jss two",
-        "junior secondary 2"
+        "junior secondary 2",
     ],
 
     "JSS3": [
         "jss3",
         "jss 3",
         "jss three",
-        "junior secondary 3"
+        "junior secondary 3",
     ],
 
     "SS1": [
@@ -327,7 +309,7 @@ LEVELS = {
         "ss one",
         "sss1",
         "sss 1",
-        "senior secondary 1"
+        "senior secondary 1",
     ],
 
     "SS2": [
@@ -336,7 +318,7 @@ LEVELS = {
         "ss two",
         "sss2",
         "sss 2",
-        "senior secondary 2"
+        "senior secondary 2",
     ],
 
     "SS3": [
@@ -345,14 +327,14 @@ LEVELS = {
         "ss three",
         "sss3",
         "sss 3",
-        "senior secondary 3"
+        "senior secondary 3",
     ],
 
     "UNIVERSITY": [
         "university",
         "undergraduate",
-        "college"
-    ]
+        "college",
+    ],
 }
 
 
@@ -383,36 +365,67 @@ def detect_student_level(text):
 def remember_information(text):
 
     match = re.search(
-        r"\b(?:remember that|remember this|please remember|save this)\b\s*[:,-]?\s*(.+)",
+        r"\b(?:remember that|remember this|please remember|save this)\b"
+        r"\s*[:,-]?\s*(.+)",
         text,
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
-    if match:
+    if not match:
 
-        fact = match.group(1).strip()
+        return None
 
-        if fact:
+    fact = match.group(1).strip()
 
-            if fact not in st.session_state.personal_memory:
+    if fact:
 
-                st.session_state.personal_memory.append(
-                    fact
-                )
+        if fact not in st.session_state.personal_memory:
 
-                st.session_state.personal_memory = (
-                    st.session_state.personal_memory[-50:]
-                )
+            st.session_state.personal_memory.append(
+                fact
+            )
 
-                save_memory()
+            st.session_state.personal_memory = (
+                st.session_state.personal_memory[-50:]
+            )
 
-        return fact
+            save_memory()
+
+    return fact
+
+
+# ============================================================
+# PROJECT MEMORY
+# ============================================================
+
+def detect_project(text):
+
+    match = re.search(
+        r"\b(?:my project is|i am building|i'm building|"
+        r"we are building|we're building)\b\s*(.+)",
+        text,
+        re.IGNORECASE,
+    )
+
+    if not match:
+
+        return None
+
+    project = match.group(1).strip()
+
+    if project:
+
+        st.session_state.project = project[:500]
+
+        save_memory()
+
+        return project
 
     return None
 
 
 # ============================================================
-# FORGETTING
+# FORGET MEMORY
 # ============================================================
 
 def forget_information(text):
@@ -424,17 +437,16 @@ def forget_information(text):
         for phrase in [
             "forget everything",
             "forget all my memory",
-            "delete all my memory"
+            "delete all my memory",
+            "clear all my memory",
         ]
     ):
 
         st.session_state.user_name = None
-
         st.session_state.student_level = None
-
         st.session_state.personal_memory = []
-
         st.session_state.preferences = []
+        st.session_state.project = None
 
         save_memory()
 
@@ -471,6 +483,17 @@ def forget_information(text):
         )
 
 
+    if "forget my project" in lower:
+
+        st.session_state.project = None
+
+        save_memory()
+
+        return (
+            "Done. I forgot your saved project."
+        )
+
+
     return None
 
 
@@ -491,7 +514,6 @@ def detect_emotion(text):
             "frustrated",
             "you are wrong",
             "mistake",
-            "this is wrong"
         ]
     ):
 
@@ -505,7 +527,6 @@ def detect_emotion(text):
             "crying",
             "upset",
             "hurt",
-            "depressed"
         ]
     ):
 
@@ -519,7 +540,6 @@ def detect_emotion(text):
             "don't understand",
             "do not understand",
             "explain again",
-            "i don't get it"
         ]
     ):
 
@@ -533,7 +553,6 @@ def detect_emotion(text):
             "scared",
             "afraid",
             "nervous",
-            "fear"
         ]
     ):
 
@@ -549,7 +568,6 @@ def detect_emotion(text):
             "thanks",
             "thank you",
             "yesss",
-            "excited"
         ]
     ):
 
@@ -560,7 +578,7 @@ def detect_emotion(text):
 
 
 # ============================================================
-# UPGRADED TONE ADAPTATION
+# TONE ADAPTATION
 # ============================================================
 
 def tone_for(emotion):
@@ -569,46 +587,41 @@ def tone_for(emotion):
 
         "frustrated": (
             "Calm and direct",
-            "Be calm, respectful, direct, "
-            "and acknowledge the user's frustration. "
-            "Do not argue unnecessarily."
+            "Be calm, respectful, direct, acknowledge "
+            "frustration, and focus on fixing the problem.",
         ),
 
         "sad": (
             "Warm and supportive",
-            "Use warm, respectful and supportive "
-            "language. Be helpful without pretending "
-            "to have human emotions."
+            "Be kind, warm, practical, and supportive "
+            "without pretending to have human feelings.",
         ),
 
         "confused": (
             "Simple and step-by-step",
-            "Use simple words, short explanations, "
-            "examples and clear steps."
+            "Use simple language, short steps, examples, "
+            "and check understanding.",
         ),
 
         "worried": (
             "Reassuring and practical",
-            "Be reassuring but honest. Give practical "
-            "next steps instead of making promises."
+            "Be reassuring, careful, factual, and practical.",
         ),
 
         "happy": (
-            "Friendly and energetic",
-            "Be positive, friendly and encouraging "
-            "without becoming excessive."
+            "Friendly and positive",
+            "Be friendly, positive, energetic, and useful.",
         ),
 
         "neutral": (
             "Natural and friendly",
-            "Be natural, friendly, clear and concise."
-        )
-
+            "Be natural, friendly, clear, and concise.",
+        ),
     }
 
     return tones.get(
         emotion,
-        tones["neutral"]
+        tones["neutral"],
     )
 
 
@@ -625,13 +638,20 @@ def recognize_topic(text):
         "coding": [
             "code",
             "python",
+            "javascript",
+            "html",
+            "css",
             "program",
             "programming",
             "streamlit",
             "app",
             "software",
             "bug",
-            "error"
+            "error",
+            "function",
+            "class",
+            "api",
+            "github",
         ],
 
         "mathematics": [
@@ -642,7 +662,9 @@ def recognize_topic(text):
             "geometry",
             "calculus",
             "percentage",
-            "fraction"
+            "fraction",
+            "multiply",
+            "divide",
         ],
 
         "science": [
@@ -650,8 +672,11 @@ def recognize_topic(text):
             "biology",
             "chemistry",
             "physics",
+            "experiment",
             "atom",
-            "cell"
+            "cell",
+            "energy",
+            "planet",
         ],
 
         "sports": [
@@ -661,7 +686,9 @@ def recognize_topic(text):
             "player",
             "messi",
             "ronaldo",
-            "premier league"
+            "premier league",
+            "basketball",
+            "tennis",
         ],
 
         "education": [
@@ -671,7 +698,10 @@ def recognize_topic(text):
             "sss",
             "primary",
             "university",
-            "exam"
+            "exam",
+            "homework",
+            "lesson",
+            "study",
         ],
 
         "history": [
@@ -680,7 +710,9 @@ def recognize_topic(text):
             "war",
             "empire",
             "ancient",
-            "kingdom"
+            "president",
+            "king",
+            "kingdom",
         ],
 
         "geography": [
@@ -690,7 +722,9 @@ def recognize_topic(text):
             "geography",
             "river",
             "mountain",
-            "ocean"
+            "city",
+            "africa",
+            "nigeria",
         ],
 
         "technology": [
@@ -700,7 +734,8 @@ def recognize_topic(text):
             "internet",
             "ai",
             "artificial intelligence",
-            "android"
+            "android",
+            "browser",
         ],
 
         "entertainment": [
@@ -710,8 +745,18 @@ def recognize_topic(text):
             "actress",
             "music",
             "song",
-            "singer",
-            "game"
+            "artist",
+            "netflix",
+            "game",
+            "gaming",
+        ],
+
+        "health_and_wellness": [
+            "health",
+            "exercise",
+            "sleep",
+            "food",
+            "diet",
         ],
 
         "general knowledge": [
@@ -722,9 +767,8 @@ def recognize_topic(text):
             "why is",
             "how does",
             "tell me about",
-            "meaning of"
-        ]
-
+            "meaning of",
+        ],
     }
 
     for category, words in categories.items():
@@ -761,6 +805,138 @@ def update_topic(text):
 
 
 # ============================================================
+# TASK DETECTION
+# ============================================================
+
+def detect_task(text):
+
+    lower = text.lower()
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "write code",
+            "create code",
+            "make code",
+            "fix my code",
+            "debug",
+            "debugging",
+            "python code",
+            "streamlit code",
+            "html code",
+            "javascript code",
+        ]
+    ):
+
+        return "coding"
+
+
+    if (
+        any(
+            word in lower
+            for word in [
+                "calculate",
+                "solve",
+                "equation",
+                "how much",
+            ]
+        )
+        and re.search(
+            r"\d",
+            lower,
+        )
+    ):
+
+        return "math"
+
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "quiz me",
+            "test me",
+            "ask me questions",
+        ]
+    ):
+
+        return "quiz"
+
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "summarize",
+            "summary",
+            "shorten this",
+        ]
+    ):
+
+        return "summarization"
+
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "plan",
+            "planning",
+            "steps to",
+            "how do i",
+        ]
+    ):
+
+        return "planning"
+
+
+    return "conversation"
+
+
+# ============================================================
+# PYTHON CODE CHECK
+# ============================================================
+
+def validate_python_code(text):
+
+    blocks = re.findall(
+        r"```python\s*(.*?)```",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    if not blocks:
+
+        blocks = re.findall(
+            r"```\s*(.*?)```",
+            text,
+            re.DOTALL,
+        )
+
+    if not blocks:
+
+        return None
+
+
+    problems = []
+
+    for block in blocks[:3]:
+
+        try:
+
+            ast.parse(block)
+
+        except SyntaxError as error:
+
+            problems.append(
+                "Python syntax error near line "
+                + str(error.lineno)
+                + ": "
+                + error.msg
+            )
+
+
+    return problems if problems else []
+
+
+# ============================================================
 # VERIFIED FACTS
 # ============================================================
 
@@ -780,35 +956,33 @@ def verified_fact(question):
         )
 
 
-    if (
-        "what year is it" in lower
-        or "which year is it" in lower
-        or "current year" in lower
-    ):
-
-        return "The current year is 2026."
-
-
-    if (
-        "today's date" in lower
-        or "todays date" in lower
-        or "what date is it" in lower
-    ):
-
-        return "Today is August 25, 2026."
-
-
-    if (
-        (
-            "spider-man" in lower
-            or "spiderman" in lower
-        )
-        and "2026" in lower
+    if any(
+        phrase in lower
+        for phrase in [
+            "what year is it",
+            "which year is it",
+            "current year",
+        ]
     ):
 
         return (
-            "The Spider-Man film scheduled for "
-            "2026 is Spider-Man: Brand New Day."
+            "The current year is 2026."
+        )
+
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "today's date",
+            "todays date",
+            "what date is it",
+        ]
+    ):
+
+        return (
+            "Today is "
+            + CURRENT_DATE
+            + "."
         )
 
 
@@ -835,7 +1009,7 @@ def needs_current_lookup(text):
             "this month",
             "this week",
             "2026",
-            "news"
+            "news",
         ]
     )
 
@@ -845,177 +1019,27 @@ def current_lookup(question):
     try:
 
         response = requests.get(
-
             "https://en.wikipedia.org/w/api.php",
-
             params={
                 "action": "query",
                 "list": "search",
                 "srsearch": question,
                 "format": "json",
                 "utf8": "1",
-                "srlimit": 3
+                "srlimit": 3,
             },
-
             headers={
-                "User-Agent": "KingsBotAI/1.0"
+                "User-Agent": "KingsBotAI/2.0"
             },
-
-            timeout=8
+            timeout=8,
         )
 
         response.raise_for_status()
 
         results = []
 
+
         for item in (
             response.json()
             .get("query", {})
-            .get("search", [])
-        ):
-
-            title = item.get("title")
-
-            if not title:
-                continue
-
-            try:
-
-                page = requests.get(
-
-                    "https://en.wikipedia.org/api/rest_v1/page/summary/"
-                    + requests.utils.quote(title),
-
-                    headers={
-                        "User-Agent": "KingsBotAI/1.0"
-                    },
-
-                    timeout=8
-                )
-
-                page.raise_for_status()
-
-                summary = page.json().get(
-                    "extract"
-                )
-
-                if summary:
-
-                    results.append(
-                        title
-                        + ":\n"
-                        + summary
-                    )
-
-            except Exception:
-
-                continue
-
-        if results:
-
-            return "\n\n".join(
-                results[:3]
-            )
-
-    except Exception:
-
-        pass
-
-    return None
-
-
-# ============================================================
-# MEMORY CONTEXT
-# ============================================================
-
-def memory_context():
-
-    items = []
-
-    if st.session_state.user_name:
-
-        items.append(
-            "User's name: "
-            + st.session_state.user_name
-        )
-
-    if st.session_state.student_level:
-
-        items.append(
-            "User's education level: "
-            + st.session_state.student_level
-        )
-
-    for fact in (
-        st.session_state.personal_memory[-20:]
-    ):
-
-        items.append(
-            "Saved user fact: "
-            + fact
-        )
-
-    if items:
-
-        return "\n".join(items)
-
-    return "No personal information is saved."
-
-
-# ============================================================
-# EDUCATION CONTEXT
-# ============================================================
-
-def education_context():
-
-    if st.session_state.student_level:
-
-        return (
-            "The user's education level is "
-            + st.session_state.student_level
-            + ". Match school explanations to "
-            "that level. If the user asks for "
-            "advanced material, teach at the "
-            "requested level."
-        )
-
-    return (
-        "The user's education level is unknown. "
-        "Use a clear general explanation."
-    )
-
-
-# ============================================================
-# RESPONSE STYLE
-# ============================================================
-
-def response_style_instruction():
-
-    styles = {
-
-        "Short": (
-            "Keep answers short and direct. "
-            "Use only the necessary information."
-        ),
-
-        "Balanced": (
-            "Give a useful answer with enough "
-            "explanation without becoming unnecessarily long."
-        ),
-
-        "Detailed": (
-            "Give a detailed explanation with "
-            "examples and steps when useful."
-        )
-
-    }
-
-    return styles.get(
-        st.session_state.response_style,
-        styles["Balanced"]
-    )
-
-
-# ============================================================
-# GENERATE RESPONSE
-# ===================
+         
