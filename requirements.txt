@@ -1,8 +1,8 @@
-streamlit
-requests
-speechrecognition
-gTTS
-torch
-transformers
-accelerate
-streamlit-mic-recorder
+streamlit>=1.52.0
+requests>=2.32.0
+SpeechRecognition>=3.14.0
+gTTS>=2.5.4
+torch>=2.2.0
+transformers>=4.45.0
+accelerate>=0.34.0
+sentencepiece>=0.2.0
