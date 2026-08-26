@@ -10,7 +10,7 @@ from gtts import gTTS
 
 
 # ============================================================
-# KINGSBOT AI - CLEAN POWER BUILD
+# KINGSBOT AI
 # ============================================================
 
 st.set_page_config(
@@ -22,19 +22,15 @@ st.set_page_config(
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
 MODEL_NAME = "groq/compound"
 
-# Keep context reasonably small to reduce 400 errors.
-RECENT_MESSAGES = 8
-EMERGENCY_MESSAGES = 4
-FINAL_EMERGENCY_MESSAGES = 2
-
 MAX_MESSAGE_CHARS = 5000
-MAX_SUMMARY_CHARS = 8000
+RECENT_MESSAGES = 8
 MAX_MEMORY_ITEMS = 40
+MAX_SUMMARY_CHARS = 7000
 
 
 # ============================================================
@@ -47,7 +43,6 @@ def init_state():
         "messages": [],
         "conversation_summary": "",
         "memory_notes": [],
-        "memory": {},
         "user_name": "",
 
         "topic": "general",
@@ -58,18 +53,17 @@ def init_state():
         "deep_reasoning": True,
         "coding_mode": True,
         "web_search": True,
-        "voice_output": True,
         "auto_memory": True,
+        "voice_output": True,
         "show_tool_status": True,
 
-        # New feature
         "early_access": True,
-
-        "last_voice_hash": "",
-        "last_voice_audio": None,
 
         "last_user_prompt": "",
         "last_answer": "",
+
+        "last_voice_hash": "",
+        "last_voice_audio": None,
 
         "chat_started": datetime.now().isoformat(
             timespec="seconds"
@@ -88,7 +82,7 @@ init_state()
 
 
 # ============================================================
-# API KEY
+# API
 # ============================================================
 
 def get_secret(name):
@@ -109,24 +103,18 @@ def get_api_key():
     return get_secret("GROQ_API_KEY")
 
 
-def get_wolfram_key():
-
-    return get_secret("WOLFRAM_ALPHA_APPID")
-
-
 def get_client():
 
-    key = get_api_key()
+    api_key = get_api_key()
 
-    if not key:
-
+    if not api_key:
         raise RuntimeError(
             "GROQ_API_KEY is missing. "
-            "Add GROQ_API_KEY to Streamlit Secrets."
+            "Add your Groq API key to Streamlit Secrets."
         )
 
     return Groq(
-        api_key=key,
+        api_key=api_key,
         default_headers={
             "Groq-Model-Version": "latest"
         },
@@ -184,10 +172,6 @@ def detect_name(text):
 
                 st.session_state.user_name = name
 
-                st.session_state.memory[
-                    "name"
-                ] = name
-
                 add_memory(
                     "The user's name is " + name
                 )
@@ -229,14 +213,14 @@ def remember_information(text):
 
                 return
 
-    preference_patterns = [
+    preferences = [
         r"\bi like (.+)",
         r"\bi love (.+)",
         r"\bi prefer (.+)",
         r"\bmy favorite (.+)",
     ]
 
-    for pattern in preference_patterns:
+    for pattern in preferences:
 
         match = re.search(
             pattern,
@@ -246,30 +230,22 @@ def remember_information(text):
 
         if match:
 
-            preference = match.group(0).strip()
+            value = match.group(0).strip()
 
-            if len(preference) <= 250:
-
-                add_memory(
-                    preference
-                )
+            if len(value) <= 250:
+                add_memory(value)
 
 
 def forget_information(text):
 
-    lowered = text.lower().strip()
+    command = text.lower().strip()
 
-    if lowered in {
+    if command in {
         "forget my name",
         "forget my name please",
     }:
 
         st.session_state.user_name = ""
-
-        st.session_state.memory.pop(
-            "name",
-            None
-        )
 
         st.session_state.memory_notes = [
             note
@@ -279,21 +255,19 @@ def forget_information(text):
 
         return "Done. I forgot your name."
 
-    if lowered.startswith("forget that"):
+    if command.startswith("forget that"):
 
         if st.session_state.memory_notes:
-
             st.session_state.memory_notes.pop()
 
         return "Done. I forgot the last saved memory."
 
-    if lowered in {
+    if command in {
         "forget everything",
         "forget all my memory",
         "clear my memory",
     }:
 
-        st.session_state.memory = {}
         st.session_state.memory_notes = []
         st.session_state.user_name = ""
 
@@ -308,136 +282,99 @@ def forget_information(text):
 
 def detect_topic(text):
 
-    lowered = text.lower()
+    text = text.lower()
 
-    if any(
-        word in lowered
-        for word in [
-            "python",
-            "javascript",
-            "html",
-            "css",
-            "code",
-            "program",
-            "programming",
-            "bug",
-            "error",
-            "api",
-            "streamlit",
-            "software",
-        ]
-    ):
+    coding_words = [
+        "python",
+        "javascript",
+        "html",
+        "css",
+        "code",
+        "coding",
+        "programming",
+        "program",
+        "bug",
+        "error",
+        "api",
+        "streamlit",
+    ]
 
+    math_words = [
+        "math",
+        "calculate",
+        "equation",
+        "percentage",
+        "percent",
+        "algebra",
+        "geometry",
+        "calculus",
+    ]
+
+    current_words = [
+        "latest",
+        "today",
+        "current",
+        "recent",
+        "news",
+        "yesterday",
+        "tomorrow",
+    ]
+
+    if any(word in text for word in coding_words):
         return "coding"
 
-    if any(
-        word in lowered
-        for word in [
-            "math",
-            "calculate",
-            "equation",
-            "percent",
-            "percentage",
-            "algebra",
-            "geometry",
-            "calculus",
-        ]
-    ):
-
+    if any(word in text for word in math_words):
         return "mathematics"
 
-    if any(
-        word in lowered
-        for word in [
-            "latest",
-            "today",
-            "current",
-            "recent",
-            "news",
-            "yesterday",
-            "tomorrow",
-        ]
-    ):
-
+    if any(word in text for word in current_words):
         return "current information"
-
-    if any(
-        word in lowered
-        for word in [
-            "school",
-            "study",
-            "exam",
-            "homework",
-            "learn",
-        ]
-    ):
-
-        return "learning"
-
-    if any(
-        word in lowered
-        for word in [
-            "business",
-            "money",
-            "company",
-            "startup",
-            "sell",
-        ]
-    ):
-
-        return "business"
 
     return "general"
 
 
 def detect_emotion(text):
 
-    lowered = text.lower()
+    text = text.lower()
 
-    if any(
-        word in lowered
-        for word in [
-            "sad",
-            "angry",
-            "upset",
-            "cry",
-            "worried",
-            "scared",
-            "frustrated",
-        ]
-    ):
+    negative = [
+        "sad",
+        "angry",
+        "upset",
+        "cry",
+        "worried",
+        "scared",
+        "frustrated",
+    ]
 
+    positive = [
+        "happy",
+        "excited",
+        "great",
+        "amazing",
+        "awesome",
+    ]
+
+    if any(word in text for word in negative):
         return "supportive"
 
-    if any(
-        word in lowered
-        for word in [
-            "happy",
-            "excited",
-            "great",
-            "amazing",
-            "awesome",
-        ]
-    ):
-
+    if any(word in text for word in positive):
         return "positive"
 
     return "neutral"
 
 
 # ============================================================
-# KINGSBOT BRAIN
+# KINGSBOT SYSTEM PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = """
-You are KingsBot, a powerful general-purpose AI assistant.
+You are KingsBot AI.
 
-You are a real AI assistant powered by a large language model.
-You are NOT a keyword chatbot.
+You are a real general-purpose AI assistant powered by
+Groq Compound. You are NOT a keyword chatbot.
 
-Do not replace your intelligence with hard-coded answers.
+You can help with:
 
-CORE CAPABILITIES
 - General knowledge
 - Science
 - Mathematics
@@ -449,168 +386,83 @@ CORE CAPABILITIES
 - Education
 - Business
 - Writing
-- Analysis
+- Research
 - Problem solving
 - Current information
 - Web research
 - Code execution
-- Voice interaction
-- Long-term conversation memory
+- Conversation memory
 
-CONVERSATION
-Use the supplied conversation summary, saved memory, and recent
-messages to maintain continuity.
+IMPORTANT:
 
-Never invent previous conversations that were not supplied.
+Use your actual language-model intelligence.
 
-FACTUAL GROUNDING
-When factual grounding is enabled, prioritize accurate,
-verifiable information.
+Do not pretend to know something that you do not know.
 
-If information is uncertain, say so.
+Do not invent facts.
 
-CURRENT INFORMATION
-For current, recent, changing, or time-sensitive information,
-use available web capabilities when appropriate.
+For current or changing information, use available web
+capabilities when appropriate.
 
-WEB SEARCH
-Use web search when fresh information is useful.
+For calculations and computational problems, use available
+code execution when useful.
 
-Never claim that you searched if you did not.
+For programming requests:
 
-CODING
-When the user asks for code:
+1. Understand the complete request.
+2. Preserve useful code supplied by the user.
+3. Produce complete code when requested.
+4. Check syntax carefully.
+5. Do not replace the AI backend with fake keyword responses.
 
-- Understand the complete request.
-- Produce complete usable code.
-- Check syntax carefully.
-- Preserve useful existing code.
-- Do not replace the real AI backend with fake responses.
+For difficult problems, reason carefully internally and provide
+useful conclusions and explanations without revealing private
+hidden chain-of-thought.
 
-MATHEMATICS
-Solve mathematical problems carefully.
+MEMORY:
 
-Use available computational tools when they improve accuracy.
+Use the saved memory supplied by the application.
 
-DEEP REASONING
-For difficult problems, reason carefully internally.
+If the user explicitly says "remember this" or "remember that",
+treat the information as important memory.
 
-Do not reveal private hidden chain-of-thought.
+CONVERSATION:
 
-Instead provide useful explanations, calculations,
-steps, and conclusions.
+Use the recent conversation and long-term summary supplied
+by the application.
 
-STEEL CAGE MEMORY
-Respect the saved user memory supplied by the application.
+Do not invent previous conversation.
 
-When the user explicitly asks you to remember something,
-treat it as important memory.
+QUESTIONING:
 
-EARLY ACCESS
-Early Access is an experimental KingsBot application feature.
+If the user's topic would benefit from clarification, ask a
+useful question.
 
-It may be used for future KingsBot capabilities.
+If the request is already clear, answer directly.
 
-Do not claim that it unlocks an unavailable external service
-or unreleased Groq feature.
+EARLY ACCESS:
 
-QUESTIONING
-When useful, ask relevant follow-up questions about the
-user's topic.
+Early Access is an experimental KingsBot application setting.
+It does not magically unlock unreleased services.
 
-Do not ask unnecessary questions when the user's request
-is already clear.
+STYLE:
 
-STYLE
-Simple questions should receive simple answers.
+Be helpful, natural, accurate and direct.
 
-Complex questions should receive complete answers.
+Simple questions should get simple answers.
 
-Be helpful, direct, natural, and honest.
-
-Never claim that you used a tool when you did not.
+Complex questions should get complete answers.
 """
 
 
 # ============================================================
-# TOOLS
-# ============================================================
-
-def get_enabled_tools():
-
-    tools = []
-
-    if st.session_state.web_search:
-
-        tools.append("web_search")
-        tools.append("visit_website")
-
-    if st.session_state.coding_mode:
-
-        tools.append("code_interpreter")
-
-    wolfram_key = get_wolfram_key()
-
-    if wolfram_key:
-
-        tools.append("wolfram_alpha")
-
-    return list(
-        dict.fromkeys(tools)
-    )
-
-
-def call_ai(messages):
-
-    client = get_client()
-
-    request_args = {
-        "model": MODEL_NAME,
-        "messages": messages,
-    }
-
-    enabled_tools = get_enabled_tools()
-
-    if enabled_tools:
-
-        request_args[
-            "compound_custom"
-        ] = {
-            "tools": {
-                "enabled_tools": enabled_tools
-            }
-        }
-
-        wolfram_key = get_wolfram_key()
-
-        if (
-            "wolfram_alpha" in enabled_tools
-            and wolfram_key
-        ):
-
-            request_args[
-                "compound_custom"
-            ][
-                "tools"
-            ][
-                "wolfram_settings"
-            ] = {
-                "authorization": wolfram_key
-            }
-
-    return client.chat.completions.create(
-        **request_args
-    )
-
-
-# ============================================================
-# BUILD AI CONTEXT
+# BUILD MESSAGES
 # ============================================================
 
 def build_messages(
-    user_text,
-    include_summary=True,
+    prompt,
     recent_count=RECENT_MESSAGES,
+    include_summary=True,
 ):
 
     messages = []
@@ -620,17 +472,18 @@ def build_messages(
         "content": SYSTEM_PROMPT,
     })
 
+    # User name
     if st.session_state.user_name:
 
         messages.append({
             "role": "system",
             "content": (
-                "The user's saved name is "
+                "User's saved name: "
                 + st.session_state.user_name
-                + "."
             ),
         })
 
+    # Long memory
     if (
         include_summary
         and st.session_state.conversation_summary
@@ -646,9 +499,10 @@ def build_messages(
             ),
         })
 
+    # Saved memories
     if st.session_state.memory_notes:
 
-        memory_text = "\n".join(
+        memory = "\n".join(
             "- " + str(note)[:300]
             for note in (
                 st.session_state.memory_notes[-15:]
@@ -659,29 +513,30 @@ def build_messages(
             "role": "system",
             "content": (
                 "SAVED USER MEMORY:\n"
-                + memory_text
+                + memory
             ),
         })
 
+    # Application state
     settings = (
-        "CURRENT KINGSBOT SETTINGS:\n"
-        "Turbo Speed="
+        "KINGSBOT SETTINGS:\n"
+        "Turbo Speed: "
         + str(st.session_state.turbo_mode)
-        + "\nFactual Grounding="
+        + "\nFactual Grounding: "
         + str(st.session_state.factual_grounding)
-        + "\nDeep Reasoning="
+        + "\nDeep Reasoning: "
         + str(st.session_state.deep_reasoning)
-        + "\nAdvanced Coding="
+        + "\nAdvanced Coding: "
         + str(st.session_state.coding_mode)
-        + "\nWeb Search="
+        + "\nWeb Search: "
         + str(st.session_state.web_search)
-        + "\nSteel Cage Memory="
+        + "\nSteel Cage Memory: "
         + str(st.session_state.auto_memory)
-        + "\nEarly Access="
+        + "\nEarly Access: "
         + str(st.session_state.early_access)
-        + "\nTopic="
+        + "\nTopic: "
         + str(st.session_state.topic)
-        + "\nEmotion="
+        + "\nEmotion: "
         + str(st.session_state.emotion)
     )
 
@@ -690,11 +545,10 @@ def build_messages(
         "content": settings,
     })
 
-    recent = (
-        st.session_state.messages[
-            -recent_count:
-        ]
-    )
+    # Recent messages
+    recent = st.session_state.messages[
+        -recent_count:
+    ]
 
     for message in recent:
 
@@ -704,7 +558,6 @@ def build_messages(
             "user",
             "assistant",
         }:
-
             continue
 
         content = str(
@@ -724,9 +577,10 @@ def build_messages(
             ],
         })
 
+    # Current request
     messages.append({
         "role": "user",
-        "content": str(user_text)[
+        "content": str(prompt)[
             :MAX_MESSAGE_CHARS
         ],
     })
@@ -735,10 +589,90 @@ def build_messages(
 
 
 # ============================================================
-# ERROR HANDLING
+# AI REQUEST
 # ============================================================
 
-def api_error_message(exc):
+def ask_kingsbot(prompt):
+
+    client = get_client()
+
+    messages = build_messages(
+        prompt,
+        recent_count=RECENT_MESSAGES,
+        include_summary=True,
+    )
+
+    try:
+
+        # IMPORTANT:
+        # Compound automatically decides when to use
+        # its built-in tools. This avoids unnecessary
+        # tool configuration errors.
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+        )
+
+    except Exception as first_error:
+
+        error_text = str(
+            first_error
+        ).lower()
+
+        # Smaller emergency request.
+        if (
+            "413" in error_text
+            or "too large" in error_text
+            or "request entity" in error_text
+        ):
+
+            messages = build_messages(
+                prompt,
+                recent_count=3,
+                include_summary=False,
+            )
+
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+            )
+
+        else:
+
+            raise first_error
+
+    message = response.choices[0].message
+
+    answer = str(
+        getattr(
+            message,
+            "content",
+            ""
+        )
+        or ""
+    ).strip()
+
+    if not answer:
+
+        answer = (
+            "I did not receive a response. "
+            "Please try again."
+        )
+
+    executed_tools = getattr(
+        message,
+        "executed_tools",
+        None
+    )
+
+    return answer, executed_tools
+
+
+# ============================================================
+# ERROR MESSAGE
+# ============================================================
+
+def clean_error(exc):
 
     text = str(exc)
     lower = text.lower()
@@ -746,14 +680,16 @@ def api_error_message(exc):
     if "401" in text:
 
         return (
-            "🔐 Groq rejected the API key.\n\n"
-            "Check your GROQ_API_KEY in Streamlit Secrets."
+            "🔐 **API key error**\n\n"
+            "Your GROQ_API_KEY was rejected. "
+            "Check the key in Streamlit Secrets."
         )
 
     if "403" in text:
 
         return (
-            "🚫 Groq rejected this request because "
+            "🚫 **Access error**\n\n"
+            "Groq rejected this request because "
             "the account or capability is not authorized."
         )
 
@@ -764,24 +700,306 @@ def api_error_message(exc):
     ):
 
         return (
-            "⚠️ The request was too large.\n\n"
-            "KingsBot automatically reduced the "
-            "conversation context."
+            "⚠️ **Request too large**\n\n"
+            "KingsBot reduced the conversation context. "
+            "Please try the message again."
         )
 
     if "429" in text:
 
         return (
-            "⏳ Groq's request limit was reached.\n\n"
+            "⏳ **Rate limit reached**\n\n"
             "Please wait a little and try again."
         )
 
     if "400" in text:
 
-        return ()
-            "⚠️ Groq rejected the request.\n\n"
-            "KingsBot could not send this request "
-            "in its current form.\n\n"
-            "Technical details:\n"
+        return (
+            "⚠️ **Groq rejected the request**\n\n"
+            "Technical error:\n\n"
             + text
-       
+        )
+
+    return (
+        "⚠️ **KingsBot error**\n\n"
+        + text
+    )
+
+
+# ============================================================
+# LONG MEMORY SUMMARY
+# ============================================================
+
+def update_summary():
+
+    total = len(
+        st.session_state.messages
+    )
+
+    if total < 16:
+        return
+
+    if (
+        total
+        - st.session_state.summary_message_count
+        < 8
+    ):
+        return
+
+    cutoff = max(
+        0,
+        total - RECENT_MESSAGES
+    )
+
+    old_messages = (
+        st.session_state.messages[
+            st.session_state.summary_message_count:
+            cutoff
+        ]
+    )
+
+    if not old_messages:
+        return
+
+    transcript = []
+
+    for message in old_messages:
+
+        role = str(
+            message.get(
+                "role",
+                ""
+            )
+        ).upper()
+
+        content = str(
+            message.get(
+                "content",
+                ""
+            )
+        )
+
+        transcript.append(
+            role
+            + ": "
+            + content[:2000]
+        )
+
+    transcript_text = "\n\n".join(
+        transcript
+    )[:16000]
+
+    old_summary = (
+        st.session_state.conversation_summary[
+            :5000
+        ]
+    )
+
+    prompt = """
+Create a compact long-term memory for this conversation.
+
+Keep:
+
+- important project details
+- decisions
+- user preferences
+- unresolved problems
+- important facts
+- useful context for continuing the conversation
+
+Do not invent information.
+
+Return only the memory summary.
+
+Previous memory:
+""" + old_summary + """
+
+Conversation:
+""" + transcript_text
+
+    try:
+
+        response = get_client().chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Create concise conversation memory."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+        )
+
+        summary = str(
+            response.choices[0].message.content
+            or ""
+        ).strip()
+
+        if summary:
+
+            st.session_state.conversation_summary = (
+                summary[:MAX_SUMMARY_CHARS]
+            )
+
+            st.session_state.summary_message_count = (
+                cutoff
+            )
+
+    except Exception:
+        pass
+
+
+# ============================================================
+# VOICE INPUT
+# ============================================================
+
+def transcribe_voice(audio_file):
+
+    if audio_file is None:
+        return ""
+
+    try:
+
+        raw = audio_file.getvalue()
+
+        if not raw:
+            return ""
+
+        audio_hash = hashlib.sha256(
+            raw
+        ).hexdigest()
+
+        if (
+            audio_hash
+            == st.session_state.last_voice_hash
+        ):
+
+            return ""
+
+        st.session_state.last_voice_hash = (
+            audio_hash
+        )
+
+        audio = io.BytesIO(raw)
+        audio.name = "voice.wav"
+
+        result = (
+            get_client()
+            .audio
+            .transcriptions
+            .create(
+                file=audio,
+                model="whisper-large-v3-turbo",
+                response_format="json",
+            )
+        )
+
+        return str(
+            getattr(
+                result,
+                "text",
+                ""
+            )
+            or ""
+        ).strip()
+
+    except Exception as exc:
+
+        st.error(
+            "Voice transcription error: "
+            + str(exc)
+        )
+
+        return ""
+
+
+# ============================================================
+# VOICE OUTPUT
+# ============================================================
+
+def make_voice(text):
+
+    try:
+
+        audio = io.BytesIO()
+
+        gTTS(
+            text=str(text)[:3500],
+            lang="en",
+            slow=False,
+        ).write_to_fp(
+            audio
+        )
+
+        return audio.getvalue()
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# TOOL STATUS
+# ============================================================
+
+def show_tools(tools):
+
+    if not tools:
+        return
+
+    if not st.session_state.show_tool_status:
+        return
+
+    names = []
+
+    try:
+
+        for tool in tools:
+
+            if isinstance(
+                tool,
+                dict
+            ):
+
+                value = tool.get(
+                    "type"
+                )
+
+            else:
+
+                value = getattr(
+                    tool,
+                    "type",
+                    None
+                )
+
+            if value:
+                names.append(
+                    str(value)
+                )
+
+    except Exception:
+        return
+
+    if names:
+
+        names = list(
+            dict.fromkeys(
+                names
+            )
+        )
+
+        st.caption(
+            "🛠️ Tools used: "
+            + ", ".join(names)
+        )
+
+
+# ============================================================
+# TRANSCRIPT
+# ======================================
