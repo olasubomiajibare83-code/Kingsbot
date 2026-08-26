@@ -778,7 +778,7 @@ def api_error_message(exc):
 
     if "400" in text:
 
-        return (
+        return ()
             "⚠️ Groq rejected the request.\n\n"
             "KingsBot could not send this request "
             "in its current form.\n\n"
