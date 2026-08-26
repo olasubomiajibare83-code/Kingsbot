@@ -1039,7 +1039,7 @@ def current_lookup(question):
         results = []
 
 
-        for item in (
+        for item in ()
             response.json()
             .get("query", {})
          
