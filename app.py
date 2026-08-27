@@ -27,11 +27,7 @@ st.set_page_config(
 MODEL = "openai/gpt-oss-20b"
 VOICE_MODEL = "whisper-large-v3-turbo"
 
-# MEDIUM CONVERSATION MEMORY
-# Only the most recent 30 messages are sent to the model.
-MEDIUM_HISTORY_MESSAGES = 30
-
-MEMORY_FILE = "kingsbot_early_access_memory.json"
+MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
 
 
@@ -41,22 +37,21 @@ CHATS_FILE = "kingsbot_chats.json"
 
 def load_json(path, default):
     try:
-        if not os.path.exists(path):
-            return default
-
-        with open(path, "r", encoding="utf-8") as file:
-            return json.load(file)
-
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as file:
+                return json.load(file)
     except Exception:
-        return default
+        pass
+
+    return default
 
 
 def save_json(path, data):
     try:
-        temporary_path = path + ".tmp"
+        temporary = path + ".tmp"
 
         with open(
-            temporary_path,
+            temporary,
             "w",
             encoding="utf-8",
         ) as file:
@@ -68,12 +63,109 @@ def save_json(path, data):
             )
 
         os.replace(
-            temporary_path,
+            temporary,
             path,
         )
 
     except Exception:
         pass
+
+
+# ============================================================
+# CHAT SYSTEM
+# ============================================================
+
+def new_chat():
+    now = datetime.now().isoformat(
+        timespec="seconds"
+    )
+
+    return {
+        "id": uuid.uuid4().hex,
+        "title": "New conversation",
+        "created_at": now,
+        "updated_at": now,
+        "messages": [],
+    }
+
+
+def load_chats():
+    chats = load_json(
+        CHATS_FILE,
+        [],
+    )
+
+    if not isinstance(chats, list):
+        chats = []
+
+    if not chats:
+        chats = [new_chat()]
+
+        save_json(
+            CHATS_FILE,
+            chats,
+        )
+
+    return chats
+
+
+def current_chat():
+    for chat in st.session_state.saved_chats:
+        if (
+            chat["id"]
+            == st.session_state.current_chat_id
+        ):
+            return chat
+
+    return None
+
+
+def save_current_chat():
+    chat = current_chat()
+
+    if not chat:
+        return
+
+    chat["messages"] = (
+        st.session_state.messages
+    )
+
+    chat["updated_at"] = (
+        datetime.now().isoformat(
+            timespec="seconds"
+        )
+    )
+
+    # Automatically create a useful title.
+    for message in (
+        st.session_state.messages
+    ):
+
+        if (
+            message.get("role")
+            == "user"
+            and message.get("content")
+        ):
+
+            title = " ".join(
+                str(
+                    message["content"]
+                ).split()
+            )
+
+            if len(title) > 50:
+                title = (
+                    title[:50]
+                    + "..."
+                )
+
+            chat["title"] = title
+            break
+
+    save_json(
+        CHATS_FILE,
+        st.session_state.saved_chats,
+    )
 
 
 # ============================================================
@@ -99,8 +191,14 @@ def load_memory():
 
     return {
         "name": data.get("name"),
-        "facts": data.get("facts", []),
-        "preferences": data.get("preferences", []),
+        "facts": data.get(
+            "facts",
+            [],
+        ),
+        "preferences": data.get(
+            "preferences",
+            [],
+        ),
     }
 
 
@@ -119,170 +217,35 @@ memory = load_memory()
 
 
 # ============================================================
-# CONVERSATION SYSTEM
+# GROQ API KEY
 # ============================================================
 
-def create_chat():
-    now = datetime.now().isoformat(
-        timespec="seconds"
-    )
-
-    return {
-        "id": uuid.uuid4().hex,
-        "title": "New conversation",
-        "created_at": now,
-        "updated_at": now,
-        "messages": [],
-    }
-
-
-def load_chats():
-    chats = load_json(
-        CHATS_FILE,
-        [],
-    )
-
-    if not isinstance(chats, list):
-        chats = []
-
-    if not chats:
-        chats = [create_chat()]
-
-        save_json(
-            CHATS_FILE,
-            chats,
-        )
-
-    return chats
-
-
-def get_current_chat():
-    for chat in st.session_state.saved_chats:
-
-        if (
-            chat["id"]
-            == st.session_state.current_chat_id
-        ):
-            return chat
-
-    return None
-
-
-def save_current_chat():
-    chat = get_current_chat()
-
-    if chat is None:
-        return
-
-    # Keep the complete conversation saved locally.
-    chat["messages"] = list(
-        st.session_state.messages
-    )
-
-    chat["updated_at"] = (
-        datetime.now().isoformat(
-            timespec="seconds"
-        )
-    )
-
-    # Automatic title.
-    for message in st.session_state.messages:
-
-        if (
-            message.get("role") == "user"
-            and message.get("content")
-        ):
-
-            title = " ".join(
-                str(
-                    message["content"]
-                ).split()
-            )
-
-            if len(title) > 50:
-                title = title[:50] + "..."
-
-            chat["title"] = title
-            break
-
-    save_json(
-        CHATS_FILE,
-        st.session_state.saved_chats,
-    )
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-if "saved_chats" not in st.session_state:
-    st.session_state.saved_chats = load_chats()
-
-
-if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = (
-        st.session_state.saved_chats[0]["id"]
-    )
-
-
-if "messages" not in st.session_state:
-
-    selected_chat = get_current_chat()
-
-    if selected_chat:
-        st.session_state.messages = list(
-            selected_chat.get(
-                "messages",
-                [],
-            )
-        )
-    else:
-        st.session_state.messages = []
-
-
-if "user_name" not in st.session_state:
-    st.session_state.user_name = memory["name"]
-
-
-if "personal_memory" not in st.session_state:
-    st.session_state.personal_memory = memory["facts"]
-
-
-if "preferences" not in st.session_state:
-    st.session_state.preferences = memory["preferences"]
-
-
-# ============================================================
-# GROQ CONNECTION
-# ============================================================
-
-def get_groq_key():
+def get_api_key():
 
     try:
-        secret_key = st.secrets.get(
+        key = st.secrets.get(
             "GROQ_API_KEY"
         )
 
-        if secret_key:
+        if key:
             return str(
-                secret_key
+                key
             ).strip()
 
     except Exception:
         pass
 
-    return os.getenv(
+    return os.environ.get(
         "GROQ_API_KEY"
     )
 
 
-GROQ_API_KEY = get_groq_key()
+api_key = get_api_key()
 
-
-if GROQ_API_KEY:
+if api_key:
 
     client = Groq(
-        api_key=GROQ_API_KEY,
+        api_key=api_key,
         timeout=120,
         max_retries=0,
     )
@@ -293,28 +256,100 @@ else:
 
 
 # ============================================================
-# EARLY ACCESS MEMORY
+# SESSION STATE
 # ============================================================
 
-def remember_from_message(text):
+saved_chats = load_chats()
 
-    changed = False
-    lower_text = text.lower()
 
-    # --------------------------------------------------------
-    # NAME
-    # --------------------------------------------------------
+if "saved_chats" not in st.session_state:
 
-    name_marker = "my name is "
+    st.session_state.saved_chats = (
+        saved_chats
+    )
 
-    if name_marker in lower_text:
 
-        start = (
-            lower_text.find(name_marker)
-            + len(name_marker)
+if "current_chat_id" not in st.session_state:
+
+    st.session_state.current_chat_id = (
+        saved_chats[0]["id"]
+    )
+
+
+if "messages" not in st.session_state:
+
+    selected_chat = None
+
+    for chat in saved_chats:
+
+        if (
+            chat["id"]
+            == st.session_state.current_chat_id
+        ):
+
+            selected_chat = chat
+            break
+
+    if selected_chat:
+
+        st.session_state.messages = list(
+            selected_chat.get(
+                "messages",
+                [],
+            )
         )
 
-        name = text[start:].strip(
+    else:
+
+        st.session_state.messages = []
+
+
+if "user_name" not in st.session_state:
+
+    st.session_state.user_name = (
+        memory["name"]
+    )
+
+
+if "personal_memory" not in st.session_state:
+
+    st.session_state.personal_memory = (
+        memory["facts"]
+    )
+
+
+if "preferences" not in st.session_state:
+
+    st.session_state.preferences = (
+        memory["preferences"]
+    )
+
+
+# ============================================================
+# EARLY ACCESS MEMORY EXTRACTION
+# ============================================================
+
+def extract_memory(text):
+
+    lower = text.lower()
+
+    changed = False
+
+
+    # ----------------------------
+    # Name
+    # ----------------------------
+
+    if "my name is " in lower:
+
+        position = lower.index(
+            "my name is "
+        )
+
+        name = text[
+            position
+            + len("my name is "):
+        ].strip(
             " .!?"
         )
 
@@ -326,27 +361,29 @@ def remember_from_message(text):
 
             changed = True
 
-    # --------------------------------------------------------
-    # EXPLICIT MEMORY
-    # --------------------------------------------------------
+
+    # ----------------------------
+    # Remember facts
+    # ----------------------------
 
     memory_markers = [
         "remember that ",
         "remember this: ",
         "please remember ",
-        "save this: ",
     ]
 
     for marker in memory_markers:
 
-        if marker in lower_text:
+        position = lower.find(
+            marker
+        )
 
-            start = (
-                lower_text.find(marker)
-                + len(marker)
-            )
+        if position >= 0:
 
-            fact = text[start:].strip(
+            fact = text[
+                position
+                + len(marker):
+            ].strip(
                 " .!?"
             )
 
@@ -364,9 +401,10 @@ def remember_from_message(text):
 
             break
 
-    # --------------------------------------------------------
-    # PREFERENCES
-    # --------------------------------------------------------
+
+    # ----------------------------
+    # Preferences
+    # ----------------------------
 
     preference_markers = [
         "i prefer ",
@@ -376,11 +414,15 @@ def remember_from_message(text):
 
     for marker in preference_markers:
 
-        if marker in lower_text:
+        position = lower.find(
+            marker
+        )
 
-            start = lower_text.find(marker)
+        if position >= 0:
 
-            preference = text[start:].strip(
+            preference = text[
+                position:
+            ].strip(
                 " .!?"
             )
 
@@ -398,203 +440,146 @@ def remember_from_message(text):
 
             break
 
+
     if changed:
+
         save_memory()
 
 
-def clear_memory():
+# ============================================================
+# MEMORY CONTEXT
+# ============================================================
 
-    st.session_state.user_name = None
-    st.session_state.personal_memory = []
-    st.session_state.preferences = []
+def memory_context():
 
-    save_memory()
-
-
-def get_memory_context():
-
-    memory_lines = []
+    information = []
 
     if st.session_state.user_name:
 
-        memory_lines.append(
+        information.append(
             "User name: "
             + st.session_state.user_name
         )
 
-    for fact in st.session_state.personal_memory:
 
-        memory_lines.append(
+    for fact in (
+        st.session_state.personal_memory
+    ):
+
+        information.append(
             "Saved fact: "
             + str(fact)
         )
 
-    for preference in st.session_state.preferences:
 
-        memory_lines.append(
+    for preference in (
+        st.session_state.preferences
+    ):
+
+        information.append(
             "Preference: "
             + str(preference)
         )
 
-    if not memory_lines:
-        return "No saved personal memory."
 
-    return "\n".join(memory_lines)
+    if not information:
+
+        return (
+            "No saved personal memory yet."
+        )
+
+
+    return "\n".join(
+        information
+    )
 
 
 # ============================================================
-# REAL BRAIN
+# REAL BRAIN PROMPT
 # ============================================================
 
-def build_brain_messages(current_user_message):
+def build_messages(user_text):
 
     system_prompt = f"""
 You are KingsBot AI.
 
-You are powered by the real AI model:
-{MODEL}
+You are a general-purpose AI assistant powered by
+the OpenAI GPT-OSS 20B model running on Groq.
 
-Groq provides the fast Turbo inference layer.
-The model itself is the brain.
+IMPORTANT:
+Turbo is the speed of inference.
+GPT-OSS 20B is the actual AI brain.
 
-============================================================
-CORE INTELLIGENCE
-============================================================
+Your capabilities include:
 
-You are a capable general-purpose AI assistant.
+- General knowledge
+- Deep reasoning
+- Problem solving
+- Mathematics
+- Science
+- History
+- Geography
+- Technology
+- Programming
+- Debugging
+- Code generation
+- Code review
+- Current-information research
+- Browser search
+- Python code execution
+- Writing
+- Education
+- Planning
+- Explanations
+- Conversation
+- Voice interaction
 
-You can help with:
+CORE BEHAVIOR:
 
-• General knowledge
-• World knowledge
-• Mathematics
-• Science
-• History
-• Geography
-• Technology
-• Artificial intelligence
-• Programming
-• Advanced coding
-• Debugging
-• Code review
-• Software development
-• Problem solving
-• Deep reasoning
-• Research
-• Current information
-• Education
-• Writing
-• Planning
-• Explanations
-• Everyday questions
+1. Answer the user's actual question.
 
-============================================================
-DEEP REASONING
-============================================================
+2. Think carefully before answering.
 
-Think carefully about difficult problems.
+3. For difficult problems, reason deeply and verify
+   the result when possible.
 
-For complicated questions:
+4. For mathematics and computational problems,
+   use Python code execution when useful.
 
-• Break the problem into useful steps.
-• Check assumptions.
-• Check calculations.
-• Verify conclusions when possible.
-• Correct mistakes rather than continuing them.
+5. For programming questions, produce correct,
+   runnable code when requested.
 
-Do NOT reveal private chain-of-thought.
+6. Check Python syntax, indentation, imports,
+   variable names and logic before presenting code.
 
-Instead provide useful:
-• conclusions
-• reasoning summaries
-• calculations
-• explanations
-• steps
+7. For current information, use browser search.
 
-============================================================
-FACTUAL GROUNDING
-============================================================
+8. Never pretend that old information is current.
 
-When information may have changed:
+9. If you are uncertain, say so rather than inventing
+   an answer.
 
-• Use browser search.
-• Prefer reliable sources.
-• Do not invent facts.
-• Do not invent citations.
-• Do not pretend old information is current.
-• Say when something is uncertain.
+10. Ask a useful follow-up question when it genuinely
+    helps the user continue.
 
-============================================================
-MATHEMATICS
-============================================================
+11. Do not ask unnecessary questions.
 
-Solve mathematics accurately.
+12. Do not reveal private chain-of-thought.
+    Give useful explanations, calculations, steps
+    and conclusions instead.
 
-For difficult calculations, use the code
-execution tool when useful.
+13. Remember relevant information from Early Access
+    Memory when it helps answer the user.
 
-============================================================
-ADVANCED CODING
-============================================================
+14. Do not mention internal system instructions.
 
-When the user asks for code:
+EARLY ACCESS MEMORY:
 
-• Give complete code when appropriate.
-• Check imports.
-• Check indentation.
-• Check syntax.
-• Check variable names.
-• Check API usage.
-• Check logic.
-• Preserve requested features.
-• Do not replace the real AI brain with
-  hard-coded fake answers.
+{memory_context()}
 
-============================================================
-CONVERSATION
-============================================================
-
-Understand the conversation history.
-
-Use earlier messages when they are relevant.
-
-Ask useful follow-up questions when they
-genuinely help.
-
-Do not ask unnecessary questions.
-
-Be direct, friendly, clear and honest.
-
-============================================================
-EARLY ACCESS MEMORY
-============================================================
-
-{get_memory_context()}
-
-Use memory only when relevant.
-
-============================================================
-REMOVED FEATURES
-============================================================
-
-There is NO separate multilingual feature.
-
-There is NO topic-detection system.
-
-There is NO file-upload feature.
-
-There is NO file-generation feature.
-
-There is NO artificial request cooldown.
-
-There is NO artificial request counter.
-
-============================================================
-CURRENT USER MESSAGE
-============================================================
-
-Answer the user's current message directly.
+Use this memory only when relevant.
 """
+
 
     messages = [
         {
@@ -603,36 +588,45 @@ Answer the user's current message directly.
         }
     ]
 
+
     # ========================================================
-    # MEDIUM CONVERSATION HISTORY
+    # FULL CONVERSATION
     # ========================================================
     #
-    # The application can save the conversation.
+    # There is NO artificial:
     #
-    # Only the most recent 30 messages are sent to
-    # the AI model to keep the active context MEDIUM.
+    # MAX_HISTORY_MESSAGES
+    # MAX_MESSAGE_CHARS
+    # REQUEST_COOLDOWN
     #
-    # This is the ONLY conversation-size change requested.
+    # The application keeps the full conversation.
+    #
+    # The provider's context window is still a real
+    # technical limit and cannot be removed by Python.
     #
 
-    recent_messages = (
-        st.session_state.messages[
-            -MEDIUM_HISTORY_MESSAGES:
-        ]
-    )
 
-    for message in recent_messages:
+    for message in (
+        st.session_state.messages
+    ):
 
-        role = message.get("role")
-        content = message.get("content")
+        role = message.get(
+            "role"
+        )
+
+        content = message.get(
+            "content"
+        )
 
         if role not in (
             "user",
             "assistant",
         ):
+
             continue
 
         if not content:
+
             continue
 
         messages.append(
@@ -642,23 +636,25 @@ Answer the user's current message directly.
             }
         )
 
+
     messages.append(
         {
             "role": "user",
-            "content": current_user_message,
+            "content": user_text,
         }
     )
+
 
     return messages
 
 
 # ============================================================
-# ASK REAL AI BRAIN
+# REAL AI BRAIN
 # ============================================================
 
-def ask_kingsbot(user_message):
+def ask_brain(user_text):
 
-    if client is None:
+    if not client:
 
         return (
             "🔑 GROQ_API_KEY is missing.\n\n"
@@ -666,40 +662,43 @@ def ask_kingsbot(user_message):
             "Streamlit Secrets."
         )
 
-    remember_from_message(
-        user_message
+
+    extract_memory(
+        user_text
     )
+
+
+    # ========================================================
+    # REAL GROQ BUILT-IN TOOLS
+    # ========================================================
+
+    tools = [
+        {
+            "type": "browser_search"
+        },
+        {
+            "type": "code_interpreter"
+        },
+    ]
+
 
     try:
 
         response = (
             client.chat.completions.create(
                 model=MODEL,
-
-                messages=build_brain_messages(
-                    user_message
+                messages=build_messages(
+                    user_text
                 ),
-
-                tools=[
-                    {
-                        "type": "browser_search"
-                    },
-                    {
-                        "type": "code_interpreter"
-                    },
-                ],
-
+                tools=tools,
                 tool_choice="auto",
-
                 reasoning_effort="high",
-
-                temperature=1,
-
                 max_completion_tokens=8192,
-
+                temperature=1,
                 stream=False,
             )
         )
+
 
         answer = (
             response
@@ -709,7 +708,9 @@ def ask_kingsbot(user_message):
             or ""
         )
 
+
         answer = answer.strip()
+
 
         if not answer:
 
@@ -718,7 +719,9 @@ def ask_kingsbot(user_message):
                 "Please try again."
             )
 
+
         return answer
+
 
     except Exception as error:
 
@@ -726,37 +729,46 @@ def ask_kingsbot(user_message):
             error
         ).lower()
 
+
         if (
-            "429" in error_text
-            or "rate limit" in error_text
-            or "too many requests" in error_text
+            "429"
+            in error_text
+            or "rate limit"
+            in error_text
+            or "too many requests"
+            in error_text
         ):
 
             return (
-                "The AI provider returned a "
-                "429 rate-limit response.\n\n"
-                "KingsBot itself has no artificial "
-                "request cooldown or request counter."
+                "⚠️ Groq's own API rate limit "
+                "was reached.\n\n"
+                "KingsBot has NO artificial "
+                "request cooldown. This limit "
+                "comes from the AI provider."
             )
 
+
         return (
-            "KingsBot could not reach the AI brain.\n\n"
-            "Technical error:\n"
+            "⚠️ KingsBot could not reach "
+            "its AI brain.\n\n"
             + str(error)
         )
 
 
 # ============================================================
-# VOICE INPUT
+# VOICE TRANSCRIPTION
 # ============================================================
 
-def transcribe_voice(audio_file):
+def transcribe_voice(
+    audio_file
+):
 
-    if client is None:
+    if not client:
         return None
 
-    if audio_file is None:
+    if not audio_file:
         return None
+
 
     try:
 
@@ -768,6 +780,7 @@ def transcribe_voice(audio_file):
             "kingsbot_voice.webm"
         )
 
+
         result = (
             client.audio.transcriptions.create(
                 model=VOICE_MODEL,
@@ -776,18 +789,22 @@ def transcribe_voice(audio_file):
             )
         )
 
+
         text = getattr(
             result,
             "text",
             "",
         )
 
+
         if text:
             return text.strip()
 
+
     except Exception:
 
-        return None
+        pass
+
 
     return None
 
@@ -796,7 +813,9 @@ def transcribe_voice(audio_file):
 # VOICE RESPONSE
 # ============================================================
 
-def make_voice(text):
+def text_to_speech(
+    text
+):
 
     try:
 
@@ -814,6 +833,7 @@ def make_voice(text):
 
         return audio.getvalue()
 
+
     except Exception:
 
         return None
@@ -829,76 +849,24 @@ with st.sidebar:
         "🤖 KingsBot AI"
     )
 
+
     st.success(
-        "⚡ Turbo inference ON"
+        "⚡ Turbo AI"
     )
 
-    st.write(
-        "🧠 Real brain:",
-        MODEL,
+
+    st.caption(
+        "GPT-OSS 20B = Brain"
     )
 
-    st.write(
-        "🧠 Deep reasoning:",
-        "HIGH",
+
+    st.caption(
+        "Groq = Turbo speed"
     )
 
-    st.write(
-        "🌐 Web search:",
-        "ON",
-    )
-
-    st.write(
-        "💻 Code execution:",
-        "ON",
-    )
-
-    st.write(
-        "🧮 Math:",
-        "ON",
-    )
-
-    st.write(
-        "🧠 Early Access Memory:",
-        "ON",
-    )
-
-    st.write(
-        "🎤 Voice:",
-        "ON",
-    )
-
-    st.write(
-        "💬 Active AI history:",
-        "30 messages",
-    )
-
-    st.write(
-        "📎 File upload:",
-        "OFF",
-    )
-
-    st.write(
-        "📥 File generation:",
-        "OFF",
-    )
-
-    st.write(
-        "🌍 Multilingual:",
-        "REMOVED",
-    )
-
-    st.write(
-        "🔎 Topic detection:",
-        "REMOVED",
-    )
-
-    st.write(
-        "⏱️ Artificial request limit:",
-        "OFF",
-    )
 
     st.divider()
+
 
     # ========================================================
     # NEW CHAT
@@ -909,7 +877,7 @@ with st.sidebar:
         use_container_width=True,
     ):
 
-        chat = create_chat()
+        chat = new_chat()
 
         st.session_state.saved_chats.insert(
             0,
@@ -922,45 +890,56 @@ with st.sidebar:
 
         st.session_state.messages = []
 
+
         save_json(
             CHATS_FILE,
             st.session_state.saved_chats,
         )
 
+
         st.rerun()
 
+
     # ========================================================
-    # CONVERSATIONS
+    # SAVED CHATS
     # ========================================================
 
     st.subheader(
         "💬 Conversations"
     )
 
-    for chat in st.session_state.saved_chats:
+
+    for chat in (
+        st.session_state.saved_chats
+    ):
 
         title = chat.get(
             "title",
             "Conversation",
         )
 
-        if len(title) > 32:
-            title = title[:32] + "..."
 
-        if (
-            chat["id"]
-            == st.session_state.current_chat_id
-        ):
+        if len(title) > 30:
 
-            prefix = "🟢 "
+            title = (
+                title[:30]
+                + "..."
+            )
 
-        else:
 
-            prefix = "💬 "
+        prefix = (
+            "🟢 "
+            if (
+                chat["id"]
+                == st.session_state.current_chat_id
+            )
+            else "💬 "
+        )
+
 
         if st.button(
             prefix + title,
-            key="open_" + chat["id"],
+            key=chat["id"],
             use_container_width=True,
         ):
 
@@ -975,9 +954,61 @@ with st.sidebar:
                 )
             )
 
+
             st.rerun()
 
+
+    # ========================================================
+    # DELETE CHAT
+    # ========================================================
+
+    if st.button(
+        "🗑️ Delete current chat",
+        use_container_width=True,
+    ):
+
+        st.session_state.saved_chats = [
+            chat
+            for chat
+            in st.session_state.saved_chats
+            if (
+                chat["id"]
+                != st.session_state.current_chat_id
+            )
+        ]
+
+
+        if not st.session_state.saved_chats:
+
+            st.session_state.saved_chats = [
+                new_chat()
+            ]
+
+
+        st.session_state.current_chat_id = (
+            st.session_state.saved_chats[0]["id"]
+        )
+
+
+        st.session_state.messages = list(
+            st.session_state.saved_chats[0].get(
+                "messages",
+                [],
+            )
+        )
+
+
+        save_json(
+            CHATS_FILE,
+            st.session_state.saved_chats,
+        )
+
+
+        st.rerun()
+
+
     st.divider()
+
 
     # ========================================================
     # EARLY ACCESS MEMORY
@@ -987,11 +1018,13 @@ with st.sidebar:
         "🧠 Early Access Memory"
     )
 
+
     st.write(
         "Name:",
         st.session_state.user_name
         or "Not saved",
     )
+
 
     st.write(
         "Saved facts:",
@@ -1000,6 +1033,7 @@ with st.sidebar:
         ),
     )
 
+
     st.write(
         "Preferences:",
         len(
@@ -1007,37 +1041,108 @@ with st.sidebar:
         ),
     )
 
+
     if st.button(
         "🧹 Clear Early Access Memory",
         use_container_width=True,
     ):
 
-        clear_memory()
+        st.session_state.user_name = None
+
+        st.session_state.personal_memory = []
+
+        st.session_state.preferences = []
+
+
+        save_memory()
+
 
         st.rerun()
 
 
+    st.divider()
+
+
+    # ========================================================
+    # BRAIN STATUS
+    # ========================================================
+
+    st.subheader(
+        "🧠 Brain Status"
+    )
+
+
+    st.write(
+        "Brain:",
+        MODEL,
+    )
+
+
+    st.write(
+        "Reasoning:",
+        "High",
+    )
+
+
+    st.write(
+        "Web Search:",
+        "Enabled",
+    )
+
+
+    st.write(
+        "Code Execution:",
+        "Enabled",
+    )
+
+
+    st.write(
+        "Voice:",
+        VOICE_MODEL,
+    )
+
+
+    st.write(
+        "Request Cooldown:",
+        "OFF",
+    )
+
+
+    st.write(
+        "File Upload:",
+        "OFF",
+    )
+
+
+    st.write(
+        "File Generation:",
+        "OFF",
+    )
+
+
 # ============================================================
-# MAIN PAGE
+# MAIN HEADER
 # ============================================================
 
 st.title(
     "🤖 KingsBot AI"
 )
 
+
 st.caption(
-    "Real GPT-OSS 20B brain • "
-    "⚡ Turbo • 🧠 Deep Reasoning • "
-    "🌐 Web Search • 💻 Advanced Coding • "
-    "🧮 Problem Solving • 🧠 Memory • 🎤 Voice"
+    "⚡ Turbo • 🧠 Real AI Brain • "
+    "🧠 Early Access Memory • 🌐 Web Search • "
+    "💻 Coding • 🧮 Problem Solving • 🎤 Voice"
 )
 
 
 # ============================================================
-# DISPLAY CONVERSATION
+# DISPLAY COMPLETE CONVERSATION
 # ============================================================
 
-for message in st.session_state.messages:
+for message in (
+    st.session_state.messages
+):
 
     with st.chat_message(
         message["role"]
@@ -1056,12 +1161,15 @@ st.subheader(
     "🎤 Voice Assistant"
 )
 
+
 audio_input = st.audio_input(
     "Record your message",
-    key="kingsbot_voice_input",
+    key="kingsbot_voice",
 )
 
+
 voice_text = None
+
 
 if audio_input:
 
@@ -1073,6 +1181,7 @@ if audio_input:
             audio_input
         )
 
+
     if voice_text:
 
         st.info(
@@ -1083,17 +1192,19 @@ if audio_input:
     else:
 
         st.warning(
-            "I couldn't understand that recording."
+            "I couldn't understand "
+            "that recording."
         )
 
 
 # ============================================================
-# TEXT INPUT
+# CHAT INPUT
 # ============================================================
 
 text_prompt = st.chat_input(
     "Ask KingsBot anything..."
 )
+
 
 prompt = (
     voice_text
@@ -1102,10 +1213,14 @@ prompt = (
 
 
 # ============================================================
-# SEND TO REAL BRAIN
+# PROCESS MESSAGE
 # ============================================================
 
 if prompt:
+
+    # ----------------------------
+    # USER
+    # ----------------------------
 
     with st.chat_message(
         "user"
@@ -1115,6 +1230,11 @@ if prompt:
             prompt
         )
 
+
+    # ----------------------------
+    # BRAIN
+    # ----------------------------
+
     with st.chat_message(
         "assistant"
     ):
@@ -1123,13 +1243,19 @@ if prompt:
             "⚡ KingsBot is thinking..."
         ):
 
-            answer = ask_kingsbot(
+            answer = ask_brain(
                 prompt
             )
+
 
         st.markdown(
             answer
         )
+
+
+        # ------------------------
+        # Voice response
+        # ------------------------
 
         if voice_text:
 
@@ -1137,9 +1263,10 @@ if prompt:
                 "🔊 Preparing voice reply..."
             ):
 
-                audio = make_voice(
+                audio = text_to_speech(
                     answer
                 )
+
 
             if audio:
 
@@ -1148,8 +1275,9 @@ if prompt:
                     format="audio/mp3",
                 )
 
+
     # ========================================================
-    # SAVE CONVERSATION
+    # SAVE FULL CONVERSATION
     # ========================================================
 
     st.session_state.messages.append(
@@ -1159,11 +1287,13 @@ if prompt:
         }
     )
 
+
     st.session_state.messages.append(
         {
             "role": "assistant",
             "content": answer,
         }
     )
+
 
     save_current_chat()
