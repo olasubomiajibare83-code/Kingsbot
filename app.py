@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime
 import requests
+import re
 
 # ============================================
 # PAGE CONFIGURATION
@@ -16,18 +17,16 @@ st.set_page_config(
 )
 
 # ============================================
-# CUSTOM CSS (Properly embedded)
+# CUSTOM CSS
 # ============================================
 st.markdown("""
 <style>
-    /* Main container */
     .main {
         padding: 0px;
         max-width: 1200px;
         margin: 0 auto;
     }
     
-    /* Chat container */
     .chat-container {
         height: 500px;
         overflow-y: auto;
@@ -38,7 +37,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Message bubbles */
     .user-msg {
         background: #238636;
         color: white;
@@ -69,7 +67,6 @@ st.markdown("""
         display: block;
     }
     
-    /* Sidebar styling */
     .sidebar-content {
         padding: 20px 10px;
     }
@@ -93,7 +90,6 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* Buttons */
     .stButton > button {
         background: #238636;
         color: white;
@@ -109,7 +105,6 @@ st.markdown("""
         background: #2ea043;
     }
     
-    /* Input field */
     .stTextInput > div > div > input {
         background: #0d1117;
         color: #e6edf3;
@@ -122,7 +117,6 @@ st.markdown("""
         border-color: #238636;
     }
     
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
     }
@@ -139,7 +133,6 @@ st.markdown("""
         color: #e6edf3;
     }
     
-    /* History items */
     .history-item {
         background: #21262d;
         padding: 10px 14px;
@@ -166,7 +159,6 @@ st.markdown("""
         margin-top: 4px;
     }
     
-    /* Voice button */
     .voice-btn {
         background: #1f6feb;
         color: white;
@@ -196,7 +188,6 @@ st.markdown("""
         50% { opacity: 0.6; transform: scale(0.95); }
     }
     
-    /* Search results */
     .search-result {
         background: #21262d;
         padding: 10px 14px;
@@ -213,6 +204,15 @@ st.markdown("""
     
     .search-snippet {
         color: #8b949e;
+        font-size: 13px;
+    }
+    
+    .fact-box {
+        background: #1c2333;
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin: 4px 0;
+        border-left: 3px solid #238636;
         font-size: 13px;
     }
 </style>
@@ -236,18 +236,22 @@ if 'conversations' not in st.session_state:
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
 if 'model' not in st.session_state:
-    st.session_state.model = "gpt-5.5"
+    st.session_state.model = "gpt-3.5-turbo"
 if 'web_search_key' not in st.session_state:
     st.session_state.web_search_key = ""
+if 'search_engine_id' not in st.session_state:
+    st.session_state.search_engine_id = ""
 if 'voice_enabled' not in st.session_state:
     st.session_state.voice_enabled = True
 if 'current_conv_id' not in st.session_state:
     st.session_state.current_conv_id = str(int(time.time()))
 if 'processing' not in st.session_state:
     st.session_state.processing = False
+if 'is_listening' not in st.session_state:
+    st.session_state.is_listening = False
 
 # ============================================
-# HELPER FUNCTIONS
+# CORE FUNCTIONS
 # ============================================
 
 def save_conversation():
@@ -260,14 +264,12 @@ def save_conversation():
             'message_count': len(st.session_state.conversation),
             'preview': st.session_state.conversation[0]['content'][:60] if st.session_state.conversation else 'Empty'
         }
-        # Check if already exists
         existing = [c for c in st.session_state.conversations if c['id'] == st.session_state.current_conv_id]
         if existing:
             idx = st.session_state.conversations.index(existing[0])
             st.session_state.conversations[idx] = conv_data
         else:
             st.session_state.conversations.insert(0, conv_data)
-        # Keep last 50
         if len(st.session_state.conversations) > 50:
             st.session_state.conversations = st.session_state.conversations[:50]
 
@@ -284,11 +286,11 @@ def call_openai(user_message):
     """Call OpenAI API"""
     if not st.session_state.api_key:
         return "⚠️ Please enter your OpenAI API key in the sidebar."
-
+    
     # Build conversation history
     history = st.session_state.conversation[-12:] if st.session_state.conversation else []
     messages = []
-
+    
     # System prompt
     system_prompt = "You are KingsBot, a helpful AI assistant with memory and personalization."
     if st.session_state.user_name:
@@ -299,16 +301,17 @@ def call_openai(user_message):
         system_prompt += f"\nFacts you know about user: {'; '.join(st.session_state.facts)}"
     system_prompt += f"\nCurrent time: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
     system_prompt += "\nBe concise, helpful, and remember what users tell you."
-
+    system_prompt += "\nYou can code in any language, explain complex topics, and provide detailed answers."
+    
     messages.append({"role": "system", "content": system_prompt})
-
+    
     # Add history
     for msg in history:
         messages.append({"role": msg['role'], "content": msg['content']})
-
+    
     # Add current message
     messages.append({"role": "user", "content": user_message})
-
+    
     try:
         client = openai.OpenAI(api_key=st.session_state.api_key)
         response = client.chat.completions.create(
@@ -326,8 +329,11 @@ def web_search(query):
     """Perform web search using Google Custom Search API"""
     if not st.session_state.web_search_key:
         return "⚠️ Google Search API key not set. Add it in sidebar."
+    if not st.session_state.search_engine_id:
+        return "⚠️ Search Engine ID not set. Add it in sidebar."
+    
     try:
-        url = f"https://www.googleapis.com/customsearch/v1?key={st.session_state.web_search_key}&q={query}&num=5"
+        url = f"https://www.googleapis.com/customsearch/v1?key={st.session_state.web_search_key}&cx={st.session_state.search_engine_id}&q={query}&num=5"
         response = requests.get(url)
         if response.status_code != 200:
             return f"❌ Search error: {response.status_code}"
@@ -351,9 +357,9 @@ def extract_facts(user_msg, ai_response):
         r"i work as ([^\.]+)",
         r"i live in ([^\.]+)",
         r"i have ([^\.]+)",
-        r"i (?:love|enjoy) ([^\.]+)"
+        r"i (?:love|enjoy) ([^\.]+)",
+        r"my favorite ([^\.]+)"
     ]
-    import re
     new_facts = []
     for pattern in patterns:
         matches = re.findall(pattern, combined, re.IGNORECASE)
@@ -368,10 +374,12 @@ def extract_facts(user_msg, ai_response):
 def handle_command(text):
     """Handle slash commands"""
     cmd = text.strip().lower()
+    
     if cmd == '/clear':
         st.session_state.conversation = []
         st.session_state.message_count = 0
         return "🧹 Conversation cleared."
+    
     elif cmd == '/stats':
         return f"""📊 **Stats:**
 • Messages: {st.session_state.message_count}
@@ -380,28 +388,33 @@ def handle_command(text):
 • Model: {st.session_state.model}
 • Name: {st.session_state.user_name or 'Not set'}
 • Saved conversations: {len(st.session_state.conversations)}"""
+    
     elif cmd.startswith('/name '):
         name = cmd[6:].strip()
         if name:
             st.session_state.user_name = name
             return f"✅ Name set to '{name}'!"
+    
     elif cmd.startswith('/interest '):
         interest = cmd[10:].strip()
         if interest and interest not in st.session_state.interests:
             st.session_state.interests.append(interest)
             return f"✅ Added '{interest}' to your interests!"
+    
     elif cmd == '/facts':
         if not st.session_state.facts:
             return "📚 No facts learned yet. Share things about yourself!"
         facts_list = "\n".join([f"{i+1}. {f}" for i, f in enumerate(st.session_state.facts)])
         return f"📚 **Facts I've learned about you:**\n{facts_list}"
+    
     elif cmd == '/export':
-        # Export functionality handled separately
         return "📦 Export function available in sidebar."
+    
     elif cmd.startswith('/search '):
         query = cmd[8:].strip()
         if query:
             return web_search(query)
+    
     elif cmd == '/help':
         return """📖 **Commands:**
 /clear - Clear chat
@@ -411,7 +424,13 @@ def handle_command(text):
 /facts - Show learned facts
 /export - Download chat JSON
 /search query - Web search
+/voice - Toggle voice output
 /help - Show this help"""
+    
+    elif cmd == '/voice':
+        st.session_state.voice_enabled = not st.session_state.voice_enabled
+        return f"🎤 Voice output {'enabled' if st.session_state.voice_enabled else 'disabled'}"
+    
     return None
 
 # ============================================
@@ -435,21 +454,34 @@ with st.sidebar:
     # Model Selection
     model = st.selectbox(
         "🧠 Model",
-        options=["gpt-5.5", "gpt-5.4", "gpt-5.2"],
-        index=["gpt-5.5", "gpt-5.4", "gpt-5.2"].index(st.session_state.model)
+        options=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
+        index=0
     )
     if model != st.session_state.model:
         st.session_state.model = model
     
-    # Web Search API Key
+    st.divider()
+    
+    # Web Search Settings
+    st.subheader("🔍 Web Search (Optional)")
     web_key = st.text_input(
-        "🔍 Google Search API Key",
+        "Google Search API Key",
         value=st.session_state.web_search_key,
         type="password",
         help="Get from Google Cloud Console"
     )
     if web_key != st.session_state.web_search_key:
         st.session_state.web_search_key = web_key
+    
+    search_engine_id = st.text_input(
+        "Search Engine ID",
+        value=st.session_state.search_engine_id,
+        help="Get from programmablesearchengine.google.com"
+    )
+    if search_engine_id != st.session_state.search_engine_id:
+        st.session_state.search_engine_id = search_engine_id
+    
+    st.divider()
     
     # Voice toggle
     voice_enabled = st.toggle("🎤 Voice Output", value=st.session_state.voice_enabled)
@@ -552,16 +584,16 @@ with tab1:
     
     with col3:
         voice_button = st.button(
-            "🎤" if not st.session_state.get('is_listening', False) else "⏹️",
+            "🎤" if not st.session_state.is_listening else "⏹️",
             use_container_width=True,
             help="Click to speak (voice input)"
         )
     
-    # Handle voice button (simulate for now)
+    # Handle voice button
     if voice_button:
-        st.session_state.is_listening = not st.session_state.get('is_listening', False)
+        st.session_state.is_listening = not st.session_state.is_listening
         if st.session_state.is_listening:
-            st.info("🎤 Listening... Speak your message (simulated).")
+            st.info("🎤 Listening... Speak your message.")
         else:
             st.info("🎤 Voice input stopped.")
     
@@ -600,28 +632,4 @@ with tab1:
                 st.session_state.conversation.append({
                     'role': 'assistant',
                     'content': response,
-                    'timestamp': datetime.now().strftime('%I:%M %p')
-                })
-                st.session_state.message_count += 1
-                
-                # Save conversation
-                save_conversation()
-                
-                # Voice output (simulated)
-                if st.session_state.voice_enabled:
-                    st.info(f"🔊 Speaking: {response[:200]}...")
-            
-            st.rerun()
-
-# ============================================
-# TAB 2: HISTORY
-# ============================================
-with tab2:
-    if not st.session_state.conversations:
-        st.info("📭 No conversations saved yet. Start chatting!")
-    else:
-        st.caption(f"📜 {len(st.session_state.conversations)} saved conversations")
-        
-        # Search within history
-        search_hist = st.text_input("🔍 Search history", placeholder="Search by keyword...", key="history_search")
-        
+                    'tim
