@@ -7,40 +7,23 @@ import requests
 import re
 
 # ============================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================
 st.set_page_config(
-    page_title="KingsBot Assistant AI",
+    page_title="KingsBot",
     page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # ============================================
-# CUSTOM CSS
+# SIMPLE CSS (No complex nested quotes)
 # ============================================
 st.markdown("""
 <style>
-    .main { padding: 0px; max-width: 1200px; margin: 0 auto; }
-    .chat-container { height: 500px; overflow-y: auto; padding: 20px; background: #0d1117; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 20px; }
-    .user-msg { background: #238636; color: white; padding: 12px 16px; border-radius: 12px; margin: 8px 0; max-width: 80%; align-self: flex-end; margin-left: auto; border-bottom-right-radius: 4px; }
-    .assistant-msg { background: #21262d; color: #e6edf3; padding: 12px 16px; border-radius: 12px; margin: 8px 0; max-width: 80%; align-self: flex-start; border-bottom-left-radius: 4px; }
-    .timestamp { font-size: 10px; color: #8b949e; margin-top: 4px; display: block; }
-    .history-item { background: #21262d; padding: 10px 14px; border-radius: 8px; margin: 6px 0; cursor: pointer; transition: 0.2s; border: 1px solid #30363d; }
-    .history-item:hover { background: #30363d; border-color: #238636; }
-    .history-date { font-size: 11px; color: #8b949e; }
-    .history-preview { font-size: 13px; color: #e6edf3; margin-top: 4px; }
-    .search-result { background: #21262d; padding: 10px 14px; border-radius: 8px; margin: 4px 0; cursor: pointer; border: 1px solid #30363d; }
-    .search-result:hover { background: #30363d; border-color: #238636; }
-    .search-snippet { color: #8b949e; font-size: 13px; }
-    .stButton > button { background: #238636; color: white; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 600; transition: 0.2s; width: 100%; }
-    .stButton > button:hover { background: #2ea043; }
-    .stTextInput > div > div > input { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; }
-    .stTextInput > div > div > input:focus { border-color: #238636; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { background: #21262d; border-radius: 8px 8px 0 0; padding: 8px 16px; color: #8b949e; }
-    .stTabs [aria-selected="true"] { background: #30363d; color: #e6edf3; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .chat-msg { margin: 10px 0; padding: 10px 15px; border-radius: 10px; }
+    .user { background: #238636; color: white; text-align: right; }
+    .bot { background: #2d333b; color: #e6edf3; }
+    .time { font-size: 10px; color: #8b949e; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,7 +37,7 @@ if 'message_count' not in st.session_state:
 if 'facts' not in st.session_state:
     st.session_state.facts = []
 if 'user_name' not in st.session_state:
-    st.session_state.user_name = None
+    st.session_state.user_name = ""
 if 'interests' not in st.session_state:
     st.session_state.interests = []
 if 'conversations' not in st.session_state:
@@ -67,12 +50,6 @@ if 'web_search_key' not in st.session_state:
     st.session_state.web_search_key = ""
 if 'search_engine_id' not in st.session_state:
     st.session_state.search_engine_id = ""
-if 'voice_enabled' not in st.session_state:
-    st.session_state.voice_enabled = True
-if 'current_conv_id' not in st.session_state:
-    st.session_state.current_conv_id = str(int(time.time()))
-if 'is_listening' not in st.session_state:
-    st.session_state.is_listening = False
 
 # ============================================
 # FUNCTIONS
@@ -85,46 +62,19 @@ def save_conversation():
             'date': datetime.now().isoformat(),
             'messages': st.session_state.conversation.copy(),
             'message_count': len(st.session_state.conversation),
-            'preview': st.session_state.conversation[0]['content'][:60] if st.session_state.conversation else 'Empty'
+            'preview': st.session_state.conversation[0]['content'][:60]
         }
-        existing = [c for c in st.session_state.conversations if c['id'] == st.session_state.current_conv_id]
-        if existing:
-            idx = st.session_state.conversations.index(existing[0])
-            st.session_state.conversations[idx] = conv_data
-        else:
-            st.session_state.conversations.insert(0, conv_data)
+        st.session_state.conversations.insert(0, conv_data)
         if len(st.session_state.conversations) > 50:
             st.session_state.conversations = st.session_state.conversations[:50]
 
-def load_conversation(conv_id):
-    conv = next((c for c in st.session_state.conversations if c['id'] == conv_id), None)
-    if conv:
-        st.session_state.conversation = conv['messages'].copy()
-        st.session_state.current_conv_id = conv_id
-        st.session_state.message_count = len(conv['messages'])
-        st.rerun()
-
 def call_openai(user_message):
     if not st.session_state.api_key:
-        return "Please enter your OpenAI API key in the sidebar."
+        return "⚠️ Please enter your OpenAI API key in the sidebar."
     
-    history = st.session_state.conversation[-12:] if st.session_state.conversation else []
-    messages = []
+    messages = [{"role": "system", "content": "You are KingsBot, a helpful AI assistant."}]
     
-    system_prompt = "You are KingsBot, a helpful AI assistant with memory and personalization."
-    if st.session_state.user_name:
-        system_prompt += f"\nUser's name: {st.session_state.user_name}"
-    if st.session_state.interests:
-        system_prompt += f"\nUser's interests: {', '.join(st.session_state.interests)}"
-    if st.session_state.facts:
-        system_prompt += f"\nFacts you know about user: {'; '.join(st.session_state.facts)}"
-    system_prompt += f"\nCurrent time: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
-    system_prompt += "\nBe concise, helpful, and remember what users tell you."
-    system_prompt += "\nYou can code in any language, explain complex topics, and provide detailed answers."
-    
-    messages.append({"role": "system", "content": system_prompt})
-    
-    for msg in history:
+    for msg in st.session_state.conversation[-10:]:
         messages.append({"role": msg['role'], "content": msg['content']})
     
     messages.append({"role": "user", "content": user_message})
@@ -135,33 +85,32 @@ def call_openai(user_message):
             model=st.session_state.model,
             messages=messages,
             temperature=0.7,
-            max_tokens=2000,
-            top_p=0.9
+            max_tokens=2000
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 def web_search(query):
     if not st.session_state.web_search_key:
-        return "Google Search API key not set. Add it in sidebar."
+        return "⚠️ Google Search API key not set."
     if not st.session_state.search_engine_id:
-        return "Search Engine ID not set. Add it in sidebar."
+        return "⚠️ Search Engine ID not set."
     
     try:
         url = f"https://www.googleapis.com/customsearch/v1?key={st.session_state.web_search_key}&cx={st.session_state.search_engine_id}&q={query}&num=5"
         response = requests.get(url)
         if response.status_code != 200:
-            return f"Search error: {response.status_code}"
+            return f"❌ Search error: {response.status_code}"
         data = response.json()
         if 'items' not in data:
             return "No search results found."
-        results = "Search Results:\n\n"
+        results = "🔍 **Search Results:**\n\n"
         for i, item in enumerate(data['items'][:5], 1):
-            results += f"{i}. {item.get('title', 'No title')}\n{item.get('snippet', 'No snippet')}\n{item.get('link', '')}\n\n"
+            results += f"{i}. **{item.get('title', 'No title')}**\n{item.get('snippet', 'No snippet')}\n{item.get('link', '')}\n\n"
         return results
     except Exception as e:
-        return f"Search error: {str(e)}"
+        return f"❌ Search error: {str(e)}"
 
 def extract_facts(user_msg, ai_response):
     combined = user_msg + " " + ai_response
@@ -169,11 +118,7 @@ def extract_facts(user_msg, ai_response):
         r"my name is ([^\.]+)",
         r"i (?:am|'m) ([^\.]+)",
         r"i like ([^\.]+)",
-        r"i work as ([^\.]+)",
-        r"i live in ([^\.]+)",
-        r"i have ([^\.]+)",
-        r"i (?:love|enjoy) ([^\.]+)",
-        r"my favorite ([^\.]+)"
+        r"i work as ([^\.]+)"
     ]
     new_facts = []
     for pattern in patterns:
@@ -181,8 +126,7 @@ def extract_facts(user_msg, ai_response):
         for match in matches:
             fact = match.strip()
             if len(fact) > 3 and fact not in st.session_state.facts:
-                if not any(f in fact or fact in f for f in st.session_state.facts):
-                    new_facts.append(fact)
+                new_facts.append(fact)
     if new_facts:
         st.session_state.facts.extend(new_facts)
 
@@ -192,37 +136,31 @@ def handle_command(text):
     if cmd == '/clear':
         st.session_state.conversation = []
         st.session_state.message_count = 0
-        return "Conversation cleared."
+        return "🧹 Conversation cleared."
     
     elif cmd == '/stats':
-        return f"""Stats:
+        return f"""📊 **Stats:**
 - Messages: {st.session_state.message_count}
-- Facts learned: {len(st.session_state.facts)}
+- Facts: {len(st.session_state.facts)}
 - Interests: {', '.join(st.session_state.interests) or 'None'}
-- Model: {st.session_state.model}
-- Name: {st.session_state.user_name or 'Not set'}
-- Saved conversations: {len(st.session_state.conversations)}"""
+- Name: {st.session_state.user_name or 'Not set'}"""
     
     elif cmd.startswith('/name '):
         name = cmd[6:].strip()
         if name:
             st.session_state.user_name = name
-            return f"Name set to {name}!"
+            return f"✅ Name set to '{name}'!"
     
     elif cmd.startswith('/interest '):
         interest = cmd[10:].strip()
         if interest and interest not in st.session_state.interests:
             st.session_state.interests.append(interest)
-            return f"Added {interest} to your interests!"
+            return f"✅ Added '{interest}' to your interests!"
     
     elif cmd == '/facts':
         if not st.session_state.facts:
-            return "No facts learned yet. Share things about yourself!"
-        facts_list = "\n".join([f"{i+1}. {f}" for i, f in enumerate(st.session_state.facts)])
-        return f"Facts I've learned about you:\n{facts_list}"
-    
-    elif cmd == '/export':
-        return "Export function available in sidebar."
+            return "📚 No facts learned yet."
+        return "📚 **Facts I know:**\n" + "\n".join([f"{i+1}. {f}" for i, f in enumerate(st.session_state.facts)])
     
     elif cmd.startswith('/search '):
         query = cmd[8:].strip()
@@ -230,20 +168,14 @@ def handle_command(text):
             return web_search(query)
     
     elif cmd == '/help':
-        return """Commands:
+        return """📖 **Commands:**
 /clear - Clear chat
 /stats - Show stats
 /name YourName - Set your name
 /interest Hobby - Add interest
 /facts - Show learned facts
-/export - Download chat JSON
 /search query - Web search
-/voice - Toggle voice output
 /help - Show this help"""
-    
-    elif cmd == '/voice':
-        st.session_state.voice_enabled = not st.session_state.voice_enabled
-        return f"Voice output {'enabled' if st.session_state.voice_enabled else 'disabled'}"
     
     return None
 
@@ -251,96 +183,35 @@ def handle_command(text):
 # SIDEBAR
 # ============================================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/robot-2.png", width=64)
-    st.title("KingsBot Settings")
+    st.title("⚙️ Settings")
     
-    api_key = st.text_input(
-        "OpenAI API Key",
-        value=st.session_state.api_key,
-        type="password"
-    )
-    if api_key != st.session_state.api_key:
-        st.session_state.api_key = api_key
+    st.text_input("🔑 OpenAI API Key", key="api_key", type="password")
+    st.selectbox("🧠 Model", ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"], key="model")
+    
+    st.divider()
+    st.subheader("🔍 Web Search (Optional)")
+    st.text_input("Google API Key", key="web_search_key", type="password")
+    st.text_input("Search Engine ID", key="search_engine_id")
+    
+    st.divider()
+    st.metric("💬 Messages", st.session_state.message_count)
+    st.metric("📚 Facts", len(st.session_state.facts))
+    
+    if st.button("🗑️ Clear All Data"):
+        st.session_state.conversation = []
+        st.session_state.conversations = []
+        st.session_state.facts = []
+        st.session_state.message_count = 0
         st.rerun()
-    
-    model = st.selectbox(
-        "Model",
-        options=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
-        index=0
-    )
-    if model != st.session_state.model:
-        st.session_state.model = model
-    
-    st.divider()
-    
-    st.subheader("Web Search (Optional)")
-    web_key = st.text_input(
-        "Google Search API Key",
-        value=st.session_state.web_search_key,
-        type="password"
-    )
-    if web_key != st.session_state.web_search_key:
-        st.session_state.web_search_key = web_key
-    
-    search_engine_id = st.text_input(
-        "Search Engine ID",
-        value=st.session_state.search_engine_id
-    )
-    if search_engine_id != st.session_state.search_engine_id:
-        st.session_state.search_engine_id = search_engine_id
-    
-    st.divider()
-    
-    voice_enabled = st.toggle("Voice Output", value=st.session_state.voice_enabled)
-    if voice_enabled != st.session_state.voice_enabled:
-        st.session_state.voice_enabled = voice_enabled
-    
-    st.divider()
-    
-    st.subheader("Statistics")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Messages", st.session_state.message_count)
-    with col2:
-        st.metric("Facts", len(st.session_state.facts))
-    st.metric("Saved Chats", len(st.session_state.conversations))
-    
-    st.divider()
-    
-    if st.button("Export All Data", use_container_width=True):
-        export_data = {
-            "export_date": datetime.now().isoformat(),
-            "user_name": st.session_state.user_name,
-            "interests": st.session_state.interests,
-            "facts": st.session_state.facts,
-            "model": st.session_state.model,
-            "conversations": st.session_state.conversations,
-            "current_conversation": st.session_state.conversation
-        }
-        st.download_button(
-            label="Download JSON",
-            data=json.dumps(export_data, indent=2),
-            file_name=f"kingsbot_export_{int(time.time())}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-    
-    if st.button("Clear All Data", use_container_width=True, type="secondary"):
-        if st.session_state.conversations or st.session_state.conversation:
-            st.session_state.conversation = []
-            st.session_state.conversations = []
-            st.session_state.facts = []
-            st.session_state.message_count = 0
-            st.session_state.interests = []
-            st.rerun()
 
 # ============================================
-# MAIN CONTENT
+# MAIN
 # ============================================
-st.title("KingsBot Assistant AI")
-st.caption("Your advanced AI assistant with memory, search, and voice capabilities")
+st.title("🤖 KingsBot Assistant")
+st.caption("AI assistant with memory and web search")
 
-tab1, tab2, tab3 = st.tabs(["Chat", "History", "Search"])
+# Tabs
+tab1, tab2, tab3 = st.tabs(["💬 Chat", "📜 History", "🔍 Search"])
 
 # ============================================
 # TAB 1: CHAT
@@ -350,52 +221,25 @@ with tab1:
     
     with chat_container:
         if not st.session_state.conversation:
-            st.info("Welcome to KingsBot! Start a conversation below.")
+            st.info("👋 Start a conversation!")
         else:
             for msg in st.session_state.conversation:
                 if msg['role'] == 'user':
-                    st.markdown(f"""
-                    <div class="user-msg">
-                        {msg['content']}
-                        <span class="timestamp">{msg.get('timestamp', 'Just now')}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="chat-msg user">👤 {msg["content"]}<div class="time">{msg.get("timestamp", "")}</div></div>', unsafe_allow_html=True)
                 else:
-                    st.markdown(f"""
-                    <div class="assistant-msg">
-                        {msg['content']}
-                        <span class="timestamp">{msg.get('timestamp', 'Just now')}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="chat-msg bot">🤖 {msg["content"]}<div class="time">{msg.get("timestamp", "")}</div></div>', unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([6, 1, 1])
+    col1, col2 = st.columns([6, 1])
     
     with col1:
-        user_input = st.text_input(
-            "Message",
-            placeholder="Type your message... Use /help for commands",
-            label_visibility="collapsed",
-            key="user_input"
-        )
+        user_input = st.text_input("Message", placeholder="Type /help for commands", key="user_input", label_visibility="collapsed")
     
     with col2:
         send_button = st.button("Send", use_container_width=True)
     
-    with col3:
-        voice_button = st.button(
-            "Voice" if not st.session_state.is_listening else "Stop",
-            use_container_width=True
-        )
-    
-    if voice_button:
-        st.session_state.is_listening = not st.session_state.is_listening
-        if st.session_state.is_listening:
-            st.info("Listening... Speak your message.")
-        else:
-            st.info("Voice input stopped.")
-    
     if send_button and user_input:
         command_result = handle_command(user_input)
+        
         if command_result:
             st.session_state.conversation.append({
                 'role': 'assistant',
@@ -403,7 +247,6 @@ with tab1:
                 'timestamp': datetime.now().strftime('%I:%M %p')
             })
             st.session_state.message_count += 1
-            save_conversation()
             st.rerun()
         else:
             with st.spinner("Thinking..."):
@@ -425,9 +268,6 @@ with tab1:
                 st.session_state.message_count += 1
                 
                 save_conversation()
-                
-                if st.session_state.voice_enabled:
-                    st.info(f"Speaking: {response[:200]}...")
             
             st.rerun()
 
@@ -436,39 +276,21 @@ with tab1:
 # ============================================
 with tab2:
     if not st.session_state.conversations:
-        st.info("No conversations saved yet. Start chatting!")
+        st.info("📭 No saved conversations.")
     else:
-        st.caption(f"{len(st.session_state.conversations)} saved conversations")
-        
-        search_hist = st.text_input("Search history", placeholder="Search by keyword...", key="history_search")
-        
-        filtered = st.session_state.conversations
-        if search_hist:
-            filtered = [
-                c for c in st.session_state.conversations
-                if any(search_hist.lower() in msg['content'].lower() for msg in c['messages'])
-            ]
-        
-        for conv in filtered:
-            with st.container():
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"""
-                    <div class="history-item">
-                        <div class="history-date">{datetime.fromisoformat(conv['date']).strftime('%B %d, %Y at %I:%M %p')}</div>
-                        <div class="history-preview">{conv['preview']}</div>
-                        <div style="font-size:11px;color:#8b949e;">{conv['message_count']} messages</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col2:
-                    if st.button("Load", key=f"load_{conv['id']}"):
-                        load_conversation(conv['id'])
+        for i, conv in enumerate(st.session_state.conversations[:20]):
+            with st.expander(f"📅 {conv['date'][:16]} - {conv['preview']}"):
+                for msg in conv['messages'][-5:]:
+                    st.write(f"**{msg['role']}:** {msg['content'][:200]}...")
+                if st.button("Load", key=f"load_{i}"):
+                    st.session_state.conversation = conv['messages'].copy()
+                    st.rerun()
 
 # ============================================
 # TAB 3: SEARCH
 # ============================================
 with tab3:
-    search_query = st.text_input("Search all conversations", placeholder="Enter keyword...", key="search_all")
+    search_query = st.text_input("🔍 Search conversations", placeholder="Enter keyword...", key="search_all")
     
     if search_query and len(search_query) > 1:
         results = []
@@ -476,22 +298,17 @@ with tab3:
             for msg in conv['messages']:
                 if search_query.lower() in msg['content'].lower():
                     results.append({
-                        'conv_id': conv['id'],
                         'date': conv['date'],
-                        'content': msg['content'],
-                        'role': msg['role'],
-                        'preview': msg['content'][:200] + ('...' if len(msg['content']) > 200 else '')
+                        'content': msg['content'][:300],
+                        'role': msg['role']
                     })
         
-        if not results:
-            st.info("No results found.")
+        if results:
+            st.success(f"✅ Found {len(results)} results")
+            for result in results[:10]:
+                st.markdown(f"**{result['role']}** ({result['date'][:16]}): {result['content']}...")
         else:
-            st.success(f"Found {len(results)} results")
-            for result in results[:20]:
-                st.markdown(f""")
-                <div class="search-result">
-                    <div><strong>{'You' if result['role'] == 'user' else 'KingsBot'}</strong></div>
-                    <div class="search-snippet">{result['preview']}</div>
-                    <div style="font-size:10px;color:#484f58;">{datetime.fromisoformat(result['date']).strftime('%B %d, %Y')}</div>
-                </div>
-                """, unsafe_allow_html
+            st.info("No results found.")
+
+st.divider()
+st.caption("🤖 KingsBot AI Assistant")
