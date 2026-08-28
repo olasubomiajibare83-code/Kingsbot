@@ -488,7 +488,7 @@ with tab3:
         else:
             st.success(f"Found {len(results)} results")
             for result in results[:20]:
-                st.markdown(f"""
+                st.markdown(f""")
                 <div class="search-result">
                     <div><strong>{'You' if result['role'] == 'user' else 'KingsBot'}</strong></div>
                     <div class="search-snippet">{result['preview']}</div>
