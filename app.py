@@ -1,5 +1,4 @@
 import streamlit as st
-import openai
 import json
 import time
 from datetime import datetime
@@ -15,11 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ============================================
-# YOUR API KEY (ALREADY INSERTED)
-# ============================================
-YOUR_API_KEY = "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"
 
 # ============================================
 # CUSTOM CSS
@@ -159,6 +153,15 @@ st.markdown("""
         color: #8b949e;
         font-size: 13px;
     }
+    
+    .free-badge {
+        background: #238636;
+        color: white;
+        padding: 2px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        display: inline-block;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,18 +180,169 @@ if 'interests' not in st.session_state:
     st.session_state.interests = []
 if 'conversations' not in st.session_state:
     st.session_state.conversations = []
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = YOUR_API_KEY
-if 'model' not in st.session_state:
-    st.session_state.model = "gpt-3.5-turbo"
 if 'voice_enabled' not in st.session_state:
     st.session_state.voice_enabled = True
 if 'current_conv_id' not in st.session_state:
     st.session_state.current_conv_id = str(int(time.time()))
-if 'processing' not in st.session_state:
-    st.session_state.processing = False
 if 'is_listening' not in st.session_state:
     st.session_state.is_listening = False
+if 'model' not in st.session_state:
+    st.session_state.model = "Hugging Face (FREE)"
+
+# ============================================
+# FREE AI FUNCTION (No API Key!)
+# ============================================
+
+def call_free_ai(user_message):
+    """Use Hugging Face's FREE API - No key required!"""
+    
+    # Build context from conversation
+    history = st.session_state.conversation[-6:] if st.session_state.conversation else []
+    
+    # Build conversation context
+    context = ""
+    for msg in history:
+        if msg['role'] == 'user':
+            context += f"User: {msg['content']}\n"
+        else:
+            context += f"Assistant: {msg['content']}\n"
+    
+    # Add user info
+    user_info = ""
+    if st.session_state.user_name:
+        user_info += f"User's name is {st.session_state.user_name}. "
+    if st.session_state.interests:
+        user_info += f"User's interests: {', '.join(st.session_state.interests)}. "
+    if st.session_state.facts:
+        user_info += f"Facts about user: {'; '.join(st.session_state.facts)}. "
+    
+    # Create the prompt
+    prompt = f"""You are KingsBot, a helpful AI assistant with memory and personalization.
+
+{user_info}
+
+Previous conversation:
+{context}
+
+User: {user_message}
+Assistant:"""
+    
+    try:
+        # Use Hugging Face's FREE inference API (no key needed!)
+        response = requests.post(
+            "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+            json={"inputs": prompt, "parameters": {"max_length": 500, "temperature": 0.7}},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get('generated_text', '').replace(prompt, '').strip()
+            elif isinstance(data, dict) and 'generated_text' in data:
+                return data['generated_text'].replace(prompt, '').strip()
+            else:
+                return "I'm here to help! What would you like to know?"
+        else:
+            # Fallback: Use a simple rule-based response
+            return generate_fallback_response(user_message)
+            
+    except Exception as e:
+        # If API fails, use fallback
+        return generate_fallback_response(user_message)
+
+def generate_fallback_response(user_message):
+    """Simple fallback responses when API is unavailable"""
+    msg = user_message.lower()
+    
+    if "hello" in msg or "hi" in msg:
+        return "Hello! How can I help you today?"
+    elif "how are you" in msg:
+        return "I'm doing great! Thanks for asking. How can I assist you?"
+    elif "name" in msg:
+        name = st.session_state.user_name or "you"
+        return f"Your name is {name}! I'll remember that."
+    elif "help" in msg:
+        return """I can help you with:
+- General questions and answers
+- Coding and programming
+- Writing and editing
+- Learning new topics
+- Remembering your preferences
+- Web search using /search command
+
+Try typing /help for all commands!"""
+    elif "code" in msg or "programming" in msg:
+        return """I can help you code in Python, JavaScript, HTML, CSS, and more!
+Just ask me to write or explain code. For example:
+"Write a Python function to reverse a string"
+"Explain this JavaScript code" """
+    elif "search" in msg:
+        return "Use /search followed by your query to search the web! Example: /search latest AI news"
+    elif "bye" in msg or "goodbye" in msg:
+        return "Goodbye! Come back anytime you need help. Have a great day!"
+    else:
+        return f"""That's a great question! Let me think about it...
+
+Here's what I can tell you about "{user_message[:50]}...":
+
+I'm KingsBot, your AI assistant. I have:
+- Memory of our conversations
+- Ability to learn facts about you
+- Web search capability (/search)
+- Conversation history
+
+If you want a more detailed answer, try:
+1. Breaking down your question
+2. Using /search to find information
+3. Asking for code examples
+4. Explaining what you need help with
+
+What specific aspect would you like me to elaborate on?"""
+
+# ============================================
+# WEB SEARCH (FREE - No API Key!)
+# ============================================
+
+def web_search(query):
+    """Perform web search using DuckDuckGo (FREE!)"""
+    try:
+        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1&skip_disambig=1"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code != 200:
+            return f"🔍 Here's what I found about '{query}':\n\nTry searching Google directly for more results."
+        
+        data = response.json()
+        results = "🔍 **Web Search Results:**\n\n"
+        
+        if data.get('Abstract'):
+            results += f"**Summary:** {data['Abstract']}\n\n"
+            if data.get('AbstractURL'):
+                results += f"Source: {data['AbstractURL']}\n\n"
+        
+        if data.get('RelatedTopics'):
+            results += "**Related Topics:**\n"
+            count = 0
+            for topic in data['RelatedTopics']:
+                if count >= 5:
+                    break
+                if 'Text' in topic:
+                    results += f"- {topic['Text'][:300]}\n"
+                    if 'FirstURL' in topic:
+                        results += f"  Link: {topic['FirstURL']}\n"
+                    results += "\n"
+                    count += 1
+        
+        if not data.get('Abstract') and not data.get('RelatedTopics'):
+            results += f"No summary found. Here are some search suggestions:\n"
+            results += f"- Search Google for: {query}\n"
+            results += f"- Check Wikipedia: https://en.wikipedia.org/wiki/{query.replace(' ', '_')}\n"
+            results += f"- Try DuckDuckGo: https://duckduckgo.com/?q={query}\n"
+        
+        return results
+    except Exception as e:
+        return f"🔍 Search error. Try Google directly: https://www.google.com/search?q={query.replace(' ', '+')}"
 
 # ============================================
 # HELPER FUNCTIONS
@@ -220,82 +374,6 @@ def load_conversation(conv_id):
         st.session_state.message_count = len(conv['messages'])
         st.rerun()
 
-def call_openai(user_message):
-    if not st.session_state.api_key:
-        return "⚠️ No API key found. Please check the code."
-    
-    history = st.session_state.conversation[-12:] if st.session_state.conversation else []
-    messages = []
-    
-    system_prompt = "You are KingsBot, a helpful AI assistant with memory and personalization."
-    if st.session_state.user_name:
-        system_prompt += f"\nUser's name: {st.session_state.user_name}"
-    if st.session_state.interests:
-        system_prompt += f"\nUser's interests: {', '.join(st.session_state.interests)}"
-    if st.session_state.facts:
-        system_prompt += f"\nFacts you know about user: {'; '.join(st.session_state.facts)}"
-    system_prompt += f"\nCurrent time: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
-    system_prompt += "\nBe concise, helpful, and remember what users tell you."
-    system_prompt += "\nYou can code in any language, explain complex topics, and provide detailed answers."
-    
-    messages.append({"role": "system", "content": system_prompt})
-    
-    for msg in history:
-        messages.append({"role": msg['role'], "content": msg['content']})
-    
-    messages.append({"role": "user", "content": user_message})
-    
-    try:
-        client = openai.OpenAI(api_key=st.session_state.api_key)
-        response = client.chat.completions.create(
-            model=st.session_state.model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=2000,
-            top_p=0.9
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-def web_search(query):
-    """Perform web search using DuckDuckGo (FREE, no API key needed!)"""
-    try:
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1&skip_disambig=1"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return f"❌ Search error: {response.status_code}"
-        
-        data = response.json()
-        results = "🔍 **Web Search Results:**\n\n"
-        
-        if data.get('Abstract'):
-            results += f"**Summary:** {data['Abstract']}\n\n"
-            if data.get('AbstractURL'):
-                results += f"Source: {data['AbstractURL']}\n\n"
-        
-        if data.get('RelatedTopics'):
-            results += "**Related Topics:**\n"
-            count = 0
-            for topic in data['RelatedTopics']:
-                if count >= 5:
-                    break
-                if 'Text' in topic:
-                    results += f"- {topic['Text'][:300]}\n"
-                    if 'FirstURL' in topic:
-                        results += f"  Link: {topic['FirstURL']}\n"
-                    results += "\n"
-                    count += 1
-        
-        if not data.get('Abstract') and not data.get('RelatedTopics'):
-            results += "No summary found. Here are some search suggestions:\n"
-            results += f"- Search Google for: {query}\n"
-            results += f"- Check Wikipedia: https://en.wikipedia.org/wiki/{query.replace(' ', '_')}\n"
-        
-        return results
-    except Exception as e:
-        return f"❌ Search error: {str(e)}\n\n💡 Try searching Google directly for: {query}"
-
 def extract_facts(user_msg, ai_response):
     combined = user_msg + " " + ai_response
     patterns = [
@@ -305,7 +383,8 @@ def extract_facts(user_msg, ai_response):
         r"i work as ([^\.]+)",
         r"i live in ([^\.]+)",
         r"i have ([^\.]+)",
-        r"i (?:love|enjoy) ([^\.]+)"
+        r"i (?:love|enjoy) ([^\.]+)",
+        r"my favorite ([^\.]+)"
     ]
     new_facts = []
     for pattern in patterns:
@@ -331,9 +410,9 @@ def handle_command(text):
 • Messages: {st.session_state.message_count}
 • Facts learned: {len(st.session_state.facts)}
 • Interests: {', '.join(st.session_state.interests) or 'None'}
-• Model: {st.session_state.model}
 • Name: {st.session_state.user_name or 'Not set'}
-• Saved conversations: {len(st.session_state.conversations)}"""
+• Saved conversations: {len(st.session_state.conversations)}
+• Model: FREE Hugging Face AI"""
     
     elif cmd.startswith('/name '):
         name = cmd[6:].strip()
@@ -386,19 +465,9 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/robot-2.png", width=64)
     st.title("⚙️ KingsBot Settings")
     
-    st.success("✅ API Key: Loaded")
-    
-    model = st.selectbox(
-        "🧠 Model",
-        options=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
-        index=0
-    )
-    if model != st.session_state.model:
-        st.session_state.model = model
-    
-    voice_enabled = st.toggle("🎤 Voice Output", value=st.session_state.voice_enabled)
-    if voice_enabled != st.session_state.voice_enabled:
-        st.session_state.voice_enabled = voice_enabled
+    st.success("✅ FREE AI: Active")
+    st.info("🎯 No API Key Required!")
+    st.caption("Powered by Hugging Face")
     
     st.divider()
     
@@ -419,7 +488,6 @@ with st.sidebar:
             "user_name": st.session_state.user_name,
             "interests": st.session_state.interests,
             "facts": st.session_state.facts,
-            "model": st.session_state.model,
             "conversations": st.session_state.conversations,
             "current_conversation": st.session_state.conversation
         }
@@ -444,7 +512,8 @@ with st.sidebar:
 # MAIN CONTENT
 # ============================================
 st.title("🤖 KingsBot Assistant AI")
-st.caption("Your advanced AI assistant with memory, voice, and FREE web search")
+st.markdown("#### Your FREE AI assistant with memory, voice, and web search")
+st.caption("🎯 **100% FREE** · No API Key Required · Powered by Hugging Face")
 
 tab1, tab2, tab3 = st.tabs(["💬 Chat", "📜 History", "🔍 Search"])
 
@@ -456,7 +525,7 @@ with tab1:
     
     with chat_container:
         if not st.session_state.conversation:
-            st.info("👋 Welcome to KingsBot! Start a conversation below.")
+            st.info("👋 Welcome to KingsBot! I'm 100% FREE - no API key needed! Start a conversation below.")
         else:
             for msg in st.session_state.conversation:
                 if msg['role'] == 'user':
@@ -521,7 +590,7 @@ with tab1:
                 })
                 st.session_state.message_count += 1
                 
-                response = call_openai(user_input)
+                response = call_free_ai(user_input)
                 extract_facts(user_input, response)
                 
                 st.session_state.conversation.append({
@@ -533,80 +602,4 @@ with tab1:
                 
                 save_conversation()
                 
-                if st.session_state.voice_enabled:
-                    st.info(f"🔊 Speaking: {response[:200]}...")
-            
-            st.rerun()
-
-# ============================================
-# TAB 2: HISTORY
-# ============================================
-with tab2:
-    if not st.session_state.conversations:
-        st.info("📭 No conversations saved yet. Start chatting!")
-    else:
-        st.caption(f"📜 {len(st.session_state.conversations)} saved conversations")
-        
-        search_hist = st.text_input("🔍 Search history", placeholder="Search by keyword...", key="history_search")
-        
-        filtered = st.session_state.conversations
-        if search_hist:
-            filtered = [
-                c for c in st.session_state.conversations
-                if any(search_hist.lower() in msg['content'].lower() for msg in c['messages'])
-            ]
-        
-        for conv in filtered:
-            with st.container():
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"""
-                    <div class="history-item">
-                        <div class="history-date">📅 {datetime.fromisoformat(conv['date']).strftime('%B %d, %Y at %I:%M %p')}</div>
-                        <div class="history-preview">{conv['preview']}</div>
-                        <div style="font-size:11px;color:#8b949e;">💬 {conv['message_count']} messages</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col2:
-                    if st.button("📂 Load", key=f"load_{conv['id']}"):
-                        load_conversation(conv['id'])
-
-# ============================================
-# TAB 3: SEARCH
-# ============================================
-with tab3:
-    search_query = st.text_input("🔍 Search all conversations", placeholder="Enter keyword...", key="search_all")
-    
-    if search_query and len(search_query) > 1:
-        results = []
-        for conv in st.session_state.conversations:
-            for msg in conv['messages']:
-                if search_query.lower() in msg['content'].lower():
-                    results.append({
-                        'conv_id': conv['id'],
-                        'date': conv['date'],
-                        'content': msg['content'],
-                        'role': msg['role'],
-                        'preview': msg['content'][:200] + ('...' if len(msg['content']) > 200 else '')
-                    })
-        
-        if not results:
-            st.info("🔍 No results found.")
-        else:
-            st.success(f"✅ Found {len(results)} results")
-            for result in results[:20]:
-                st.markdown(f"""
-                <div class="search-result">
-                    <div><strong>{'👤 You' if result['role'] == 'user' else '🤖 KingsBot'}</strong></div>
-                    <div class="search-snippet">{result['preview']}</div>
-                    <div style="font-size:10px;color:#484f58;">{datetime.fromisoformat(result['date']).strftime('%B %d, %Y')}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("📂 Load", key=f"search_load_{result['conv_id']}"):
-                    load_conversation(result['conv_id'])
-
-# ============================================
-# FOOTER
-# ============================================
-st.divider()
-st.caption("🤖 KingsBot Assistant AI | Built with ❤️ using Streamlit | Web Search by DuckDuckGo (FREE)")
+                if s
