@@ -17,6 +17,11 @@ st.set_page_config(
 )
 
 # ============================================
+# YOUR API KEY (ALREADY INSERTED)
+# ============================================
+YOUR_API_KEY = "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"
+
+# ============================================
 # CUSTOM CSS
 # ============================================
 st.markdown("""
@@ -65,25 +70,6 @@ st.markdown("""
         color: #8b949e;
         margin-top: 4px;
         display: block;
-    }
-    
-    .stat-box {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}
-        background: #161b22;
-        padding: 12px;
-        border-radius: 8px;
-        margin: 8px 0;
-        border: 1px solid #30363d;
-    }
-    
-    .stat-label {
-        color: #8b949e;
-        font-size: 12px;
-    }
-    
-    .stat-value {
-        color: #e6edf3;
-        font-size: 18px;
-        font-weight: 600;
     }
     
     .stButton > button {
@@ -155,35 +141,6 @@ st.markdown("""
         margin-top: 4px;
     }
     
-    .voice-btn {
-        background: #1f6feb;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 48px;
-        height: 48px;
-        font-size: 20px;
-        cursor: pointer;
-        transition: 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    
-    .voice-btn:hover {
-        background: #388bfd;
-    }
-    
-    .voice-btn.listening {
-        background: #da3633;
-        animation: pulse 0.8s infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.6; transform: scale(0.95); }
-    }
-    
     .search-result {
         background: #21262d;
         padding: 10px 14px;
@@ -204,11 +161,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ============================================
-# YOUR API KEY (HARDCODED)
-# ============================================
-YOUR_API_KEY = "sk-your-actual-api-key-here"  # <-- PUT YOUR REAL API KEY HERE
 
 # ============================================
 # SESSION STATE INITIALIZATION
@@ -237,10 +189,6 @@ if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'is_listening' not in st.session_state:
     st.session_state.is_listening = False
-if 'web_search_key' not in st.session_state:
-    st.session_state.web_search_key = ""
-if 'search_engine_id' not in st.session_state:
-    st.session_state.search_engine_id = ""
 
 # ============================================
 # HELPER FUNCTIONS
@@ -311,9 +259,8 @@ def call_openai(user_message):
         return f"❌ Error: {str(e)}"
 
 def web_search(query):
-    """Perform web search using DuckDuckGo (no API key required!)"""
+    """Perform web search using DuckDuckGo (FREE, no API key needed!)"""
     try:
-        # Using DuckDuckGo API (free, no key needed)
         url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1&skip_disambig=1"
         response = requests.get(url)
         if response.status_code != 200:
@@ -322,13 +269,11 @@ def web_search(query):
         data = response.json()
         results = "🔍 **Web Search Results:**\n\n"
         
-        # Get abstract if available
         if data.get('Abstract'):
             results += f"**Summary:** {data['Abstract']}\n\n"
             if data.get('AbstractURL'):
                 results += f"Source: {data['AbstractURL']}\n\n"
         
-        # Get related topics
         if data.get('RelatedTopics'):
             results += "**Related Topics:**\n"
             count = 0
@@ -343,7 +288,6 @@ def web_search(query):
                     count += 1
         
         if not data.get('Abstract') and not data.get('RelatedTopics'):
-            # Fallback to a free search API
             results += "No summary found. Here are some search suggestions:\n"
             results += f"- Search Google for: {query}\n"
             results += f"- Check Wikipedia: https://en.wikipedia.org/wiki/{query.replace(' ', '_')}\n"
@@ -415,8 +359,7 @@ def handle_command(text):
     elif cmd.startswith('/search '):
         query = cmd[8:].strip()
         if query:
-            with st.spinner(f"🔍 Searching for '{query}'..."):
-                return web_search(query)
+            return web_search(query)
     
     elif cmd == '/help':
         return """📖 **Commands:**
@@ -426,7 +369,7 @@ def handle_command(text):
 /interest Hobby - Add interest
 /facts - Show learned facts
 /export - Download chat JSON
-/search query - Web search (FREE, no API key needed!)
+/search query - Web search (FREE!)
 /voice - Toggle voice output
 /help - Show this help"""
     
@@ -443,10 +386,8 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/robot-2.png", width=64)
     st.title("⚙️ KingsBot Settings")
     
-    # API Status
     st.success("✅ API Key: Loaded")
     
-    # Model Selection
     model = st.selectbox(
         "🧠 Model",
         options=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
@@ -455,14 +396,12 @@ with st.sidebar:
     if model != st.session_state.model:
         st.session_state.model = model
     
-    # Voice toggle
     voice_enabled = st.toggle("🎤 Voice Output", value=st.session_state.voice_enabled)
     if voice_enabled != st.session_state.voice_enabled:
         st.session_state.voice_enabled = voice_enabled
     
     st.divider()
     
-    # Stats
     st.subheader("📊 Statistics")
     col1, col2 = st.columns(2)
     with col1:
@@ -474,7 +413,6 @@ with st.sidebar:
     
     st.divider()
     
-    # Export
     if st.button("📦 Export All Data", use_container_width=True):
         export_data = {
             "export_date": datetime.now().isoformat(),
@@ -493,7 +431,6 @@ with st.sidebar:
             use_container_width=True
         )
     
-    # Clear all data
     if st.button("🗑️ Clear All Data", use_container_width=True, type="secondary"):
         if st.session_state.conversations or st.session_state.conversation:
             st.session_state.conversation = []
@@ -509,7 +446,6 @@ with st.sidebar:
 st.title("🤖 KingsBot Assistant AI")
 st.caption("Your advanced AI assistant with memory, voice, and FREE web search")
 
-# Create tabs
 tab1, tab2, tab3 = st.tabs(["💬 Chat", "📜 History", "🔍 Search"])
 
 # ============================================
