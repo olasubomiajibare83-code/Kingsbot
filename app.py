@@ -14,6 +14,13 @@ except ImportError:
     GROQ_AVAILABLE = False
 
 # ============================================
+# 🔑 YOUR GROQ API KEY - PASTE IT HERE!
+# ============================================
+GROQ_API_KEY = "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"  # <--- REPLACE WITH YOUR ACTUAL KEY!
+# Get FREE key at: https://console.groq.com/keys
+# ============================================
+
+# ============================================
 # PAGE CONFIG
 # ============================================
 st.set_page_config(
@@ -39,8 +46,6 @@ if 'conversations' not in st.session_state:
     st.session_state.conversations = []
 if 'current_conv_id' not in st.session_state:
     st.session_state.current_conv_id = str(int(time.time()))
-if 'groq_api_key' not in st.session_state:
-    st.session_state.groq_api_key = ""
 if 'groq_model' not in st.session_state:
     st.session_state.groq_model = "llama-3.3-70b-versatile"
 
@@ -51,14 +56,17 @@ if 'groq_model' not in st.session_state:
 def call_groq_ai(user_message):
     """Call Groq API with full memory and context"""
     
-    if not st.session_state.groq_api_key:
+    if not GROQ_API_KEY or GROQ_API_KEY == "YOUR_GROQ_API_KEY_HERE":
         return """⚠️ **Groq API Key Required!**
+
+Please open the `app.py` file and replace `YOUR_GROQ_API_KEY_HERE` with your actual Groq API key.
 
 Get your FREE key at: https://console.groq.com/keys
 
 1. Sign up with email (no credit card needed)
 2. Copy your API key
-3. Paste it in the sidebar
+3. Replace `YOUR_GROQ_API_KEY_HERE` with your key
+4. Redeploy or restart the app
 
 Free tier: 30 requests/min, 14,400 requests/day"""
     
@@ -107,7 +115,7 @@ PERSONALIZATION:"""
     messages.append({"role": "user", "content": user_message})
     
     try:
-        client = Groq(api_key=st.session_state.groq_api_key)
+        client = Groq(api_key=GROQ_API_KEY)
         
         response = client.chat.completions.create(
             model=st.session_state.groq_model,
@@ -134,7 +142,7 @@ Wait a moment and try again.
 Please check your Groq API key:
 1. Go to https://console.groq.com/keys
 2. Create a new key
-3. Copy and paste it correctly"""
+3. Replace `YOUR_GROQ_API_KEY_HERE` with your new key"""
         else:
             return f"❌ **Error:** {error_msg[:200]}"
 
@@ -299,15 +307,16 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/robot-2.png", width=64)
     st.title("⚙️ KingsBot")
     
-    # Groq API Key
-    groq_key = st.text_input(
-        "🔑 Groq API Key",
-        value=st.session_state.groq_api_key,
-        type="password",
-        help="Get FREE key at: https://console.groq.com/keys"
-    )
-    if groq_key != st.session_state.groq_api_key:
-        st.session_state.groq_api_key = groq_key
+    # API Key Status
+    if GROQ_API_KEY and GROQ_API_KEY != "YOUR_GROQ_API_KEY_HERE":
+        st.success("✅ Groq API Key: Connected")
+        st.caption(f"⚡ Model: {st.session_state.groq_model}")
+        st.caption("🚀 Speed: Up to 1000 tokens/sec")
+    else:
+        st.error("❌ Groq API Key: Not Set")
+        st.warning("Please add your API key in app.py")
+        st.caption("Get FREE key at console.groq.com/keys")
+        st.caption("No credit card needed!")
     
     # Model Selection
     model = st.selectbox(
@@ -322,15 +331,6 @@ with st.sidebar:
     )
     if model != st.session_state.groq_model:
         st.session_state.groq_model = model
-    
-    if st.session_state.groq_api_key:
-        st.success("✅ Connected to Groq")
-        st.caption(f"⚡ Model: {model}")
-        st.caption("🚀 Speed: Up to 1000 tokens/sec")
-    else:
-        st.warning("⚠️ No API Key")
-        st.caption("Get FREE key at console.groq.com/keys")
-        st.caption("No credit card needed!")
     
     st.divider()
     st.subheader("📊 Stats")
