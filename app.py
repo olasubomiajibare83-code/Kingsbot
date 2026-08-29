@@ -1,295 +1,123 @@
+import streamlit as st
+import streamlit.components.v1 as components
 import json
 import os
 import re
 import random
 import time
 from datetime import datetime
-import webbrowser
-import threading
-import socket
-import http.server
-import socketserver
-import urllib.parse
-import base64
-import sys
-import traceback
 
 # ============================================================
-# KINGSBOT AI — NO INSTALLATION EDITION (FULL BRAIN + VOICE)
+# PAGE SETTINGS
 # ============================================================
+st.set_page_config(
+    page_title="KingsBot AI",
+    page_icon="🤖",
+    layout="centered"
+)
 
-PORT = 8501
-HOST = "localhost"
-MEMORY_FILE = "kingsbot_memory.json"
-
-# ============================================================
-# MEMORY SYSTEM
-# ============================================================
-def default_memory():
-    return {
-        "name": None,
-        "education_level": None,
-        "facts": [],
-        "preferences": [],
-        "topics": [],
-        "last_interaction": None,
-        "interaction_count": 0,
-        "mood_history": [],
-        "goals": [],
-        "reminders": [],
-        "favorite_quotes": []
+# Custom CSS
+st.markdown("""
+<style>
+    .user-bubble {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 12px 18px;
+        border-radius: 18px 18px 4px 18px;
+        max-width: 80%;
+        margin: 8px 0 8px auto;
+        animation: slideIn 0.3s ease;
     }
-
-def load_memory():
-    data = default_memory()
-    try:
-        if os.path.exists(MEMORY_FILE):
-            with open(MEMORY_FILE, "r", encoding="utf-8") as file:
-                saved = json.load(file)
-                if isinstance(saved, dict):
-                    for key in data:
-                        if key in saved:
-                            data[key] = saved[key]
-    except Exception:
-        pass
-    return data
-
-def save_memory():
-    data = {
-        "name": st.session_state.get("user_name", None),
-        "education_level": st.session_state.get("student_level", None),
-        "facts": st.session_state.get("personal_memory", [])[-50:],
-        "preferences": st.session_state.get("preferences", [])[-20:],
-        "topics": st.session_state.get("topic_pattern", [])[-30:],
-        "last_interaction": datetime.now().isoformat(),
-        "interaction_count": st.session_state.get("interaction_count", 0) + 1,
-        "mood_history": st.session_state.get("mood_history", [])[-50:],
-        "goals": st.session_state.get("goals", [])[-20:],
-        "reminders": st.session_state.get("reminders", [])[-20:],
-        "favorite_quotes": st.session_state.get("favorite_quotes", [])[-20:]
+    .assistant-bubble {
+        background: linear-gradient(135deg, #f093fb, #f5576c);
+        color: white;
+        padding: 12px 18px;
+        border-radius: 18px 18px 18px 4px;
+        max-width: 80%;
+        margin: 8px auto 8px 0;
+        animation: slideIn 0.3s ease;
     }
-    try:
-        with open(MEMORY_FILE, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .recording-active {
+        animation: pulse 0.8s infinite;
+        background: #ff4444 !important;
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
+    }
+    .stat-card {
+        background: rgba(255,255,255,0.05);
+        padding: 12px;
+        border-radius: 10px;
+        text-align: center;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================================
+# TITLE
+# ============================================================
+st.title("🤖 KingsBot AI")
+st.caption("No Installation • Voice • Memory • EQ")
 
 # ============================================================
 # SESSION STATE
 # ============================================================
-class SessionState:
-    def __init__(self):
-        saved = load_memory()
-        self.messages = []
-        self.user_name = saved.get("name")
-        self.student_level = saved.get("education_level")
-        self.personal_memory = saved.get("facts", [])
-        self.preferences = saved.get("preferences", [])
-        self.topic_pattern = saved.get("topics", [])
-        self.emotion = "neutral"
-        self.tone = "Natural and friendly"
-        self.confidence = "Medium"
-        self.confidence_score = 0.7
-        self.source = "KingsBot Brain"
-        self.reason = "Generated using pattern recognition and memory."
-        self.last_topic = "general knowledge"
-        self.interaction_count = saved.get("interaction_count", 0)
-        self.mood_history = saved.get("mood_history", [])
-        self.response_time = 0
-        self.goals = saved.get("goals", [])
-        self.reminders = saved.get("reminders", [])
-        self.favorite_quotes = saved.get("favorite_quotes", [])
-        self.voice_input = None
-        self.is_recording = False
-
-st = SessionState()
-
-# ============================================================
-# NAME DETECTION
-# ============================================================
-def detect_name(text):
-    patterns = [
-        r"\bmy name is ([A-Za-z][A-Za-z '\-]{1,40})",
-        r"\bcall me ([A-Za-z][A-Za-z '\-]{1,40})",
-        r"\byou can call me ([A-Za-z][A-Za-z '\-]{1,40})",
-        r"\bi am ([A-Za-z][A-Za-z '\-]{1,40})",
-        r"\bi'm ([A-Za-z][A-Za-z '\-]{1,40})"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            name = match.group(1).strip()
-            if len(name) >= 2:
-                st.user_name = name
-                save_memory()
-                return name
-    return None
-
-# ============================================================
-# GOAL DETECTION
-# ============================================================
-def detect_goal(text):
-    patterns = [
-        r"\bmy goal is ([^.!?]+)",
-        r"\bi want to ([^.!?]+)",
-        r"\bi aim to ([^.!?]+)",
-        r"\bi dream of ([^.!?]+)"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            goal = match.group(1).strip()
-            if goal and len(goal) > 5 and goal not in st.goals:
-                st.goals.append(goal)
-                st.goals = st.goals[-20:]
-                save_memory()
-                return goal
-    return None
-
-# ============================================================
-# REMINDER DETECTION
-# ============================================================
-def detect_reminder(text):
-    patterns = [
-        r"\bremind me to ([^.!?]+)",
-        r"\bremember to ([^.!?]+)",
-        r"\bdon't forget to ([^.!?]+)"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            reminder = match.group(1).strip()
-            if reminder and len(reminder) > 3:
-                st.reminders.append({
-                    "text": reminder,
-                    "created": datetime.now().isoformat(),
-                    "done": False
-                })
-                st.reminders = st.reminders[-20:]
-                save_memory()
-                return reminder
-    return None
-
-# ============================================================
-# QUOTE DETECTION
-# ============================================================
-def detect_quote(text):
-    match = re.search(r'"(.*?)"', text)
-    if match:
-        quote = match.group(1).strip()
-        if quote and len(quote) > 5 and quote not in st.favorite_quotes:
-            st.favorite_quotes.append(quote)
-            st.favorite_quotes = st.favorite_quotes[-20:]
-            save_memory()
-            return quote
-    return None
-
-# ============================================================
-# EDUCATION LEVELS
-# ============================================================
-LEVELS = {
-    "PRIMARY 1": ["primary 1", "primary one", "pry 1", "grade 1"],
-    "PRIMARY 2": ["primary 2", "primary two", "pry 2", "grade 2"],
-    "PRIMARY 3": ["primary 3", "primary three", "pry 3", "grade 3"],
-    "PRIMARY 4": ["primary 4", "primary four", "pry 4", "grade 4"],
-    "PRIMARY 5": ["primary 5", "primary five", "pry 5", "grade 5"],
-    "PRIMARY 6": ["primary 6", "primary six", "pry 6", "grade 6"],
-    "JSS1": ["jss1", "jss 1", "jss one", "junior secondary 1", "grade 7"],
-    "JSS2": ["jss2", "jss 2", "jss two", "junior secondary 2", "grade 8"],
-    "JSS3": ["jss3", "jss 3", "jss three", "junior secondary 3", "grade 9"],
-    "SS1": ["ss1", "ss 1", "ss one", "sss1", "sss 1", "senior secondary 1", "grade 10"],
-    "SS2": ["ss2", "ss 2", "ss two", "sss2", "sss 2", "senior secondary 2", "grade 11"],
-    "SS3": ["ss3", "ss 3", "ss three", "sss3", "sss 3", "senior secondary 3", "grade 12"],
-    "UNIVERSITY": ["university", "undergraduate", "college", "uni", "tertiary", "polytechnic"]
-}
-
-def detect_student_level(text):
-    lower = text.lower()
-    for level, words in LEVELS.items():
-        if any(word in lower for word in words):
-            st.student_level = level
-            save_memory()
-            return level
-    return None
-
-# ============================================================
-# ETHICAL FORGETTING
-# ============================================================
-def forget_information(text):
-    lower = text.lower()
-    
-    if any(phrase in lower for phrase in [
-        "forget everything", "forget all my memory", "delete all my memory",
-        "reset memory", "clear memory", "erase everything"
-    ]):
-        st.user_name = None
-        st.student_level = None
-        st.personal_memory = []
-        st.preferences = []
-        st.topic_pattern = []
-        st.mood_history = []
-        st.goals = []
-        st.reminders = []
-        st.favorite_quotes = []
-        save_memory()
-        return "✅ Done. I cleared your saved personal memory."
-    
-    if "forget my name" in lower or "delete my name" in lower:
-        st.user_name = None
-        save_memory()
-        return "✅ Done. I forgot your saved name."
-    
-    if "forget my class" in lower or "forget my education level" in lower:
-        st.student_level = None
-        save_memory()
-        return "✅ Done. I forgot your saved education level."
-    
-    if "forget that" in lower or "delete that fact" in lower:
-        if st.personal_memory:
-            removed = st.personal_memory.pop()
-            save_memory()
-            return f"✅ Done. I forgot: '{removed}'"
-    
-    if "forget my goals" in lower or "delete my goals" in lower:
-        st.goals = []
-        save_memory()
-        return "✅ Done. I forgot your goals."
-    
-    if "forget my reminders" in lower or "delete my reminders" in lower:
-        st.reminders = []
-        save_memory()
-        return "✅ Done. I forgot your reminders."
-    
-    return None
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+if "personal_memory" not in st.session_state:
+    st.session_state.personal_memory = []
+if "goals" not in st.session_state:
+    st.session_state.goals = []
+if "reminders" not in st.session_state:
+    st.session_state.reminders = []
+if "emotion" not in st.session_state:
+    st.session_state.emotion = "neutral"
+if "interaction_count" not in st.session_state:
+    st.session_state.interaction_count = 0
+if "mood_history" not in st.session_state:
+    st.session_state.mood_history = []
+if "last_topic" not in st.session_state:
+    st.session_state.last_topic = "general knowledge"
+if "tone" not in st.session_state:
+    st.session_state.tone = "Natural and friendly"
 
 # ============================================================
 # EMOTIONAL INTELLIGENCE
 # ============================================================
 EMOTION_KEYWORDS = {
-    "very frustrated": ["very angry", "so mad", "extremely frustrated", "furious", "enraged"],
-    "frustrated": ["angry", "mad", "annoyed", "frustrated", "you are wrong", "mistake", "terrible", "worst", "useless"],
-    "very sad": ["very sad", "so sad", "extremely upset", "devastated", "depressed"],
-    "sad": ["sad", "crying", "upset", "hurt", "miserable", "disappointed"],
-    "confused": ["confused", "don't understand", "do not understand", "explain again", "huh", "what do you mean", "i don't get"],
-    "very worried": ["very worried", "extremely anxious", "terrified", "panicking"],
-    "worried": ["worried", "scared", "afraid", "nervous", "anxious", "concerned"],
-    "very happy": ["very happy", "so happy", "extremely happy", "ecstatic", "overjoyed"],
-    "happy": ["happy", "great", "awesome", "thanks", "thank you", "yesss", "love", "amazing", "perfect", "wonderful", "excellent"]
+    "very frustrated": ["very angry", "furious", "enraged"],
+    "frustrated": ["angry", "mad", "annoyed", "frustrated", "wrong", "mistake"],
+    "very sad": ["very sad", "devastated", "depressed"],
+    "sad": ["sad", "crying", "upset", "hurt", "disappointed"],
+    "confused": ["confused", "don't understand", "huh", "what do you mean"],
+    "very worried": ["very worried", "terrified", "panicking"],
+    "worried": ["worried", "scared", "afraid", "nervous", "anxious"],
+    "very happy": ["very happy", "ecstatic", "overjoyed"],
+    "happy": ["happy", "great", "awesome", "thanks", "yesss", "love", "amazing"],
+    "neutral": []
 }
 
 def detect_emotion(text):
     lower = text.lower()
-    
     for emotion, keywords in EMOTION_KEYWORDS.items():
         if any(word in lower for word in keywords):
-            st.mood_history.append({
+            st.session_state.emotion = emotion
+            st.session_state.mood_history.append({
                 "emotion": emotion,
-                "timestamp": datetime.now().isoformat()
+                "time": datetime.now().strftime("%H:%M")
             })
-            st.mood_history = st.mood_history[-50:]
-            save_memory()
+            st.session_state.mood_history = st.session_state.mood_history[-20:]
             return emotion
-    
+    st.session_state.emotion = "neutral"
     return "neutral"
 
 # ============================================================
@@ -297,16 +125,16 @@ def detect_emotion(text):
 # ============================================================
 def tone_for(emotion):
     tones = {
-        "very frustrated": ("🧘 Very Calm & Patient", "Be extremely calm and patient. Show deep empathy."),
-        "frustrated": ("😌 Calm & Direct", "Be calm, respectful, and direct. Acknowledge frustration."),
-        "very sad": ("💖 Extra Warm & Caring", "Be very kind, warm, and supportive. Show extra empathy."),
-        "sad": ("💙 Warm & Supportive", "Be kind, warm, and supportive. Offer encouragement."),
-        "confused": ("🧩 Simple & Step-by-Step", "Use very simple language. Explain step by step."),
-        "very worried": ("🤗 Very Reassuring", "Be extremely reassuring. Offer concrete steps."),
-        "worried": ("🤝 Reassuring & Practical", "Be reassuring, careful, and practical."),
-        "very happy": ("🎉 Very Enthusiastic", "Be very enthusiastic and celebratory."),
-        "happy": ("😊 Friendly & Positive", "Be friendly, positive, and energetic."),
-        "neutral": ("🤖 Natural & Friendly", "Be natural, friendly, clear, and concise.")
+        "very frustrated": ("🧘 Very Calm", "Be extremely calm and patient."),
+        "frustrated": ("😌 Calm & Direct", "Be calm, respectful, and direct."),
+        "very sad": ("💖 Extra Warm", "Be very kind, warm, and supportive."),
+        "sad": ("💙 Warm", "Be kind, warm, and supportive."),
+        "confused": ("🧩 Simple", "Use very simple language."),
+        "very worried": ("🤗 Reassuring", "Be extremely reassuring."),
+        "worried": ("🤝 Reassuring", "Be reassuring and practical."),
+        "very happy": ("🎉 Enthusiastic", "Be very enthusiastic."),
+        "happy": ("😊 Friendly", "Be friendly, positive, and energetic."),
+        "neutral": ("🤖 Natural", "Be natural, friendly, and clear.")
     }
     return tones.get(emotion, tones["neutral"])
 
@@ -316,32 +144,59 @@ def tone_for(emotion):
 def recognize_topic(text):
     lower = text.lower()
     categories = {
-        "coding": ["code", "python", "program", "programming", "app", "software", "javascript", "html", "css"],
-        "mathematics": ["math", "calculate", "equation", "algebra", "geometry", "calculus", "fraction", "decimal"],
-        "science": ["science", "biology", "chemistry", "physics", "astronomy"],
-        "sports": ["football", "soccer", "world cup", "player", "messi", "ronaldo"],
-        "education": ["school", "class", "jss", "sss", "primary", "university", "teacher", "student"],
-        "history": ["history", "historical", "war", "empire", "ancient"],
-        "geography": ["country", "capital", "continent", "geography", "river", "mountain"],
-        "technology": ["technology", "computer", "phone", "internet", "ai", "artificial intelligence"],
-        "entertainment": ["movie", "film", "actor", "actress", "music", "song"],
-        "health": ["health", "doctor", "hospital", "medicine", "sickness", "disease", "fitness", "exercise"],
-        "business": ["business", "company", "money", "invest", "stock", "market", "profit"],
-        "general knowledge": ["who is", "what is", "where is", "when did", "why is", "how does", "tell me about", "meaning of"]
+        "coding": ["code", "python", "program", "programming", "app", "software"],
+        "mathematics": ["math", "calculate", "equation", "algebra"],
+        "science": ["science", "biology", "chemistry", "physics"],
+        "sports": ["football", "soccer", "messi", "ronaldo"],
+        "education": ["school", "class", "university", "teacher"],
+        "history": ["history", "war", "empire", "ancient"],
+        "geography": ["country", "capital", "continent", "river"],
+        "technology": ["technology", "computer", "internet", "ai"],
+        "entertainment": ["movie", "film", "actor", "music"],
+        "general knowledge": ["who is", "what is", "where is", "tell me about"]
     }
     for category, words in categories.items():
         if any(word in lower for word in words):
             return category
     return "general knowledge"
 
-def update_topic(text):
-    topic = recognize_topic(text)
-    st.last_topic = topic
-    if topic not in st.topic_pattern:
-        st.topic_pattern.append(topic)
-        st.topic_pattern = st.topic_pattern[-30:]
-        save_memory()
-    return topic
+# ============================================================
+# NAME DETECTION
+# ============================================================
+def detect_name(text):
+    match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
+    if match:
+        st.session_state.user_name = match.group(1).strip()
+        return match.group(1).strip()
+    return None
+
+# ============================================================
+# GOAL DETECTION
+# ============================================================
+def detect_goal(text):
+    match = re.search(r"my goal is ([^.!?]+)", text, re.IGNORECASE)
+    if match:
+        goal = match.group(1).strip()
+        if goal not in st.session_state.goals:
+            st.session_state.goals.append(goal)
+            st.session_state.goals = st.session_state.goals[-10:]
+        return goal
+    return None
+
+# ============================================================
+# REMINDER DETECTION
+# ============================================================
+def detect_reminder(text):
+    match = re.search(r"remind me to ([^.!?]+)", text, re.IGNORECASE)
+    if match:
+        reminder = match.group(1).strip()
+        st.session_state.reminders.append({
+            "text": reminder,
+            "done": False
+        })
+        st.session_state.reminders = st.session_state.reminders[-10:]
+        return reminder
+    return None
 
 # ============================================================
 # VERIFIED FACTS
@@ -349,72 +204,49 @@ def update_topic(text):
 def verified_fact(question):
     lower = question.lower()
     
-    # Sports
     if "messi" in lower and "world cup" in lower:
         return "🏆 Lionel Messi won the 2022 FIFA World Cup with Argentina."
-    if "world cup" in lower and "winner" in lower:
-        return "🏆 Argentina won the 2022 FIFA World Cup."
     if "nigeria" in lower and "capital" in lower:
         return "🏙️ The capital of Nigeria is Abuja."
-    if "lagos" in lower and "nigeria" in lower:
-        return "🌆 Lagos is the largest city in Nigeria."
-    
-    # Current info
-    if any(phrase in lower for phrase in ["what year is it", "which year is it", "current year"]):
+    if "what year is it" in lower or "current year" in lower:
         return f"📅 The current year is {datetime.now().year}."
-    if any(phrase in lower for phrase in ["today's date", "todays date", "what date is it"]):
+    if "today's date" in lower or "what date is it" in lower:
         return f"📅 Today is {datetime.now().strftime('%B %d, %Y')}."
     if "what time" in lower:
         return f"🕐 The current time is {datetime.now().strftime('%I:%M %p')}."
     
-    # Science
-    if "speed of light" in lower:
-        return "💡 The speed of light is approximately 299,792,458 m/s."
-    if "gravity" in lower and "earth" in lower:
-        return "🌍 Gravity on Earth is approximately 9.8 m/s²."
-    if "water" in lower and "boiling" in lower:
-        return "💧 Water boils at 100°C (212°F) at sea level."
-    
     return None
 
 # ============================================================
-# INTELLIGENT RESPONSE GENERATOR (BRAIN)
+# INTELLIGENT RESPONSE GENERATOR
 # ============================================================
 def generate_intelligent_response(text):
     lower = text.lower()
     
-    # Greetings
-    if re.match(r'^(hi|hello|hey|greetings|sup|what\'s up|yo|howdy)', lower):
-        responses = [
+    if re.match(r'^(hi|hello|hey|greetings|sup|what\'s up|yo)', lower):
+        return random.choice([
             "Hello! 👋 How can I help you today?",
             "Hi there! 😊 What's on your mind?",
-            "Hey! Great to talk to you. What can I help with?",
+            "Hey! Great to talk to you!",
             "Greetings! 🤖 I'm here to assist you."
-        ]
-        return random.choice(responses)
+        ])
     
-    # How are you
-    if re.search(r'how are you|how\'s it going|how do you do', lower):
-        responses = [
-            "I'm doing great, thanks for asking! 😊 How are you?",
-            "I'm functioning perfectly! 🤖 How can I help you today?",
-            "I'm always ready to help! 💪 What do you need?"
-        ]
-        return random.choice(responses)
+    if re.search(r'how are you|how\'s it going', lower):
+        return random.choice([
+            "I'm doing great, thanks! 😊 How are you?",
+            "I'm functioning perfectly! 🤖 How can I help?",
+            "I'm always ready to help! 💪"
+        ])
     
-    # Name
-    if re.search(r'what is your name|who are you|your name', lower):
-        return "I'm KingsBot! 🤖 Your intelligent AI assistant. I have memory, emotions, tone adaptation, and a powerful brain — all with NO installation and NO API key!"
+    if re.search(r'what is your name|who are you', lower):
+        return "I'm KingsBot! 🤖 Your intelligent AI assistant with memory, emotions, voice, and no installation!"
     
-    # Time
-    if re.search(r'what time is it|current time|time now', lower):
+    if re.search(r'what time is it|current time', lower):
         return f"🕐 The current time is {datetime.now().strftime('%I:%M %p')}."
     
-    # Date
     if re.search(r'what day is it|what\'s the date', lower):
         return f"📅 Today is {datetime.now().strftime('%A, %B %d, %Y')}."
     
-    # Math
     math_match = re.search(r'(\d+)\s*([\+\-\*/xX])\s*(\d+)', lower)
     if math_match:
         try:
@@ -436,39 +268,27 @@ def generate_intelligent_response(text):
         except:
             pass
     
-    # Square root
-    sqrt_match = re.search(r'sqrt\s*(\d+)|square root of (\d+)', lower)
-    if sqrt_match:
-        num = int(sqrt_match.group(1) or sqrt_match.group(2))
-        result = num ** 0.5
-        return f"√{num} = {result:.2f}"
-    
-    # Help
-    if re.search(r'help|what can you do|capabilities|features', lower):
+    if re.search(r'help|what can you do|capabilities', lower):
         return """
 🤖 **I can help you with:**
 
-📚 **General Knowledge** — History, geography, science, and more!
-🧮 **Mathematics** — Basic arithmetic, square roots, percentages
-💻 **Coding** — Python tips, algorithms, and explanations
-🎯 **Goals** — Track your goals and achievements
-⏰ **Reminders** — Set and manage reminders
-💬 **Quotes** — Save your favorite quotes
-🧠 **Memory** — I remember facts you share
-❤️ **Emotions** — I adapt to how you're feeling
-🎭 **Tone** — I match my tone to your mood
+📚 General Knowledge
+🧮 Mathematics
+💻 Coding
+🎯 Goals Tracking
+⏰ Reminders
+💬 Favorite Quotes
+🧠 Memory
+❤️ Emotion Detection
+🎭 Tone Adaptation
 
-**Try these commands:**
+**Try these:**
 - "My name is Alex"
 - "My goal is to learn Python"
 - "Remind me to call mom"
 - "What is 25 x 4?"
-- "Forget everything"
-
-Just ask me anything! 🚀
 """
     
-    # Unknown
     return None
 
 # ============================================================
@@ -477,37 +297,219 @@ Just ask me anything! 🚀
 def generate_response(user_message):
     start_time = time.time()
     
-    # Core functions
     detect_name(user_message)
-    detect_student_level(user_message)
     detect_goal(user_message)
     detect_reminder(user_message)
-    detect_quote(user_message)
-    
-    forgotten = forget_information(user_message)
-    if forgotten:
-        st.source = "KingsBot memory system"
-        st.confidence = "High"
-        st.confidence_score = 0.95
-        st.reason = "Memory change requested."
-        st.response_time = time.time() - start_time
-        return forgotten
     
     emotion = detect_emotion(user_message)
-    st.emotion = emotion
     tone_name, tone_instruction = tone_for(emotion)
-    st.tone = tone_name
-    topic = update_topic(user_message)
-    st.interaction_count += 1
+    st.session_state.tone = tone_name
+    st.session_state.last_topic = recognize_topic(user_message)
+    st.session_state.interaction_count += 1
     
-    # Check verified facts
     fact = verified_fact(user_message)
     if fact:
-        st.source = "KingsBot verified fact"
-        st.confidence = "High"
-        st.confidence_score = 0.92
-        st.reason = "Built-in factual safeguard."
-        st.response_time = time.time() - start_time
         return fact
     
-    # Generate intelligent r
+    response = generate_intelligent_response(user_message)
+    
+    if not response:
+        response = "I'm here to help! What would you like to know?"
+    
+    return response
+
+# ============================================================
+# DISPLAY CONVERSATION
+# ============================================================
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="user-bubble">👤 {msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="assistant-bubble">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
+
+# ============================================================
+# MICROPHONE COMPONENT (LONG PRESS)
+# ============================================================
+st.subheader("🎤 Voice Input")
+components.html("""
+<div style="text-align:center;margin:10px 0;">
+    <button 
+        id="micButton"
+        style="
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 50%;
+            width: 70px;
+            height: 70px;
+            font-size: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.4);
+        "
+        onmousedown="startRecording()"
+        onmouseup="stopRecording()"
+        onmouseleave="stopRecording()"
+        ontouchstart="startRecording()"
+        ontouchend="stopRecording()"
+    >
+        🎤
+    </button>
+    <div id="status" style="margin-top:8px;font-size:14px;color:#888;">Press and hold to record • Release to send</div>
+    <div id="recordingStatus" style="display:none;color:#ff4444;font-weight:bold;margin-top:5px;">🔴 Recording...</div>
+</div>
+<script>
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let stream = null;
+    let timerInterval = null;
+    let seconds = 0;
+
+    function startRecording() {
+        if (isRecording) return;
+        isRecording = true;
+        seconds = 0;
+        
+        document.getElementById('micButton').style.background = '#ff4444';
+        document.getElementById('micButton').style.boxShadow = '0 4px 30px rgba(255,68,68,0.6)';
+        document.getElementById('recordingStatus').style.display = 'block';
+        document.getElementById('recordingStatus').textContent = '🔴 Recording... ' + seconds + 's';
+        
+        timerInterval = setInterval(function() {
+            seconds++;
+            document.getElementById('recordingStatus').textContent = '🔴 Recording... ' + seconds + 's';
+        }, 1000);
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function(streamData) {
+                stream = streamData;
+                mediaRecorder = new MediaRecorder(streamData);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = function() {
+                    const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        const audioData = reader.result.split(',')[1];
+                        const event = new CustomEvent('streamlit:voice', {
+                            detail: { audio_data: audioData }
+                        });
+                        window.dispatchEvent(event);
+                    };
+                    reader.readAsDataURL(blob);
+                    
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        stream = null;
+                    }
+                    isRecording = false;
+                    clearInterval(timerInterval);
+                    document.getElementById('micButton').style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                    document.getElementById('micButton').style.boxShadow = '0 4px 20px rgba(102,126,234,0.4)';
+                    document.getElementById('recordingStatus').style.display = 'none';
+                };
+
+                mediaRecorder.start();
+            })
+            .catch(function(error) {
+                alert('Microphone access denied. Please allow microphone access.');
+                isRecording = false;
+                clearInterval(timerInterval);
+                document.getElementById('micButton').style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+                document.getElementById('micButton').style.boxShadow = '0 4px 20px rgba(102,126,234,0.4)';
+                document.getElementById('recordingStatus').style.display = 'none';
+            });
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+        }
+    }
+</script>
+""", height=150)
+
+# ============================================================
+# TEXT INPUT
+# ============================================================
+prompt = st.chat_input("Type your message...")
+
+# ============================================================
+# PROCESS MESSAGE
+# ============================================================
+if prompt:
+    # Show user message
+    st.markdown(f'<div class="user-bubble">👤 {prompt}</div>', unsafe_allow_html=True)
+    
+    # Generate response
+    with st.spinner("🧠 Thinking..."):
+        start_time = time.time()
+        response = generate_response(prompt)
+        elapsed = time.time() - start_time
+    
+    # Show response
+    st.markdown(f'<div class="assistant-bubble">🤖 {response}</div>', unsafe_allow_html=True)
+    
+    # Show metadata
+    emotion_emoji = {
+        "happy": "😊", "very happy": "🎉", "sad": "😢", "very sad": "😭",
+        "frustrated": "😤", "very frustrated": "💢", "confused": "🤔",
+        "worried": "😰", "very worried": "😱", "neutral": "😐"
+    }.get(st.session_state.emotion, "🤖")
+    
+    st.caption(f"⏱️ {elapsed:.2f}s • {emotion_emoji} {st.session_state.emotion} • 🎭 {st.session_state.tone} • 🎯 {st.session_state.last_topic}")
+    
+    # Save messages
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "assistant", "content": response})
+    
+    st.rerun()
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+with st.sidebar:
+    st.header("👤 Profile")
+    st.write(f"Name: {st.session_state.user_name or 'Not set'}")
+    st.write(f"Interactions: {st.session_state.interaction_count}")
+    
+    emotion_emoji = {
+        "happy": "😊", "very happy": "🎉", "sad": "😢", "very sad": "😭",
+        "frustrated": "😤", "very frustrated": "💢", "confused": "🤔",
+        "worried": "😰", "very worried": "😱", "neutral": "😐"
+    }.get(st.session_state.emotion, "🤖")
+    st.write(f"Emotion: {emotion_emoji} {st.session_state.emotion}")
+    
+    st.divider()
+    
+    st.subheader("🎯 Goals")
+    for g in st.session_state.goals:
+        st.write(f"• {g}")
+    if not st.session_state.goals:
+        st.caption("Say 'my goal is...'")
+    
+    st.subheader("⏰ Reminders")
+    for r in st.session_state.reminders:
+        if not r["done"]:
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"• {r['text']}")
+            if col2.button("✅", key=f"rem_{r['text'][:10]}"):
+                r["done"] = True
+    
+    st.subheader("🧠 Memory")
+    for f in st.session_state.personal_memory[-5:]:
+        st.write(f"• {f}")
+    
+    st.divider()
+    
+    if st.button("🗑️ Clear Conversation"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.caption("🤖 KingsBot AI • No Installation")
