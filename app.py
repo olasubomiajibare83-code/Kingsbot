@@ -12,7 +12,6 @@ try:
     GROQ_AVAILABLE = True
 except ImportError:
     GROQ_AVAILABLE = False
-    st.warning("⚠️ Groq package not installed. Run: pip install groq")
 
 # ============================================
 # PAGE CONFIG
@@ -38,14 +37,10 @@ if 'interests' not in st.session_state:
     st.session_state.interests = []
 if 'conversations' not in st.session_state:
     st.session_state.conversations = []
-if 'voice_enabled' not in st.session_state:
-    st.session_state.voice_enabled = True
 if 'current_conv_id' not in st.session_state:
     st.session_state.current_conv_id = str(int(time.time()))
-if 'processing' not in st.session_state:
-    st.session_state.processing = False
 if 'groq_api_key' not in st.session_state:
-    st.session_state.groq_api_key = os.environ.get("GROQ_API_KEY", "")
+    st.session_state.groq_api_key = ""
 if 'groq_model' not in st.session_state:
     st.session_state.groq_model = "llama-3.3-70b-versatile"
 
@@ -54,31 +49,53 @@ if 'groq_model' not in st.session_state:
 # ============================================
 
 def call_groq_ai(user_message):
-    """Call Groq API with memory and context"""
+    """Call Groq API with full memory and context"""
     
     if not st.session_state.groq_api_key:
-        return "⚠️ Please enter your Groq API key in the sidebar.\n\nGet one for FREE at: https://console.groq.com/keys"
+        return """⚠️ **Groq API Key Required!**
+
+Get your FREE key at: https://console.groq.com/keys
+
+1. Sign up with email (no credit card needed)
+2. Copy your API key
+3. Paste it in the sidebar
+
+Free tier: 30 requests/min, 14,400 requests/day"""
     
     if not GROQ_AVAILABLE:
-        return "⚠️ Groq package not installed. Run: pip install groq"
+        return "⚠️ Groq package not available. Deploy with requirements.txt"
     
     # Build context from conversation
-    history = st.session_state.conversation[-6:] if st.session_state.conversation else []
+    history = st.session_state.conversation[-8:] if st.session_state.conversation else []
     
     messages = []
     
     # System prompt with personalization
-    system_prompt = "You are KingsBot, a helpful AI assistant with memory and personalization."
+    system_prompt = """You are KingsBot, a powerful AI assistant with advanced capabilities.
+
+CAPABILITIES:
+- Code in any language (Python, JavaScript, Java, C++, etc.)
+- Explain complex topics in simple terms
+- Creative writing and problem solving
+- Mathematical calculations and reasoning
+- Detailed analysis and explanations
+
+PERSONALIZATION:"""
+    
     if st.session_state.user_name:
-        system_prompt += f"\nUser's name: {st.session_state.user_name}"
+        system_prompt += f"\n- User's name: {st.session_state.user_name}"
     if st.session_state.interests:
-        system_prompt += f"\nUser's interests: {', '.join(st.session_state.interests)}"
+        system_prompt += f"\n- User's interests: {', '.join(st.session_state.interests)}"
     if st.session_state.facts:
-        system_prompt += f"\nFacts about user: {'; '.join(st.session_state.facts)}"
-    system_prompt += f"\nCurrent time: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
-    system_prompt += "\nBe concise, helpful, and remember what users tell you."
-    system_prompt += "\nYou can code in any language, explain complex topics, and provide detailed answers."
-    system_prompt += "\nIf you need to search the web, suggest the user uses /search."
+        system_prompt += f"\n- Facts about user: {'; '.join(st.session_state.facts)}"
+    
+    system_prompt += f"\n\nCurrent time: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
+    system_prompt += "\n\nINSTRUCTIONS:"
+    system_prompt += "\n- Be concise but thorough"
+    system_prompt += "\n- Provide code with explanations"
+    system_prompt += "\n- Ask clarifying questions when needed"
+    system_prompt += "\n- Remember previous conversations"
+    system_prompt += "\n- If user asks for web search, suggest /search command"
     
     messages.append({"role": "system", "content": system_prompt})
     
@@ -96,67 +113,30 @@ def call_groq_ai(user_message):
             model=st.session_state.groq_model,
             messages=messages,
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=2048,
             top_p=0.9,
         )
         
         return response.choices[0].message.content
         
     except Exception as e:
-        return f"❌ Groq Error: {str(e)}\n\nTry:\n- Check your API key\n- Use a different model\n- Check rate limits (30/min free)"
+        error_msg = str(e)
+        if "rate_limit" in error_msg.lower():
+            return """⚠️ **Rate Limit Reached**
 
-def call_fallback_ai(user_message):
-    """Fallback when Groq is unavailable"""
-    msg = user_message.lower().strip()
-    
-    if msg in ["hello", "hi", "hey", "howdy"]:
-        name = f" {st.session_state.user_name}" if st.session_state.user_name else ""
-        return f"Hello{name}! 👋 Groq is currently unavailable, but I'm here to help!"
-    
-    if "how are you" in msg:
-        return "I'm doing great! Thanks for asking. 😊"
-    
-    if "my name is" in msg:
-        match = re.search(r"my name is ([a-z]+)", msg, re.IGNORECASE)
-        if match:
-            name = match.group(1).capitalize()
-            st.session_state.user_name = name
-            return f"Nice to meet you, {name}! 👍 I'll remember that."
-    
-    if "code" in msg or "python" in msg:
-        return """Here's a Python example:
+Free tier: 30 requests per minute
+Wait a moment and try again.
 
-```python
-def greet(name):
-    return f"Hello, {name}!"
+💡 Upgrade or wait for reset."""
+        elif "invalid" in error_msg.lower():
+            return """⚠️ **Invalid API Key**
 
-print(greet("World"))
-```"""
-    
-    if "help" in msg:
-        return """📖 **KingsBot Help**
-
-**Commands:**
-/help - Show this
-/clear - Clear chat
-/stats - Your stats
-/name Name - Set your name
-/interest Hobby - Add interest
-/facts - What I know about you
-/search query - Web search
-
-**Features:**
-🧠 Groq AI brain (Llama 3.3 70B)
-💬 Memory & personalization
-🔍 Web search
-📜 History
-🎤 Voice (HTML version)"""
-    
-    return f"That's interesting! 🤔 Tell me more about \"{user_message[:50]}...\""
-
-# ============================================
-# WEB SEARCH
-# ============================================
+Please check your Groq API key:
+1. Go to https://console.groq.com/keys
+2. Create a new key
+3. Copy and paste it correctly"""
+        else:
+            return f"❌ **Error:** {error_msg[:200]}"
 
 def web_search(query):
     """Free web search using DuckDuckGo"""
@@ -189,7 +169,8 @@ def web_search(query):
                     count += 1
         
         if not data.get('Abstract') and not data.get('RelatedTopics'):
-            results += f"No summary available.\n\n🔗 Try Google: https://www.google.com/search?q={query.replace(' ', '+')}"
+            results += f"No summary available.\n\n🔗 Try Google: https://www.google.com/search?q={query.replace(' ', '+')}\n"
+            results += f"📖 Try Wikipedia: https://en.wikipedia.org/wiki/{query.replace(' ', '_')}"
         
         return results
     except Exception as e:
@@ -234,7 +215,8 @@ def extract_facts(user_msg, ai_response):
         r"i work as ([^\.]+)",
         r"i live in ([^\.]+)",
         r"i have ([^\.]+)",
-        r"i (?:love|enjoy) ([^\.]+)"
+        r"i (?:love|enjoy) ([^\.]+)",
+        r"my favorite ([^\.]+)"
     ]
     new_facts = []
     for pattern in patterns:
@@ -256,13 +238,14 @@ def handle_command(text):
         return "🧹 Conversation cleared."
     
     elif cmd == '/stats':
-        return f"""📊 **Stats:**
+        return f"""📊 **Your Stats:**
 • Messages: {st.session_state.message_count}
 • Facts: {len(st.session_state.facts)}
 • Interests: {', '.join(st.session_state.interests) or 'None'}
 • Name: {st.session_state.user_name or 'Not set'}
 • Saved chats: {len(st.session_state.conversations)}
-• Brain: Groq {st.session_state.groq_model}"""
+• Brain: Groq {st.session_state.groq_model}
+• Speed: Up to 1000 tokens/second"""
     
     elif cmd.startswith('/name '):
         name = cmd[6:].strip()
@@ -299,7 +282,13 @@ def handle_command(text):
 
 🧠 Powered by **Groq AI** (Llama 3.3 70B)
 ⚡ Lightning fast! Up to 1000 tokens/sec
-🆓 Free tier: 30 requests/min, 14,400/day"""
+🆓 Free tier: 30 requests/min, 14,400/day
+
+**Tips:**
+• Just type anything - I'll answer like ChatGPT!
+• Ask me to write code in any language
+• Tell me about yourself - I'll remember
+• Use /search to find information"""
     
     return None
 
@@ -327,7 +316,6 @@ with st.sidebar:
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "mixtral-8x7b-32768",
-            "llama-4-scout",
             "qwen-3-32b"
         ],
         index=0
@@ -336,17 +324,22 @@ with st.sidebar:
         st.session_state.groq_model = model
     
     if st.session_state.groq_api_key:
-        st.success("✅ Groq Connected")
+        st.success("✅ Connected to Groq")
         st.caption(f"⚡ Model: {model}")
+        st.caption("🚀 Speed: Up to 1000 tokens/sec")
     else:
         st.warning("⚠️ No API Key")
         st.caption("Get FREE key at console.groq.com/keys")
+        st.caption("No credit card needed!")
     
     st.divider()
     st.subheader("📊 Stats")
-    st.metric("💬 Messages", st.session_state.message_count)
-    st.metric("📚 Facts", len(st.session_state.facts))
-    st.metric("💾 Saved", len(st.session_state.conversations))
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("💬 Messages", st.session_state.message_count)
+    with col2:
+        st.metric("📚 Facts", len(st.session_state.facts))
+    st.metric("💾 Saved Chats", len(st.session_state.conversations))
     
     st.divider()
     
@@ -356,7 +349,8 @@ with st.sidebar:
             "name": st.session_state.user_name,
             "interests": st.session_state.interests,
             "facts": st.session_state.facts,
-            "conversations": st.session_state.conversations
+            "conversations": st.session_state.conversations,
+            "current_conversation": st.session_state.conversation
         }
         st.download_button(
             label="⬇️ Download JSON",
@@ -375,11 +369,12 @@ with st.sidebar:
         st.rerun()
 
 # ============================================
-# MAIN
+# MAIN CONTENT
 # ============================================
 st.title("🤖 KingsBot AI")
-st.caption("⚡ Powered by **Groq** · Lightning Fast · 100% FREE")
+st.caption("⚡ Powered by **Groq** · Lightning Fast · Advanced AI · 100% FREE")
 
+# Create tabs
 tab1, tab2, tab3 = st.tabs(["💬 Chat", "📜 History", "🔍 Search"])
 
 # ============================================
@@ -390,7 +385,8 @@ with tab1:
     
     with chat_container:
         if not st.session_state.conversation:
-            st.info("👋 Welcome! Powered by Groq AI - Lightning Fast!")
+            st.info("👋 Welcome! I'm KingsBot with Groq AI - Lightning Fast!")
+            st.caption("💡 Just type anything like ChatGPT, but faster!")
         else:
             for msg in st.session_state.conversation:
                 if msg['role'] == 'user':
@@ -403,7 +399,7 @@ with tab1:
     with col1:
         user_input = st.text_input(
             "Message",
-            placeholder="Type /help for commands",
+            placeholder="Ask me anything... (like ChatGPT!)",
             label_visibility="collapsed",
             key="user_input"
         )
@@ -431,12 +427,7 @@ with tab1:
                 })
                 st.session_state.message_count += 1
                 
-                # Try Groq first, fallback if needed
-                if st.session_state.groq_api_key and GROQ_AVAILABLE:
-                    response = call_groq_ai(user_input)
-                else:
-                    response = call_fallback_ai(user_input)
-                
+                response = call_groq_ai(user_input)
                 extract_facts(user_input, response)
                 
                 st.session_state.conversation.append({
@@ -457,26 +448,37 @@ with tab2:
     if not st.session_state.conversations:
         st.info("📭 No saved conversations.")
     else:
-        st.caption(f"📜 {len(st.session_state.conversations)} saved")
-        for conv in st.session_state.conversations[:20]:
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"""
-                <div style="background:#21262d;padding:10px;border-radius:8px;margin:4px 0;">
-                    <div style="font-size:11px;color:#8b949e;">📅 {datetime.fromisoformat(conv['date']).strftime('%B %d, %I:%M %p')}</div>
-                    <div style="font-size:13px;">{conv['preview']}</div>
-                    <div style="font-size:11px;color:#8b949e;">💬 {conv['message_count']} msgs</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                if st.button("Load", key=f"load_{conv['id']}"):
-                    load_conversation(conv['id'])
+        st.caption(f"📜 {len(st.session_state.conversations)} saved conversations")
+        
+        search_hist = st.text_input("🔍 Search history", placeholder="Search by keyword...", key="history_search")
+        
+        filtered = st.session_state.conversations
+        if search_hist:
+            filtered = [
+                c for c in st.session_state.conversations
+                if any(search_hist.lower() in msg['content'].lower() for msg in c['messages'])
+            ]
+        
+        for conv in filtered:
+            with st.container():
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"""
+                    <div style="background:#21262d;padding:10px;border-radius:8px;margin:4px 0;">
+                        <div style="font-size:11px;color:#8b949e;">📅 {datetime.fromisoformat(conv['date']).strftime('%B %d, %I:%M %p')}</div>
+                        <div style="font-size:13px;">{conv['preview']}</div>
+                        <div style="font-size:11px;color:#8b949e;">💬 {conv['message_count']} msgs</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    if st.button("📂 Load", key=f"load_{conv['id']}"):
+                        load_conversation(conv['id'])
 
 # ============================================
 # SEARCH TAB
 # ============================================
 with tab3:
-    search_query = st.text_input("🔍 Search", placeholder="Enter keyword...", key="search_all")
+    search_query = st.text_input("🔍 Search all conversations", placeholder="Enter keyword...", key="search_all")
     
     if search_query and len(search_query) > 1:
         results = []
@@ -484,17 +486,24 @@ with tab3:
             for msg in conv['messages']:
                 if search_query.lower() in msg['content'].lower():
                     results.append({
+                        'conv_id': conv['id'],
                         'date': conv['date'],
                         'content': msg['content'][:300],
-                        'role': msg['role']
+                        'role': msg['role'],
+                        'preview': msg['content'][:200] + ('...' if len(msg['content']) > 200 else '')
                     })
         
-        if results:
-            st.success(f"✅ {len(results)} results")
-            for r in results[:10]:
-                st.markdown(f"**{r['role']}** ({r['date'][:16]}): {r['content']}...")
+        if not results:
+            st.info("🔍 No results found.")
         else:
-            st.info("No results.")
+            st.success(f"✅ Found {len(results)} results")
+            for result in results[:20]:
+                st.markdown(f"**{result['role']}** ({result['date'][:16]}): {result['preview']}")
+                if st.button("📂 Load", key=f"search_load_{result['conv_id']}"):
+                    load_conversation(result['conv_id'])
 
+# ============================================
+# FOOTER
+# ============================================
 st.divider()
 st.caption("🤖 KingsBot | Powered by Groq AI | 100% FREE | Built with Streamlit")
