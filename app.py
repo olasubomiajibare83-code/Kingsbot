@@ -15,8 +15,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧠 KingsBot — Groq Advanced AI")
-st.caption("Ultra-Fast • Llama 3.1 • Memory • Voice • 100% Free")
+st.title("🧠 KingsBot — Groq AI")
+st.caption("Ultra-Fast • Memory • Voice • Emotions • 100% Free")
 
 # ============================================================
 # SESSION STATE
@@ -48,7 +48,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "llama-3.1-70b-versatile"  # ✅ Currently supported
+    st.session_state.model = "llama-3.1-70b-versatile"
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 
@@ -62,11 +62,11 @@ with st.sidebar:
     if api_key:
         st.session_state.api_key = api_key
     
-    # ✅ Updated model list — only currently supported free models
+    # ✅ Latest supported models
     model = st.selectbox(
         "Select Model",
         [
-            "llama-3.1-70b-versatile",   # Best quality
+            "llama-3.1-70b-versatile",   # Best quality (if available)
             "llama-3.1-8b-instant",      # Fastest
             "gemma2-9b-it",              # Google's model
             "llama-3.2-3b-preview",      # Small, fast
@@ -133,10 +133,10 @@ with st.sidebar:
         st.session_state.mood_history = []
         st.rerun()
     
-    st.caption("🤖 KingsBot • Groq LPU • 500+ tokens/sec")
+    st.caption("🤖 KingsBot • Groq LPU")
 
 # ============================================================
-# FEATURES — MEMORY, EMOTION, TONE
+# EMOTION DETECTION
 # ============================================================
 EMOTION_KEYWORDS = {
     "frustrated": ["angry", "mad", "annoyed", "frustrated", "wrong", "mistake"],
@@ -189,6 +189,9 @@ def recognize_topic(text):
             return category
     return "general knowledge"
 
+# ============================================================
+# MEMORY FUNCTIONS
+# ============================================================
 def detect_name(text):
     match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
     if match:
@@ -266,7 +269,7 @@ def speech_to_text(audio_bytes):
         return None
 
 # ============================================================
-# GENERATE RESPONSE — GROQ API
+# GENERATE RESPONSE
 # ============================================================
 def generate_response(prompt):
     if not st.session_state.api_key:
