@@ -1,6 +1,7 @@
 import streamlit as st
-import requests
+from groq import Groq
 import json
+import re
 import time
 from datetime import datetime
 
@@ -8,13 +9,13 @@ from datetime import datetime
 # PAGE SETTINGS
 # ============================================================
 st.set_page_config(
-    page_title="KingsBot AI — API Brain",
+    page_title="KingsBot — Groq AI",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("🧠 KingsBot AI — Real Brain")
-st.caption("Powered by AI • No Installation • Just API")
+st.title("🧠 KingsBot — Groq Advanced AI")
+st.caption("Ultra-Fast • Llama 4 • Web Search • Memory • Voice")
 
 # ============================================================
 # SESSION STATE
@@ -23,31 +24,271 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+if "goals" not in st.session_state:
+    st.session_state.goals = []
+if "reminders" not in st.session_state:
+    st.session_state.reminders = []
+if "personal_memory" not in st.session_state:
+    st.session_state.personal_memory = []
+if "emotion" not in st.session_state:
+    st.session_state.emotion = "neutral"
+if "interaction_count" not in st.session_state:
+    st.session_state.interaction_count = 0
+if "mood_history" not in st.session_state:
+    st.session_state.mood_history = []
+if "last_topic" not in st.session_state:
+    st.session_state.last_topic = "general knowledge"
+if "tone" not in st.session_state:
+    st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "gpt-3.5-turbo"
+    st.session_state.model = "llama-3.3-70b-versatile"
+if "response_time" not in st.session_state:
+    st.session_state.response_time = 0
 
 # ============================================================
-# SIDEBAR — API SETUP
+# SIDEBAR — API KEY & MODEL
 # ============================================================
 with st.sidebar:
-    st.header("⚙️ API Settings")
+    st.header("⚙️ Groq Settings")
     
-    api_key = st.text_input("Enter your OpenAI API Key", type="password")
+    api_key = st.text_input("Groq API Key", type="password", help="Get free key at console.groq.com")
     if api_key:
         st.session_state.api_key = api_key
     
     model = st.selectbox(
         "Select Model",
-        ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
+        [
+            "llama-3.3-70b-versatile",
+            "llama-4-scout-17b-16e-instruct",
+            "llama-4-maverick-17b-128e-instruct",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
+            "qwen-2.5-32b",
+            "compound-beta",
+            "compound-beta-mini"
+        ],
+        index=0
     )
     st.session_state.model = model
     
-    st.caption("Get your API key from: platform.openai.com")
+    st.caption("💡 compound-beta = web search + code execution built-in")
+    st.caption("Free tier: 30 req/min, 14,400 req/day")
+    st.divider()
+    
+    st.subheader("👤 Profile")
+    st.write(f"Name: {st.session_state.user_name or 'Not set'}")
+    st.write(f"Interactions: {st.session_state.interaction_count}")
+    
+    emotion_emoji = {
+        "happy": "😊", "sad": "😢", "frustrated": "😤",
+        "confused": "🤔", "worried": "😰", "neutral": "😐"
+    }.get(st.session_state.emotion, "🤖")
+    st.write(f"Emotion: {emotion_emoji} {st.session_state.emotion}")
+    st.write(f"Tone: {st.session_state.tone}")
+    st.write(f"Topic: {st.session_state.last_topic}")
+    st.write(f"⏱️ {st.session_state.response_time:.2f}s")
+    
+    st.divider()
+    
+    st.subheader("🎯 Goals")
+    for g in st.session_state.goals:
+        st.write(f"• {g}")
+    if not st.session_state.goals:
+        st.caption("Say 'my goal is...'")
+    
+    st.subheader("⏰ Reminders")
+    for r in st.session_state.reminders:
+        if not r["done"]:
+            col1, col2 = st.columns([3, 1])
+            col1.write(f"• {r['text']}")
+            if col2.button("✅", key=f"rem_{r['text'][:10]}"):
+                r["done"] = True
+                st.rerun()
+    
     st.divider()
     
     if st.button("🗑️ Clear Conversation"):
         st.session_state.messages = []
         st.rerun()
+    
+    if st.button("🧹 Forget Everything"):
+        st.session_state.user_name = None
+        st.session_state.goals = []
+        st.session_state.reminders = []
+        st.session_state.personal_memory = []
+        st.session_state.mood_history = []
+        st.rerun()
+    
+    st.caption("🤖 KingsBot • Groq LPU • 500+ tokens/sec")
+
+# ============================================================
+# FEATURE FUNCTIONS (Memory, Emotion, Tone)
+# ============================================================
+
+# Emotion Detection
+EMOTION_KEYWORDS = {
+    "frustrated": ["angry", "mad", "annoyed", "frustrated", "wrong", "mistake"],
+    "sad": ["sad", "crying", "upset", "hurt", "disappointed"],
+    "confused": ["confused", "don't understand", "huh", "what do you mean"],
+    "worried": ["worried", "scared", "afraid", "nervous", "anxious"],
+    "happy": ["happy", "great", "awesome", "thanks", "love", "amazing"],
+    "neutral": []
+}
+
+def detect_emotion(text):
+    lower = text.lower()
+    for emotion, keywords in EMOTION_KEYWORDS.items():
+        if any(word in lower for word in keywords):
+            st.session_state.emotion = emotion
+            st.session_state.mood_history.append({
+                "emotion": emotion,
+                "time": datetime.now().strftime("%H:%M")
+            })
+            return emotion
+    st.session_state.emotion = "neutral"
+    return "neutral"
+
+def tone_for(emotion):
+    tones = {
+        "frustrated": ("😌 Calm", "Be calm and direct."),
+        "sad": ("💙 Warm", "Be kind and supportive."),
+        "confused": ("🧩 Simple", "Explain step by step."),
+        "worried": ("🤝 Reassuring", "Be reassuring."),
+        "happy": ("😊 Friendly", "Be friendly and positive."),
+        "neutral": ("🤖 Natural", "Be natural and clear.")
+    }
+    return tones.get(emotion, tones["neutral"])
+
+def recognize_topic(text):
+    lower = text.lower()
+    categories = {
+        "coding": ["code", "python", "program", "app", "software"],
+        "mathematics": ["math", "calculate", "equation"],
+        "science": ["science", "biology", "chemistry", "physics"],
+        "sports": ["football", "soccer", "messi"],
+        "education": ["school", "class", "university"],
+        "history": ["history", "war", "empire"],
+        "geography": ["country", "capital", "continent"],
+        "technology": ["technology", "computer", "ai"],
+        "general knowledge": ["who is", "what is", "where is"]
+    }
+    for category, words in categories.items():
+        if any(word in lower for word in words):
+            return category
+    return "general knowledge"
+
+def detect_name(text):
+    match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
+    if match:
+        st.session_state.user_name = match.group(1).strip()
+        return match.group(1).strip()
+    return None
+
+def detect_goal(text):
+    match = re.search(r"my goal is ([^.!?]+)", text, re.IGNORECASE)
+    if match:
+        goal = match.group(1).strip()
+        if goal not in st.session_state.goals:
+            st.session_state.goals.append(goal)
+        return goal
+    return None
+
+def detect_reminder(text):
+    match = re.search(r"remind me to ([^.!?]+)", text, re.IGNORECASE)
+    if match:
+        reminder = match.group(1).strip()
+        st.session_state.reminders.append({"text": reminder, "done": False})
+        return reminder
+    return None
+
+def forget_information(text):
+    lower = text.lower()
+    if "forget everything" in lower or "clear memory" in lower:
+        st.session_state.user_name = None
+        st.session_state.goals = []
+        st.session_state.reminders = []
+        st.session_state.personal_memory = []
+        return "✅ Done. I cleared everything."
+    if "forget my name" in lower:
+        st.session_state.user_name = None
+        return "✅ Done. I forgot your name."
+    if "forget my goals" in lower:
+        st.session_state.goals = []
+        return "✅ Done. I forgot your goals."
+    return None
+
+# ============================================================
+# GENERATE RESPONSE — GROQ API
+# ============================================================
+def generate_response(prompt):
+    if not st.session_state.api_key:
+        return "⚠️ Please enter your Groq API key in the sidebar. Get one free at console.groq.com"
+    
+    # Run detection features
+    detect_name(prompt)
+    detect_goal(prompt)
+    detect_reminder(prompt)
+    
+    forgotten = forget_information(prompt)
+    if forgotten:
+        return forgotten
+    
+    emotion = detect_emotion(prompt)
+    tone_name, tone_instruction = tone_for(emotion)
+    st.session_state.tone = tone_name
+    st.session_state.last_topic = recognize_topic(prompt)
+    st.session_state.interaction_count += 1
+    
+    # Build memory context
+    memory_text = ""
+    if st.session_state.user_name:
+        memory_text += f"User's name: {st.session_state.user_name}. "
+    if st.session_state.goals:
+        memory_text += f"User's goals: {', '.join(st.session_state.goals[-3:])}. "
+    
+    # System prompt with memory + emotion
+    system_prompt = f"""
+You are KingsBot, an intelligent, helpful AI assistant.
+
+Current date: {datetime.now().strftime('%B %d, %Y')}
+
+User emotion: {emotion}
+Tone: {tone_name}. {tone_instruction}
+
+Memory:
+{memory_text}
+
+Be helpful, clear, and concise. Answer in a friendly way. Match your tone to the user's emotion.
+If you don't know something, say so.
+"""
+    
+    try:
+        client = Groq(api_key=st.session_state.api_key)
+        
+        # Build messages
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(st.session_state.messages[-15:])
+        messages.append({"role": "user", "content": prompt})
+        
+        start_time = time.time()
+        
+        response = client.chat.completions.create(
+            model=st.session_state.model,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=600,
+            top_p=0.9
+        )
+        
+        elapsed = time.time() - start_time
+        st.session_state.response_time = elapsed
+        
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 # ============================================================
 # DISPLAY CONVERSATION
@@ -57,64 +298,29 @@ for msg in st.session_state.messages:
         st.write(msg["content"])
 
 # ============================================================
-# GENERATE RESPONSE (USES REAL AI)
-# ============================================================
-def generate_response(prompt):
-    if not st.session_state.api_key:
-        return "⚠️ Please enter your OpenAI API key in the sidebar."
-    
-    try:
-        headers = {
-            "Authorization": f"Bearer {st.session_state.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        messages = [
-            {"role": "system", "content": "You are KingsBot, a helpful AI assistant."}
-        ]
-        messages.extend(st.session_state.messages[-10:])
-        messages.append({"role": "user", "content": prompt})
-        
-        data = {
-            "model": st.session_state.model,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 500
-        }
-        
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"❌ API Error: {response.status_code} - {response.text}"
-            
-    except requests.exceptions.Timeout:
-        return "⏱️ Request timed out. Please try again."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-# ============================================================
 # TEXT INPUT
 # ============================================================
-prompt = st.chat_input("Ask KingsBot anything...")
+prompt = st.chat_input("Ask KingsBot anything... (supports web search with compound-beta)")
 
 if prompt:
     with st.chat_message("user"):
         st.write(prompt)
     
     with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking..."):
-            start = time.time()
+        with st.spinner(f"🧠 Thinking with {st.session_state.model}..."):
             response = generate_response(prompt)
-            elapsed = time.time() - start
             st.write(response)
-            st.caption(f"⏱️ {elapsed:.2f}s • {st.session_state.model}")
+            
+            emotion_emoji = {
+                "happy": "😊", "sad": "😢", "frustrated": "😤",
+                "confused": "🤔", "worried": "😰", "neutral": "😐"
+            }.get(st.session_state.emotion, "🤖")
+            
+            model_display = st.session_state.model
+            if "compound" in model_display:
+                model_display += " 🌐 (web search + code execution)"
+            
+            st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {emotion_emoji} {st.session_state.emotion} • {model_display}")
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.messages.append({"role": "assistant", "content": response})
@@ -124,4 +330,4 @@ if prompt:
 # FOOTER
 # ============================================================
 st.divider()
-st.caption("🤖 KingsBot • Powered by OpenAI • No Installation Required")
+st.caption("🧠 KingsBot • Powered by Groq LPU • 500-1000+ tokens/sec • Free Tier Available")
