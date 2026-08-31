@@ -1,5 +1,5 @@
 import streamlit as st
-from groq import Groq
+from together import Together
 import re
 import time
 from datetime import datetime
@@ -10,13 +10,13 @@ import io
 # PAGE SETTINGS
 # ============================================================
 st.set_page_config(
-    page_title="KingsBot — Groq AI",
+    page_title="KingsBot — Together AI",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("🧠 KingsBot — Groq AI")
-st.caption("Ultra-Fast • Memory • Voice • Emotions • 100% Free")
+st.title("🧠 KingsBot — Together AI")
+st.caption("Fast • Powerful • Llama 3.3 • Memory • Voice • Emotions")
 
 # ============================================================
 # SESSION STATE
@@ -48,7 +48,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "llama-3.1-70b-versatile"
+    st.session_state.model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 
@@ -56,27 +56,28 @@ if "response_time" not in st.session_state:
 # SIDEBAR
 # ============================================================
 with st.sidebar:
-    st.header("⚙️ Groq Settings")
+    st.header("⚙️ Together AI Settings")
     
-    api_key = st.text_input("Groq API Key", type="password", help="Get free key at console.groq.com")
+    api_key = st.text_input("Together API Key", type="password", 
+                            help="Get free key at together.ai")
     if api_key:
         st.session_state.api_key = api_key
     
-    # ✅ Latest supported models
     model = st.selectbox(
         "Select Model",
         [
-            "llama-3.1-70b-versatile",   # Best quality (if available)
-            "llama-3.1-8b-instant",      # Fastest
-            "gemma2-9b-it",              # Google's model
-            "llama-3.2-3b-preview",      # Small, fast
-            "llama-3.2-1b-preview"       # Smallest
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo",  # Best quality
+            "meta-llama/Llama-3.2-3B-Instruct-Turbo",   # Fastest
+            "Qwen/Qwen2.5-72B-Instruct-Turbo",          # Strong reasoning
+            "deepseek-ai/DeepSeek-V3",                  # Excellent
+            "mistralai/Mixtral-8x7B-Instruct-v0.1"
         ],
         index=0
     )
     st.session_state.model = model
     
-    st.caption("Free: 30 req/min, 14,400 req/day")
+    st.caption("Free tier: limited requests, then pay-as-you-go")
+    st.caption("Pricing: ~$0.30 per 1M input tokens")
     st.divider()
     
     st.subheader("👤 Profile")
@@ -133,7 +134,7 @@ with st.sidebar:
         st.session_state.mood_history = []
         st.rerun()
     
-    st.caption("🤖 KingsBot • Groq LPU")
+    st.caption("🤖 KingsBot • Together AI")
 
 # ============================================================
 # EMOTION DETECTION
@@ -269,11 +270,11 @@ def speech_to_text(audio_bytes):
         return None
 
 # ============================================================
-# GENERATE RESPONSE
+# GENERATE RESPONSE — Together AI
 # ============================================================
 def generate_response(prompt):
     if not st.session_state.api_key:
-        return "⚠️ Please enter your Groq API key in the sidebar."
+        return "⚠️ Please enter your Together AI API key in the sidebar.\n\nGet one at together.ai"
     
     # Run detection
     detect_name(prompt)
@@ -300,9 +301,11 @@ def generate_response(prompt):
         memory_text += f"Goals: {', '.join(st.session_state.goals[-3:])}. "
     if st.session_state.preferences:
         memory_text += f"Preferences: {', '.join(st.session_state.preferences[-3:])}. "
+    if st.session_state.favorite_quotes:
+        memory_text += f"Favorite quotes: {', '.join(st.session_state.favorite_quotes[-2:])}. "
     
     system_prompt = f"""
-You are KingsBot, an intelligent AI assistant.
+You are KingsBot, an intelligent, helpful AI assistant.
 
 Current date: {datetime.now().strftime('%B %d, %Y')}
 
@@ -313,10 +316,11 @@ Memory:
 {memory_text}
 
 Be helpful, clear, and concise. Match your tone to the user's emotion.
+If you don't know something, say so.
 """
     
     try:
-        client = Groq(api_key=st.session_state.api_key)
+        client = Together(api_key=st.session_state.api_key)
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(st.session_state.messages[-15:])
         messages.append({"role": "user", "content": prompt})
@@ -326,7 +330,8 @@ Be helpful, clear, and concise. Match your tone to the user's emotion.
             model=st.session_state.model,
             messages=messages,
             temperature=0.7,
-            max_tokens=600
+            max_tokens=600,
+            top_p=0.9
         )
         elapsed = time.time() - start_time
         st.session_state.response_time = elapsed
@@ -354,7 +359,7 @@ if audio_file:
             with st.chat_message("user"):
                 st.write(voice_text)
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Thinking..."):
+                with st.spinner("🧠 Thinking with Together AI..."):
                     response = generate_response(voice_text)
                     st.write(response)
                     st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -372,7 +377,7 @@ if prompt:
     with st.chat_message("user"):
         st.write(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking..."):
+        with st.spinner("🧠 Thinking with Together AI..."):
             response = generate_response(prompt)
             st.write(response)
             st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -381,4 +386,4 @@ if prompt:
     st.rerun()
 
 st.divider()
-st.caption("🧠 KingsBot • Groq LPU • Free Tier")
+st.caption("🧠 KingsBot • Powered by Together AI • Llama 3.3 / Qwen / DeepSeek")
