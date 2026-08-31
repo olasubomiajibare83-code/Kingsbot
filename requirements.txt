@@ -1,4 +1,4 @@
 together
 streamlit
 speechrecognition
-pyaudio
+
