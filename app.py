@@ -54,6 +54,8 @@ if "model" not in st.session_state:
     st.session_state.model = "llama-3.3-70b-versatile"
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
+if "student_level" not in st.session_state:
+    st.session_state.student_level = None
 
 # ============================================================
 # SIDEBAR — API KEY, MODEL, PROFILE
@@ -87,6 +89,7 @@ with st.sidebar:
     
     st.subheader("👤 Profile")
     st.write(f"**Name:** {st.session_state.user_name or 'Not set'}")
+    st.write(f"**Education:** {st.session_state.student_level or 'Not set'}")
     st.write(f"**Interactions:** {st.session_state.interaction_count}")
     
     emotion_emoji = {
@@ -119,6 +122,10 @@ with st.sidebar:
     for q in st.session_state.favorite_quotes:
         st.write(f"• \"{q}\"")
     
+    st.subheader("❤️ Preferences")
+    for p in st.session_state.preferences:
+        st.write(f"• {p}")
+    
     st.divider()
     
     if st.button("🗑️ Clear Conversation"):
@@ -127,6 +134,7 @@ with st.sidebar:
     
     if st.button("🧹 Forget Everything"):
         st.session_state.user_name = None
+        st.session_state.student_level = None
         st.session_state.goals = []
         st.session_state.reminders = []
         st.session_state.personal_memory = []
@@ -143,11 +151,11 @@ with st.sidebar:
 
 # Emotion Detection
 EMOTION_KEYWORDS = {
-    "frustrated": ["angry", "mad", "annoyed", "frustrated", "wrong", "mistake"],
-    "sad": ["sad", "crying", "upset", "hurt", "disappointed"],
-    "confused": ["confused", "don't understand", "huh", "what do you mean"],
-    "worried": ["worried", "scared", "afraid", "nervous", "anxious"],
-    "happy": ["happy", "great", "awesome", "thanks", "love", "amazing"],
+    "frustrated": ["angry", "mad", "annoyed", "frustrated", "wrong", "mistake", "useless"],
+    "sad": ["sad", "crying", "upset", "hurt", "disappointed", "miserable"],
+    "confused": ["confused", "don't understand", "huh", "what do you mean", "i don't get"],
+    "worried": ["worried", "scared", "afraid", "nervous", "anxious", "concerned"],
+    "happy": ["happy", "great", "awesome", "thanks", "love", "amazing", "wonderful"],
     "neutral": []
 }
 
@@ -160,6 +168,7 @@ def detect_emotion(text):
                 "emotion": emotion,
                 "time": datetime.now().strftime("%H:%M")
             })
+            st.session_state.mood_history = st.session_state.mood_history[-20:]
             return emotion
     st.session_state.emotion = "neutral"
     return "neutral"
@@ -179,14 +188,14 @@ def recognize_topic(text):
     lower = text.lower()
     categories = {
         "coding": ["code", "python", "program", "app", "software"],
-        "mathematics": ["math", "calculate", "equation"],
+        "mathematics": ["math", "calculate", "equation", "algebra"],
         "science": ["science", "biology", "chemistry", "physics"],
-        "sports": ["football", "soccer", "messi"],
-        "education": ["school", "class", "university"],
-        "history": ["history", "war", "empire"],
-        "geography": ["country", "capital", "continent"],
-        "technology": ["technology", "computer", "ai"],
-        "general knowledge": ["who is", "what is", "where is"]
+        "sports": ["football", "soccer", "messi", "ronaldo"],
+        "education": ["school", "class", "university", "teacher"],
+        "history": ["history", "war", "empire", "ancient"],
+        "geography": ["country", "capital", "continent", "river"],
+        "technology": ["technology", "computer", "internet", "ai"],
+        "general knowledge": ["who is", "what is", "where is", "tell me about"]
     }
     for category, words in categories.items():
         if any(word in lower for word in words):
@@ -194,18 +203,28 @@ def recognize_topic(text):
     return "general knowledge"
 
 def detect_name(text):
-    match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
-    if match:
-        st.session_state.user_name = match.group(1).strip()
-        return match.group(1).strip()
+    patterns = [
+        r"my name is ([A-Za-z ]+)",
+        r"call me ([A-Za-z ]+)",
+        r"i am ([A-Za-z ]+)",
+        r"i'm ([A-Za-z ]+)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            if len(name) >= 2:
+                st.session_state.user_name = name
+                return name
     return None
 
 def detect_goal(text):
     match = re.search(r"my goal is ([^.!?]+)", text, re.IGNORECASE)
     if match:
         goal = match.group(1).strip()
-        if goal not in st.session_state.goals:
+        if goal and len(goal) > 5 and goal not in st.session_state.goals:
             st.session_state.goals.append(goal)
+            st.session_state.goals = st.session_state.goals[-10:]
         return goal
     return None
 
@@ -213,7 +232,13 @@ def detect_reminder(text):
     match = re.search(r"remind me to ([^.!?]+)", text, re.IGNORECASE)
     if match:
         reminder = match.group(1).strip()
-        st.session_state.reminders.append({"text": reminder, "done": False})
+        if reminder and len(reminder) > 3:
+            st.session_state.reminders.append({
+                "text": reminder,
+                "created": datetime.now().strftime("%H:%M"),
+                "done": False
+            })
+            st.session_state.reminders = st.session_state.reminders[-10:]
         return reminder
     return None
 
@@ -221,39 +246,62 @@ def detect_quote(text):
     match = re.search(r'"(.*?)"', text)
     if match:
         quote = match.group(1).strip()
-        if quote not in st.session_state.favorite_quotes:
+        if quote and len(quote) > 5 and quote not in st.session_state.favorite_quotes:
             st.session_state.favorite_quotes.append(quote)
+            st.session_state.favorite_quotes = st.session_state.favorite_quotes[-10:]
         return quote
     return None
 
 def detect_preference(text):
-    match = re.search(r"i (?:like|love) ([^.!?]+)", text, re.IGNORECASE)
-    if match:
-        pref = match.group(1).strip()
-        if pref not in st.session_state.preferences:
-            st.session_state.preferences.append(pref)
-        return pref
+    patterns = [
+        r"i like ([^.!?]+)",
+        r"i love ([^.!?]+)",
+        r"my favorite ([^.!?]+)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            pref = match.group(1).strip()
+            if pref and len(pref) > 3 and pref not in st.session_state.preferences:
+                st.session_state.preferences.append(pref)
+                st.session_state.preferences = st.session_state.preferences[-10:]
+            return pref
+    return None
+
+def detect_education(text):
+    levels = ["primary", "secondary", "high school", "university", "college", "jss", "sss", "grade"]
+    for level in levels:
+        if level in text.lower():
+            st.session_state.student_level = level
+            return level
     return None
 
 def forget_information(text):
     lower = text.lower()
-    if any(phrase in lower for phrase in ["forget everything", "clear memory", "erase everything"]):
+    
+    if any(phrase in lower for phrase in ["forget everything", "clear memory", "erase everything", "reset memory"]):
         st.session_state.user_name = None
+        st.session_state.student_level = None
         st.session_state.goals = []
         st.session_state.reminders = []
         st.session_state.personal_memory = []
         st.session_state.preferences = []
         st.session_state.favorite_quotes = []
+        st.session_state.mood_history = []
         return "✅ Done. I cleared everything."
+    
     if "forget my name" in lower:
         st.session_state.user_name = None
         return "✅ Done. I forgot your name."
+    
     if "forget my goals" in lower:
         st.session_state.goals = []
         return "✅ Done. I forgot your goals."
+    
     if "forget my reminders" in lower:
         st.session_state.reminders = []
         return "✅ Done. I forgot your reminders."
+    
     return None
 
 # ============================================================
@@ -266,7 +314,11 @@ def speech_to_text(audio_bytes):
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
             audio = recognizer.record(source)
         return recognizer.recognize_google(audio)
-    except:
+    except sr.UnknownValueError:
+        return None
+    except sr.RequestError:
+        return None
+    except Exception:
         return None
 
 # ============================================================
@@ -282,6 +334,7 @@ def generate_response(prompt):
     detect_reminder(prompt)
     detect_quote(prompt)
     detect_preference(prompt)
+    detect_education(prompt)
     
     forgotten = forget_information(prompt)
     if forgotten:
@@ -297,6 +350,8 @@ def generate_response(prompt):
     memory_text = ""
     if st.session_state.user_name:
         memory_text += f"User's name: {st.session_state.user_name}. "
+    if st.session_state.student_level:
+        memory_text += f"User's education level: {st.session_state.student_level}. "
     if st.session_state.goals:
         memory_text += f"User's goals: {', '.join(st.session_state.goals[-3:])}. "
     if st.session_state.personal_memory:
