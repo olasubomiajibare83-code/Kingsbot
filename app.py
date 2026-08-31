@@ -51,7 +51,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "llama-3.3-70b-versatile"
+    st.session_state.model = "mixtral-8x7b-32768"  # ✅ Confirmed working on free tier
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 if "student_level" not in st.session_state:
@@ -67,23 +67,24 @@ with st.sidebar:
     if api_key:
         st.session_state.api_key = api_key
     
+    # ✅ Updated model list with confirmed free-tier models
     model = st.selectbox(
         "Select Model",
         [
-            "llama-3.3-70b-versatile",
-            "llama-4-scout-17b-16e-instruct",
-            "llama-4-maverick-17b-128e-instruct",
             "mixtral-8x7b-32768",
+            "llama-3.1-70b-versatile",
+            "llama-3.1-8b-instant",
             "gemma2-9b-it",
-            "qwen-2.5-32b",
-            "compound-beta",      # Web search + code execution
-            "compound-beta-mini"
+            "llama-3.2-3b-preview",
+            "llama-3.2-1b-preview",
+            "llama-3.2-11b-vision-preview",
+            "llama-3.2-90b-vision-preview"
         ],
         index=0
     )
     st.session_state.model = model
     
-    st.caption("💡 compound-beta = web search + code execution")
+    st.caption("Free tier models: Mixtral, Llama 3.1 70B, Gemma 2, etc.")
     st.caption("Free: 30 req/min, 14,400 req/day")
     st.divider()
     
@@ -374,7 +375,7 @@ Memory:
 {memory_text}
 
 Be helpful, clear, and concise. Answer in a friendly way. Match your tone to the user's emotion.
-If you don't know something, say so. If the user asks for a web search, use your built-in web search capability (if model supports it).
+If you don't know something, say so.
 """
     
     try:
@@ -433,8 +434,6 @@ if audio_file:
                         "confused": "🤔", "worried": "😰", "neutral": "😐"
                     }.get(st.session_state.emotion, "🤖")
                     model_display = st.session_state.model
-                    if "compound" in model_display:
-                        model_display += " 🌐 (web search)"
                     st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {emotion_emoji} {st.session_state.emotion} • {model_display}")
             st.session_state.messages.append({"role": "user", "content": voice_text})
             st.session_state.messages.append({"role": "assistant", "content": response})
@@ -445,7 +444,7 @@ if audio_file:
 # ============================================================
 # TEXT INPUT
 # ============================================================
-prompt = st.chat_input("Ask KingsBot anything... (web search with compound-beta)")
+prompt = st.chat_input("Ask KingsBot anything...")
 
 if prompt:
     with st.chat_message("user"):
@@ -460,8 +459,6 @@ if prompt:
                 "confused": "🤔", "worried": "😰", "neutral": "😐"
             }.get(st.session_state.emotion, "🤖")
             model_display = st.session_state.model
-            if "compound" in model_display:
-                model_display += " 🌐 (web search)"
             st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {emotion_emoji} {st.session_state.emotion} • {model_display}")
     
     st.session_state.messages.append({"role": "user", "content": prompt})
