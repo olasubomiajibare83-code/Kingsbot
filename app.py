@@ -1,5 +1,5 @@
 import streamlit as st
-from together import Together
+from openai import OpenAI
 import re
 import time
 from datetime import datetime
@@ -10,13 +10,13 @@ import io
 # PAGE SETTINGS
 # ============================================================
 st.set_page_config(
-    page_title="KingsBot — Together AI",
+    page_title="KingsBot — DeepSeek AI",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("🧠 KingsBot — Together AI")
-st.caption("Fast • Powerful • Llama 3.3 • Memory • Voice • Emotions")
+st.title("🧠 KingsBot — DeepSeek AI")
+st.caption("Fast • Intelligent • Affordable • Memory • Voice • Emotions")
 
 # ============================================================
 # SESSION STATE
@@ -48,7 +48,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    st.session_state.model = "deepseek-chat"
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 
@@ -56,28 +56,25 @@ if "response_time" not in st.session_state:
 # SIDEBAR
 # ============================================================
 with st.sidebar:
-    st.header("⚙️ Together AI Settings")
+    st.header("⚙️ DeepSeek Settings")
     
-    api_key = st.text_input("Together API Key", type="password", 
-                            help="Get free key at together.ai")
+    api_key = st.text_input("DeepSeek API Key", type="password", 
+                            help="Get free key at platform.deepseek.com")
     if api_key:
         st.session_state.api_key = api_key
     
     model = st.selectbox(
         "Select Model",
         [
-            "meta-llama/Llama-3.3-70B-Instruct-Turbo",  # Best quality
-            "meta-llama/Llama-3.2-3B-Instruct-Turbo",   # Fastest
-            "Qwen/Qwen2.5-72B-Instruct-Turbo",          # Strong reasoning
-            "deepseek-ai/DeepSeek-V3",                  # Excellent
-            "mistralai/Mixtral-8x7B-Instruct-v0.1"
+            "deepseek-chat",           # Best overall (recommended)
+            "deepseek-reasoner"        # For complex reasoning
         ],
         index=0
     )
     st.session_state.model = model
     
-    st.caption("Free tier: limited requests, then pay-as-you-go")
-    st.caption("Pricing: ~$0.30 per 1M input tokens")
+    st.caption("Pricing: ~$0.14 per 1M input tokens")
+    st.caption("Free credits on signup")
     st.divider()
     
     st.subheader("👤 Profile")
@@ -134,7 +131,7 @@ with st.sidebar:
         st.session_state.mood_history = []
         st.rerun()
     
-    st.caption("🤖 KingsBot • Together AI")
+    st.caption("🤖 KingsBot • DeepSeek")
 
 # ============================================================
 # EMOTION DETECTION
@@ -270,11 +267,11 @@ def speech_to_text(audio_bytes):
         return None
 
 # ============================================================
-# GENERATE RESPONSE — Together AI
+# GENERATE RESPONSE — DeepSeek API
 # ============================================================
 def generate_response(prompt):
     if not st.session_state.api_key:
-        return "⚠️ Please enter your Together AI API key in the sidebar.\n\nGet one at together.ai"
+        return "⚠️ Please enter your DeepSeek API key in the sidebar.\n\nGet one at platform.deepseek.com"
     
     # Run detection
     detect_name(prompt)
@@ -305,7 +302,7 @@ def generate_response(prompt):
         memory_text += f"Favorite quotes: {', '.join(st.session_state.favorite_quotes[-2:])}. "
     
     system_prompt = f"""
-You are KingsBot, an intelligent, helpful AI assistant.
+You are KingsBot, an intelligent, helpful AI assistant powered by DeepSeek.
 
 Current date: {datetime.now().strftime('%B %d, %Y')}
 
@@ -320,7 +317,11 @@ If you don't know something, say so.
 """
     
     try:
-        client = Together(api_key=st.session_state.api_key)
+        client = OpenAI(
+            api_key=st.session_state.api_key,
+            base_url="https://api.deepseek.com/v1"
+        )
+        
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(st.session_state.messages[-15:])
         messages.append({"role": "user", "content": prompt})
@@ -359,7 +360,7 @@ if audio_file:
             with st.chat_message("user"):
                 st.write(voice_text)
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Thinking with Together AI..."):
+                with st.spinner("🧠 Thinking with DeepSeek..."):
                     response = generate_response(voice_text)
                     st.write(response)
                     st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -377,7 +378,7 @@ if prompt:
     with st.chat_message("user"):
         st.write(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking with Together AI..."):
+        with st.spinner("🧠 Thinking with DeepSeek..."):
             response = generate_response(prompt)
             st.write(response)
             st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -386,4 +387,4 @@ if prompt:
     st.rerun()
 
 st.divider()
-st.caption("🧠 KingsBot • Powered by Together AI • Llama 3.3 / Qwen / DeepSeek")
+st.caption("🧠 KingsBot • Powered by DeepSeek • Fast • Intelligent • Affordable")
