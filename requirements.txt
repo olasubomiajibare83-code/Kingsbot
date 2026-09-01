@@ -1,3 +1,10 @@
-streamlit
 openai
-
+streamlit
+speechrecognition
+pandas
+plotly
+PyPDF2
+python-docx
+markdown
+beautifulsoup4
+requests
