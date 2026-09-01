@@ -10,13 +10,13 @@ import io
 # PAGE SETTINGS
 # ============================================================
 st.set_page_config(
-    page_title="KingsBot — DeepSeek AI",
+    page_title="KingsBot — GLM-5.3-Flash",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("🧠 KingsBot — DeepSeek AI")
-st.caption("Fast • Intelligent • Affordable • Memory • Voice • Emotions")
+st.title("🧠 KingsBot — GLM-5.3-Flash")
+st.caption("FREE • Top Intelligence • Memory • Voice • Emotions")
 
 # ============================================================
 # SESSION STATE
@@ -48,7 +48,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "deepseek-chat"
+    st.session_state.model = "zai-org/glm-5.3-flash"  # 🏆 TOP FREE MODEL
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 
@@ -56,25 +56,28 @@ if "response_time" not in st.session_state:
 # SIDEBAR
 # ============================================================
 with st.sidebar:
-    st.header("⚙️ DeepSeek Settings")
+    st.header("⚙️ OpenRouter Settings")
     
-    api_key = st.text_input("DeepSeek API Key", type="password", 
-                            help="Get free key at platform.deepseek.com")
+    api_key = st.text_input("OpenRouter API Key", type="password", 
+                            help="Get free key at openrouter.ai")
     if api_key:
         st.session_state.api_key = api_key
     
     model = st.selectbox(
         "Select Model",
         [
-            "deepseek-chat",           # Best overall (recommended)
-            "deepseek-reasoner"        # For complex reasoning
+            "zai-org/glm-5.3-flash",           # 🏆 BEST FREE (Top intelligence)
+            "zai-org/glm-4.7-flash",            # Permanent free
+            "google/gemma-4-26b-a4b-it:free",   # Google's free model
+            "openai/gpt-oss-20b:free",          # OpenAI's free model
+            "nvidia/nemotron-3-super-120b:free" # Nvidia's free model
         ],
         index=0
     )
     st.session_state.model = model
     
-    st.caption("Pricing: ~$0.14 per 1M input tokens")
-    st.caption("Free credits on signup")
+    st.caption("✅ 100% FREE • No credit card needed")
+    st.caption("Models with :free are completely free")
     st.divider()
     
     st.subheader("👤 Profile")
@@ -131,7 +134,7 @@ with st.sidebar:
         st.session_state.mood_history = []
         st.rerun()
     
-    st.caption("🤖 KingsBot • DeepSeek")
+    st.caption("🤖 KingsBot • GLM-5.3-Flash • FREE")
 
 # ============================================================
 # EMOTION DETECTION
@@ -267,11 +270,11 @@ def speech_to_text(audio_bytes):
         return None
 
 # ============================================================
-# GENERATE RESPONSE — DeepSeek API
+# GENERATE RESPONSE — GLM-5.3-Flash via OpenRouter
 # ============================================================
 def generate_response(prompt):
     if not st.session_state.api_key:
-        return "⚠️ Please enter your DeepSeek API key in the sidebar.\n\nGet one at platform.deepseek.com"
+        return "⚠️ Please enter your OpenRouter API key in the sidebar.\n\nGet one at openrouter.ai (FREE)"
     
     # Run detection
     detect_name(prompt)
@@ -302,7 +305,7 @@ def generate_response(prompt):
         memory_text += f"Favorite quotes: {', '.join(st.session_state.favorite_quotes[-2:])}. "
     
     system_prompt = f"""
-You are KingsBot, an intelligent, helpful AI assistant powered by DeepSeek.
+You are KingsBot, an intelligent, helpful AI assistant powered by GLM-5.3-Flash.
 
 Current date: {datetime.now().strftime('%B %d, %Y')}
 
@@ -319,7 +322,7 @@ If you don't know something, say so.
     try:
         client = OpenAI(
             api_key=st.session_state.api_key,
-            base_url="https://api.deepseek.com/v1"
+            base_url="https://openrouter.ai/api/v1"
         )
         
         messages = [{"role": "system", "content": system_prompt}]
@@ -336,6 +339,7 @@ If you don't know something, say so.
         )
         elapsed = time.time() - start_time
         st.session_state.response_time = elapsed
+        
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ Error: {str(e)}"
@@ -360,7 +364,7 @@ if audio_file:
             with st.chat_message("user"):
                 st.write(voice_text)
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Thinking with DeepSeek..."):
+                with st.spinner("🧠 Thinking with GLM-5.3-Flash..."):
                     response = generate_response(voice_text)
                     st.write(response)
                     st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -373,18 +377,24 @@ if audio_file:
 # ============================================================
 # TEXT INPUT
 # ============================================================
-prompt = st.chat_input("Ask KingsBot anything...")
+prompt = st.chat_input("Ask KingsBot anything... (GLM-5.3-Flash — FREE)")
+
 if prompt:
     with st.chat_message("user"):
         st.write(prompt)
+    
     with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking with DeepSeek..."):
+        with st.spinner("🧠 Thinking with GLM-5.3-Flash..."):
             response = generate_response(prompt)
             st.write(response)
             st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
+    
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.rerun()
 
+# ============================================================
+# FOOTER
+# ============================================================
 st.divider()
-st.caption("🧠 KingsBot • Powered by DeepSeek • Fast • Intelligent • Affordable")
+st.caption("🧠 KingsBot • Powered by GLM-5.3-Flash (Zhipu AI) • FREE • Top Intelligence")
