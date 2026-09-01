@@ -2,42 +2,44 @@ import io
 import json
 import os
 import uuid
+import time
 from datetime import datetime, date
 
 import streamlit as st
 from openai import OpenAI
 
-
 # ============================================================
-# KINGSBOT AI — DEEPSEEK EDITION
+# KINGSBOT AI — DEEPSEEK FREE EDITION
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot AI — DeepSeek",
+    page_title="KingsBot AI — DeepSeek Free",
     page_icon="🧠",
     layout="wide",
 )
 
-
 # ============================================================
-# SETTINGS
+# SETTINGS — FREE DEEPSEEK V4 FLASH
 # ============================================================
 
-# ✅ SWAPPED: GPT-5.6 → DeepSeek V4 Flash
-MODEL = "deepseek-v4-flash"  # $0.14 input / $0.28 output per 1M tokens [citation:1]
+# ✅ FREE DeepSeek V4 Flash via OpenRouter
+MODEL = "deepseek/deepseek-v4-flash:free"  # :free suffix = 100% free
 
-# DeepSeek endpoint (OpenAI-compatible) [citation:2][citation:11]
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+# Alternative free DeepSeek models (if the above is unavailable):
+# "deepseek/deepseek-r1:free"              # DeepSeek R1 reasoning
+# "deepseek/deepseek-chat-v3-0324:free"    # DeepSeek V3
+
+# OpenRouter endpoint
+BASE_URL = "https://openrouter.ai/api/v1"
 
 ACTIVE_HISTORY_MESSAGES = 120
 MAX_MEMORY_FACTS = 200
 MAX_MEMORY_PREFERENCES = 200
-DAILY_REQUEST_LIMIT = 50
+DAILY_REQUEST_LIMIT = 100
 
 MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
 REQUEST_FILE = "kingsbot_requests.json"
-
 
 # ============================================================
 # REQUEST TRACKER
@@ -67,7 +69,6 @@ def get_remaining_requests():
 def increment_request():
     save_request_count(load_requests() + 1)
 
-
 # ============================================================
 # STORAGE
 # ============================================================
@@ -88,7 +89,6 @@ def save_json(filename, data):
     except Exception:
         pass
 
-
 # ============================================================
 # MEMORY
 # ============================================================
@@ -99,7 +99,6 @@ def default_memory():
 memory_data = load_json(MEMORY_FILE, default_memory())
 if not isinstance(memory_data, dict):
     memory_data = default_memory()
-
 
 # ============================================================
 # CHAT STORAGE
@@ -120,7 +119,6 @@ if not isinstance(saved_chats, list):
 if not saved_chats:
     saved_chats = [new_chat()]
     save_json(CHATS_FILE, saved_chats)
-
 
 # ============================================================
 # SESSION STATE
@@ -147,30 +145,30 @@ if "memory_facts" not in st.session_state:
 if "memory_preferences" not in st.session_state:
     st.session_state.memory_preferences = list(memory_data.get("preferences", []))
 
-
 # ============================================================
-# OPENAI KEY (DEEPSEEK COMPATIBLE)
+# API KEY
 # ============================================================
 
-def get_deepseek_key():
+def get_api_key():
     try:
-        key = st.secrets.get("DEEPSEEK_API_KEY")
+        key = st.secrets.get("OPENROUTER_API_KEY")
         if key:
             return str(key).strip()
     except Exception:
         pass
-    return os.getenv("DEEPSEEK_API_KEY")
+    return os.getenv("OPENROUTER_API_KEY")
 
-DEEPSEEK_API_KEY = get_deepseek_key()
+API_KEY = get_api_key()
 
-if DEEPSEEK_API_KEY:
+if API_KEY:
     client = OpenAI(
-        api_key=DEEPSEEK_API_KEY,
-        base_url=DEEPSEEK_BASE_URL  # ✅ DeepSeek endpoint [citation:2][citation:11]
+        api_key=API_KEY,
+        base_url=BASE_URL,
+        timeout=600.0,
+        max_retries=2,
     )
 else:
     client = None
-
 
 # ============================================================
 # MEMORY FUNCTIONS
@@ -229,7 +227,6 @@ def memory_text():
         lines.append("Preference: " + str(pref))
     return "\n".join(lines) if lines else "No saved memory."
 
-
 # ============================================================
 # AI INSTRUCTIONS
 # ============================================================
@@ -238,7 +235,7 @@ def system_instructions():
     return f"""
 You are KingsBot AI.
 
-Your AI brain is DeepSeek {MODEL}.
+Your AI brain is DeepSeek {MODEL} via OpenRouter.
 
 You are a powerful general-purpose assistant.
 
@@ -314,9 +311,6 @@ FACTUAL ACCURACY:
 
 Do not invent information.
 
-For information that may be current or changing,
-use web search when appropriate.
-
 If you are uncertain, say so.
 
 CODING:
@@ -353,7 +347,6 @@ Ask useful follow-up questions when necessary,
 but do not ask unnecessary questions.
 """
 
-
 # ============================================================
 # BUILD CONVERSATION
 # ============================================================
@@ -369,28 +362,26 @@ def build_messages(user_text):
     result.append({"role": "user", "content": user_text})
     return result
 
-
 # ============================================================
-# ASK KINGSBOT — ADVANCED DEEPSEEK
+# ASK KINGSBOT — FREE DEEPSEEK V4
 # ============================================================
 
 def ask_kingsbot(user_text):
-    import time
-
     remaining = get_remaining_requests()
     if remaining <= 0:
         return (
             "⛔ **Daily request limit reached.**\n\n"
             f"You've used all {DAILY_REQUEST_LIMIT} requests for today.\n\n"
-            "🔄 The limit resets at midnight."
+            "🔄 The limit resets at midnight.\n\n"
+            "💡 Free tier on OpenRouter is ~50-200 requests/day per key [citation:2][citation:9]."
         )
 
-    if client is None:
+    if not API_KEY:
         return (
-            "🔑 I could not find DEEPSEEK_API_KEY.\n\n"
+            "🔑 I could not find OPENROUTER_API_KEY.\n\n"
             "In Streamlit Secrets, make sure you have:\n\n"
-            "DEEPSEEK_API_KEY = \"your-api-key\"\n\n"
-            "Get your free key at: platform.deepseek.com/api_keys"
+            "OPENROUTER_API_KEY = \"your-api-key\"\n\n"
+            "Get your free key at: openrouter.ai/settings/keys"
         )
 
     learn_from_user(user_text)
@@ -405,9 +396,10 @@ def ask_kingsbot(user_text):
                 messages=[
                     {"role": "system", "content": system_instructions()}
                 ] + build_messages(user_text),
-                temperature=0.7,
+                temperature=1.0,
+                top_p=0.95,
                 max_tokens=4096,
-                top_p=0.9
+                stream=False,
             )
 
             answer = response.choices[0].message.content.strip()
@@ -422,42 +414,41 @@ def ask_kingsbot(user_text):
             error_text = str(error)
             lower = error_text.lower()
 
+            # Rate limit
             if "429" in lower or "rate limit" in lower:
                 if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
+                    time.sleep(retry_delay * (attempt + 1))
                     continue
                 return (
-                    "⏳ **DeepSeek rate limit exceeded.**\n\n"
-                    f"Retried {max_retries} times. Please wait a moment.\n\n"
-                    "💡 Free tier: 60 requests/minute [citation:10]"
+                    "⏳ **OpenRouter rate limit exceeded.**\n\n"
+                    f"Retried {max_retries} times.\n\n"
+                    "💡 Free tier: ~50-200 requests/day per key [citation:2][citation:9].\n"
+                    "Wait a moment and try again."
                 )
 
-            if "quota" in lower or "insufficient" in lower or "balance" in lower:
+            # Model unavailable
+            if "model" in lower and ("not found" in lower or "does not exist" in lower):
                 return (
-                    "💰 **Insufficient balance.**\n\n"
-                    "DeepSeek API requires credits.\n\n"
-                    "Add funds at: platform.deepseek.com\n\n"
-                    "💡 New accounts get $5 free [citation:10]"
+                    "⚠️ **Model temporarily unavailable.**\n\n"
+                    f"The model '{MODEL}' may have been removed.\n\n"
+                    "Try switching to:\n"
+                    "- `deepseek/deepseek-r1:free`\n"
+                    "- `deepseek/deepseek-chat-v3-0324:free`\n\n"
+                    "Check available models at: openrouter.ai/models?free=true"
                 )
 
+            # Authentication
             if "401" in lower or "authentication" in lower or "api key" in lower:
                 return (
                     "🔐 **Authentication failed.**\n\n"
-                    "Check your DEEPSEEK_API_KEY in Streamlit Secrets.\n\n"
-                    "Generate a new key at: platform.deepseek.com/api_keys"
+                    "Check your OPENROUTER_API_KEY in Streamlit Secrets.\n\n"
+                    "Generate a new key at: openrouter.ai/settings/keys"
                 )
 
-            if "model" in lower and ("not found" in lower or "does not exist" in lower):
-                return (
-                    "⚠️ **Model not available.**\n\n"
-                    f"The model '{MODEL}' may have been renamed.\n\n"
-                    "Check available models at: platform.deepseek.com"
-                )
-
-            return f"❌ **DeepSeek error:**\n\n{error_text}"
+            # Generic error
+            return f"❌ **Error:**\n\n{error_text}"
 
     return "❌ **Max retries exceeded.** Please try again later."
-
 
 # ============================================================
 # SAVE CHAT
@@ -476,7 +467,6 @@ def save_current_chat():
             break
     save_json(CHATS_FILE, st.session_state.saved_chats)
 
-
 def start_new_chat():
     chat = new_chat()
     st.session_state.saved_chats.insert(0, chat)
@@ -484,27 +474,24 @@ def start_new_chat():
     st.session_state.messages = []
     save_json(CHATS_FILE, st.session_state.saved_chats)
 
-
 # ============================================================
 # SIDEBAR
 # ============================================================
 
 with st.sidebar:
     st.header("🤖 KingsBot AI")
-    st.success("🧠 DeepSeek V4 Brain")
+    st.success("🧠 DeepSeek V4 — FREE")
 
     remaining = get_remaining_requests()
-    used = DAILY_REQUEST_LIMIT - remaining
     if remaining > 0:
         st.info(f"📊 **Requests remaining:** {remaining} / {DAILY_REQUEST_LIMIT}")
     else:
         st.warning("⛔ **No requests remaining today**")
 
     st.write("Model:", MODEL)
+    st.write("🌐 Provider:", "OpenRouter (Free)")
     st.write("⚡ Fast AI:", "ON")
     st.write("🧠 Deep reasoning:", "ON")
-    st.write("🌐 Web search:", "ON")
-    st.write("💻 Code interpreter:", "ON")
     st.write("🧮 Math:", "ON")
     st.write("🎯 Tone adaptation:", "ON")
     st.write("🧠 Memory:", "ON")
@@ -544,14 +531,12 @@ with st.sidebar:
     st.divider()
     st.caption("Removed: multilingual mode, topic detection, file upload, file generation and delete conversation.")
 
-
 # ============================================================
 # MAIN
 # ============================================================
 
 st.title("🤖 KingsBot AI")
-st.caption("DeepSeek V4 • Deep Reasoning • Web Search • Code Interpreter • Tone Adaptation • Memory")
-
+st.caption("DeepSeek V4 • FREE • Deep Reasoning • Tone Adaptation • Memory")
 
 # ============================================================
 # DISPLAY CHAT
@@ -563,7 +548,6 @@ for msg in st.session_state.messages:
     if role in ("user", "assistant"):
         with st.chat_message(role):
             st.markdown(content)
-
 
 # ============================================================
 # CHAT INPUT
