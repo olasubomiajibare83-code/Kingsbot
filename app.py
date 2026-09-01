@@ -21,7 +21,7 @@ st.set_page_config(
 # SETTINGS
 # ============================================================
 
-MODEL = "nvidia/nemotron-3-super-120b-a12b:free"  # ✅ Model #3
+MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -157,7 +157,7 @@ if API_KEY:
     client = OpenAI(
         api_key=API_KEY,
         base_url=BASE_URL,
-        timeout=600.0,
+        timeout=120.0,
         max_retries=2,
     )
 else:
@@ -356,7 +356,7 @@ def build_messages(user_text):
     return result
 
 # ============================================================
-# ASK KINGSBOT — NVIDIA NEMOTRON 3
+# ASK KINGSBOT — FIXED ERROR HANDLING
 # ============================================================
 
 def ask_kingsbot(user_text):
@@ -388,13 +388,22 @@ def ask_kingsbot(user_text):
                 messages=[
                     {"role": "system", "content": system_instructions()}
                 ] + build_messages(user_text),
-                temperature=1.0,
-                top_p=0.95,
-                max_tokens=4096,
+                temperature=0.7,
+                top_p=0.9,
+                max_tokens=2048,
                 stream=False,
             )
 
-            answer = response.choices[0].message.content.strip()
+            # ✅ FIX: Check if response has choices
+            if not response or not hasattr(response, 'choices') or not response.choices:
+                return "❌ No response received from the model. Please try again."
+
+            # ✅ FIX: Safely get the message
+            message = response.choices[0].message
+            if not message or not hasattr(message, 'content'):
+                return "❌ The model returned an empty response. Please try again."
+
+            answer = message.content.strip()
 
             if not answer:
                 return "I didn't receive an answer. Please try again."
@@ -432,6 +441,7 @@ def ask_kingsbot(user_text):
                     "Generate a new key at: openrouter.ai/settings/keys"
                 )
 
+            # ✅ FIX: Return the actual error for debugging
             return f"❌ **Error:**\n\n{error_text}"
 
     return "❌ **Max retries exceeded.** Please try again later."
