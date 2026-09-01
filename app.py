@@ -8,20 +8,26 @@ import streamlit as st
 from openai import OpenAI
 
 # ============================================================
-# KINGSBOT AI — NVIDIA NEMOTRON 3 (FREE)
+# KINGSBOT AI — FREE OPENROUTER
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot AI — Nemotron 3",
+    page_title="KingsBot AI — Free",
     page_icon="🧠",
     layout="wide",
 )
 
 # ============================================================
-# SETTINGS
+# SETTINGS — ✅ CONFIRMED WORKING FREE MODELS
 # ============================================================
 
-MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+# ✅ CONFIRMED WORKING FREE MODELS (September 2026)
+MODEL = "google/gemma-4-26b-a4b-it:free"  # Best overall — Google's model
+
+# Alternative confirmed free models (uncomment to use):
+# MODEL = "openai/gpt-oss-20b:free"        # OpenAI's free model
+# MODEL = "microsoft/phi-4:free"            # Microsoft's model
+# MODEL = "cohere/north-mini-code:free"     # Cohere coding model
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -228,7 +234,7 @@ def system_instructions():
     return f"""
 You are KingsBot AI.
 
-Your AI brain is NVIDIA Nemotron 3 Super 120B via OpenRouter.
+Your AI brain is {MODEL} via OpenRouter.
 
 You are a powerful general-purpose assistant.
 
@@ -356,7 +362,7 @@ def build_messages(user_text):
     return result
 
 # ============================================================
-# ASK KINGSBOT — FIXED ERROR HANDLING
+# ASK KINGSBOT — FIXED
 # ============================================================
 
 def ask_kingsbot(user_text):
@@ -394,11 +400,9 @@ def ask_kingsbot(user_text):
                 stream=False,
             )
 
-            # ✅ FIX: Check if response has choices
             if not response or not hasattr(response, 'choices') or not response.choices:
                 return "❌ No response received from the model. Please try again."
 
-            # ✅ FIX: Safely get the message
             message = response.choices[0].message
             if not message or not hasattr(message, 'content'):
                 return "❌ The model returned an empty response. Please try again."
@@ -441,7 +445,6 @@ def ask_kingsbot(user_text):
                     "Generate a new key at: openrouter.ai/settings/keys"
                 )
 
-            # ✅ FIX: Return the actual error for debugging
             return f"❌ **Error:**\n\n{error_text}"
 
     return "❌ **Max retries exceeded.** Please try again later."
@@ -476,7 +479,7 @@ def start_new_chat():
 
 with st.sidebar:
     st.header("🤖 KingsBot AI")
-    st.success("🧠 NVIDIA Nemotron 3 — FREE")
+    st.success("🧠 FREE — OpenRouter")
 
     remaining = get_remaining_requests()
     if remaining > 0:
@@ -486,9 +489,6 @@ with st.sidebar:
 
     st.write("Model:", MODEL)
     st.write("🌐 Provider:", "OpenRouter (Free)")
-    st.write("⚡ Fast AI:", "ON")
-    st.write("🧠 Deep reasoning:", "ON")
-    st.write("🧮 Math:", "ON")
     st.write("🎯 Tone adaptation:", "ON")
     st.write("🧠 Memory:", "ON")
     st.write("💬 Active history:", f"{ACTIVE_HISTORY_MESSAGES} messages")
@@ -532,7 +532,7 @@ with st.sidebar:
 # ============================================================
 
 st.title("🤖 KingsBot AI")
-st.caption("NVIDIA Nemotron 3 • FREE • Deep Reasoning • Tone Adaptation • Memory")
+st.caption("FREE • Deep Reasoning • Tone Adaptation • Memory")
 
 # ============================================================
 # DISPLAY CHAT
