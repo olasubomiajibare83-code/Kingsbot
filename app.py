@@ -31,8 +31,8 @@ MODEL = "google/gemma-4-26b-a4b-it:free"  # Best overall — Google's model
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
-ACTIVE_HISTORY_MESSAGES = 120
-MAX_MEMORY_FACTS = 200
+ACTIVE_HISTORY_MESSAGES = 300
+MAX_MEMORY_FACTS = 300
 MAX_MEMORY_PREFERENCES = 200
 DAILY_REQUEST_LIMIT = 100
 
