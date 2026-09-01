@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import uuid
@@ -9,27 +8,21 @@ import streamlit as st
 from openai import OpenAI
 
 # ============================================================
-# KINGSBOT AI — DEEPSEEK FREE EDITION
+# KINGSBOT AI — NVIDIA NEMOTRON 3 (FREE)
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot AI — DeepSeek Free",
+    page_title="KingsBot AI — Nemotron 3",
     page_icon="🧠",
     layout="wide",
 )
 
 # ============================================================
-# SETTINGS — FREE DEEPSEEK V4 FLASH
+# SETTINGS
 # ============================================================
 
-# ✅ FREE DeepSeek V4 Flash via OpenRouter
-MODEL = "deepseek/deepseek-v4-flash:free"  # :free suffix = 100% free
+MODEL = "nvidia/nemotron-3-super-120b-a12b:free"  # ✅ Model #3
 
-# Alternative free DeepSeek models (if the above is unavailable):
-# "deepseek/deepseek-r1:free"              # DeepSeek R1 reasoning
-# "deepseek/deepseek-chat-v3-0324:free"    # DeepSeek V3
-
-# OpenRouter endpoint
 BASE_URL = "https://openrouter.ai/api/v1"
 
 ACTIVE_HISTORY_MESSAGES = 120
@@ -235,7 +228,7 @@ def system_instructions():
     return f"""
 You are KingsBot AI.
 
-Your AI brain is DeepSeek {MODEL} via OpenRouter.
+Your AI brain is NVIDIA Nemotron 3 Super 120B via OpenRouter.
 
 You are a powerful general-purpose assistant.
 
@@ -363,7 +356,7 @@ def build_messages(user_text):
     return result
 
 # ============================================================
-# ASK KINGSBOT — FREE DEEPSEEK V4
+# ASK KINGSBOT — NVIDIA NEMOTRON 3
 # ============================================================
 
 def ask_kingsbot(user_text):
@@ -372,8 +365,7 @@ def ask_kingsbot(user_text):
         return (
             "⛔ **Daily request limit reached.**\n\n"
             f"You've used all {DAILY_REQUEST_LIMIT} requests for today.\n\n"
-            "🔄 The limit resets at midnight.\n\n"
-            "💡 Free tier on OpenRouter is ~50-200 requests/day per key [citation:2][citation:9]."
+            "🔄 The limit resets at midnight."
         )
 
     if not API_KEY:
@@ -414,30 +406,25 @@ def ask_kingsbot(user_text):
             error_text = str(error)
             lower = error_text.lower()
 
-            # Rate limit
             if "429" in lower or "rate limit" in lower:
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
                 return (
-                    "⏳ **OpenRouter rate limit exceeded.**\n\n"
+                    "⏳ **Rate limit exceeded.**\n\n"
                     f"Retried {max_retries} times.\n\n"
-                    "💡 Free tier: ~50-200 requests/day per key [citation:2][citation:9].\n"
+                    "💡 Free tier: ~50-200 requests/day.\n"
                     "Wait a moment and try again."
                 )
 
-            # Model unavailable
             if "model" in lower and ("not found" in lower or "does not exist" in lower):
                 return (
                     "⚠️ **Model temporarily unavailable.**\n\n"
                     f"The model '{MODEL}' may have been removed.\n\n"
-                    "Try switching to:\n"
-                    "- `deepseek/deepseek-r1:free`\n"
-                    "- `deepseek/deepseek-chat-v3-0324:free`\n\n"
-                    "Check available models at: openrouter.ai/models?free=true"
+                    "Check available free models at:\n"
+                    "https://openrouter.ai/models?free=true"
                 )
 
-            # Authentication
             if "401" in lower or "authentication" in lower or "api key" in lower:
                 return (
                     "🔐 **Authentication failed.**\n\n"
@@ -445,7 +432,6 @@ def ask_kingsbot(user_text):
                     "Generate a new key at: openrouter.ai/settings/keys"
                 )
 
-            # Generic error
             return f"❌ **Error:**\n\n{error_text}"
 
     return "❌ **Max retries exceeded.** Please try again later."
@@ -480,7 +466,7 @@ def start_new_chat():
 
 with st.sidebar:
     st.header("🤖 KingsBot AI")
-    st.success("🧠 DeepSeek V4 — FREE")
+    st.success("🧠 NVIDIA Nemotron 3 — FREE")
 
     remaining = get_remaining_requests()
     if remaining > 0:
@@ -536,7 +522,7 @@ with st.sidebar:
 # ============================================================
 
 st.title("🤖 KingsBot AI")
-st.caption("DeepSeek V4 • FREE • Deep Reasoning • Tone Adaptation • Memory")
+st.caption("NVIDIA Nemotron 3 • FREE • Deep Reasoning • Tone Adaptation • Memory")
 
 # ============================================================
 # DISPLAY CHAT
