@@ -9,12 +9,12 @@ from openai import OpenAI
 
 
 # ============================================================
-# KINGSBOT AI
+# KINGSBOT AI — DEEPSEEK EDITION
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot AI",
-    page_icon="🤖",
+    page_title="KingsBot AI — DeepSeek",
+    page_icon="🧠",
     layout="wide",
 )
 
@@ -23,21 +23,20 @@ st.set_page_config(
 # SETTINGS
 # ============================================================
 
-MODEL = "gpt-5.6"
+# ✅ SWAPPED: GPT-5.6 → DeepSeek V4 Flash
+MODEL = "deepseek-v4-flash"  # $0.14 input / $0.28 output per 1M tokens [citation:1]
 
-# ⬆️ INCREASED: 60 → 120 messages
+# DeepSeek endpoint (OpenAI-compatible) [citation:2][citation:11]
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
 ACTIVE_HISTORY_MESSAGES = 120
-
-# ⬆️ INCREASED: Memory limits
 MAX_MEMORY_FACTS = 200
 MAX_MEMORY_PREFERENCES = 200
-
-# ⬆️ NEW: Request limit
-DAILY_REQUEST_LIMIT = 50  # Change this to your desired limit
-REQUEST_FILE = "kingsbot_requests.json"
+DAILY_REQUEST_LIMIT = 50
 
 MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
+REQUEST_FILE = "kingsbot_requests.json"
 
 
 # ============================================================
@@ -49,12 +48,8 @@ def load_requests():
         if os.path.exists(REQUEST_FILE):
             with open(REQUEST_FILE, "r", encoding="utf-8") as file:
                 data = json.load(file)
-                # Check if it's today
                 if data.get("date") == str(date.today()):
                     return data.get("count", 0)
-                else:
-                    # Reset for new day
-                    return 0
     except Exception:
         pass
     return 0
@@ -62,21 +57,15 @@ def load_requests():
 def save_request_count(count):
     try:
         with open(REQUEST_FILE, "w", encoding="utf-8") as file:
-            json.dump({
-                "date": str(date.today()),
-                "count": count
-            }, file, indent=2)
+            json.dump({"date": str(date.today()), "count": count}, file, indent=2)
     except Exception:
         pass
 
 def get_remaining_requests():
-    used = load_requests()
-    remaining = DAILY_REQUEST_LIMIT - used
-    return max(0, remaining)
+    return max(0, DAILY_REQUEST_LIMIT - load_requests())
 
 def increment_request():
-    used = load_requests()
-    save_request_count(used + 1)
+    save_request_count(load_requests() + 1)
 
 
 # ============================================================
@@ -87,32 +76,15 @@ def load_json(filename, default):
     try:
         if not os.path.exists(filename):
             return default
-
-        with open(
-            filename,
-            "r",
-            encoding="utf-8",
-        ) as file:
+        with open(filename, "r", encoding="utf-8") as file:
             return json.load(file)
-
     except Exception:
         return default
 
-
 def save_json(filename, data):
     try:
-        with open(
-            filename,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                data,
-                file,
-                ensure_ascii=False,
-                indent=2,
-            )
-
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
@@ -122,18 +94,9 @@ def save_json(filename, data):
 # ============================================================
 
 def default_memory():
-    return {
-        "name": "",
-        "facts": [],
-        "preferences": [],
-    }
+    return {"name": "", "facts": [], "preferences": []}
 
-
-memory_data = load_json(
-    MEMORY_FILE,
-    default_memory(),
-)
-
+memory_data = load_json(MEMORY_FILE, default_memory())
 if not isinstance(memory_data, dict):
     memory_data = default_memory()
 
@@ -146,28 +109,17 @@ def new_chat():
     return {
         "id": uuid.uuid4().hex,
         "title": "New conversation",
-        "created": datetime.now().isoformat(
-            timespec="seconds"
-        ),
+        "created": datetime.now().isoformat(timespec="seconds"),
         "messages": [],
     }
 
-
-saved_chats = load_json(
-    CHATS_FILE,
-    [],
-)
-
+saved_chats = load_json(CHATS_FILE, [])
 if not isinstance(saved_chats, list):
     saved_chats = []
 
-
 if not saved_chats:
     saved_chats = [new_chat()]
-    save_json(
-        CHATS_FILE,
-        saved_chats,
-    )
+    save_json(CHATS_FILE, saved_chats)
 
 
 # ============================================================
@@ -177,252 +129,105 @@ if not saved_chats:
 if "saved_chats" not in st.session_state:
     st.session_state.saved_chats = saved_chats
 
-
 if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = (
-        st.session_state.saved_chats[0]["id"]
-    )
-
+    st.session_state.current_chat_id = st.session_state.saved_chats[0]["id"]
 
 if "messages" not in st.session_state:
-
     selected = None
-
     for chat in st.session_state.saved_chats:
-        if (
-            chat["id"]
-            == st.session_state.current_chat_id
-        ):
+        if chat["id"] == st.session_state.current_chat_id:
             selected = chat
             break
-
-    if selected:
-        st.session_state.messages = list(
-            selected.get("messages", [])
-        )
-    else:
-        st.session_state.messages = []
-
+    st.session_state.messages = list(selected.get("messages", [])) if selected else []
 
 if "user_name" not in st.session_state:
-    st.session_state.user_name = (
-        memory_data.get("name", "")
-    )
-
-
+    st.session_state.user_name = memory_data.get("name", "")
 if "memory_facts" not in st.session_state:
-    st.session_state.memory_facts = list(
-        memory_data.get("facts", [])
-    )
-
-
+    st.session_state.memory_facts = list(memory_data.get("facts", []))
 if "memory_preferences" not in st.session_state:
-    st.session_state.memory_preferences = list(
-        memory_data.get("preferences", [])
-    )
+    st.session_state.memory_preferences = list(memory_data.get("preferences", []))
 
 
 # ============================================================
-# OPENAI KEY
+# OPENAI KEY (DEEPSEEK COMPATIBLE)
 # ============================================================
 
-def get_openai_key():
-
+def get_deepseek_key():
     try:
-        key = st.secrets.get(
-            "OPENAI_API_KEY"
-        )
-
+        key = st.secrets.get("DEEPSEEK_API_KEY")
         if key:
             return str(key).strip()
-
     except Exception:
         pass
+    return os.getenv("DEEPSEEK_API_KEY")
 
-    return os.getenv(
-        "OPENAI_API_KEY"
-    )
+DEEPSEEK_API_KEY = get_deepseek_key()
 
-
-OPENAI_API_KEY = get_openai_key()
-
-
-if OPENAI_API_KEY:
-
+if DEEPSEEK_API_KEY:
     client = OpenAI(
-        api_key=OPENAI_API_KEY
+        api_key=DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL  # ✅ DeepSeek endpoint [citation:2][citation:11]
     )
-
 else:
-
     client = None
 
 
 # ============================================================
-# MEMORY
+# MEMORY FUNCTIONS
 # ============================================================
 
 def save_memory():
-
-    facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
-    preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
-
-    save_json(
-        MEMORY_FILE,
-        {
-            "name": st.session_state.user_name,
-            "facts": facts,
-            "preferences": preferences,
-        },
-    )
-
+    save_json(MEMORY_FILE, {
+        "name": st.session_state.user_name,
+        "facts": st.session_state.memory_facts[-MAX_MEMORY_FACTS:],
+        "preferences": st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:],
+    })
 
 def learn_from_user(text):
-
     changed = False
     lower = text.lower()
 
-    # --------------------------------------------------------
-    # NAME
-    # --------------------------------------------------------
-
     if "my name is " in lower:
-
-        position = lower.find(
-            "my name is "
-        )
-
-        name = text[
-            position + len("my name is "):
-        ].strip(
-            " .!?"
-        )
-
+        pos = lower.find("my name is ")
+        name = text[pos + len("my name is "):].strip(" .!?")
         if name:
-
-            st.session_state.user_name = (
-                name[:80]
-            )
-
+            st.session_state.user_name = name[:80]
             changed = True
 
-
-    # --------------------------------------------------------
-    # EXPLICIT MEMORY
-    # --------------------------------------------------------
-
-    memory_words = [
-        "remember that ",
-        "remember this: ",
-        "please remember ",
-    ]
-
-    for marker in memory_words:
-
+    memory_markers = ["remember that ", "remember this: ", "please remember "]
+    for marker in memory_markers:
         if marker in lower:
-
-            position = lower.find(
-                marker
-            )
-
-            fact = text[
-                position + len(marker):
-            ].strip(
-                " .!?"
-            )
-
-            if (
-                fact
-                and fact
-                not in st.session_state.memory_facts
-            ):
-
-                st.session_state.memory_facts.append(
-                    fact
-                )
-
-                if len(st.session_state.memory_facts) > MAX_MEMORY_FACTS:
-                    st.session_state.memory_facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
-
+            pos = lower.find(marker)
+            fact = text[pos + len(marker):].strip(" .!?")
+            if fact and fact not in st.session_state.memory_facts:
+                st.session_state.memory_facts.append(fact)
+                st.session_state.memory_facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
                 changed = True
-
             break
 
-
-    # --------------------------------------------------------
-    # PREFERENCES
-    # --------------------------------------------------------
-
-    preference_words = [
-        "i prefer ",
-        "i like ",
-        "my favorite ",
-    ]
-
-    for marker in preference_words:
-
+    pref_markers = ["i prefer ", "i like ", "my favorite "]
+    for marker in pref_markers:
         if marker in lower:
-
-            position = lower.find(
-                marker
-            )
-
-            preference = text[
-                position:
-            ].strip(
-                " .!?"
-            )
-
-            if (
-                preference
-                and preference
-                not in st.session_state.memory_preferences
-            ):
-
-                st.session_state.memory_preferences.append(
-                    preference
-                )
-
-                if len(st.session_state.memory_preferences) > MAX_MEMORY_PREFERENCES:
-                    st.session_state.memory_preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
-
+            pos = lower.find(marker)
+            pref = text[pos:].strip(" .!?")
+            if pref and pref not in st.session_state.memory_preferences:
+                st.session_state.memory_preferences.append(pref)
+                st.session_state.memory_preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
                 changed = True
-
             break
-
 
     if changed:
         save_memory()
 
-
 def memory_text():
-
     lines = []
-
     if st.session_state.user_name:
-        lines.append(
-            "User name: "
-            + st.session_state.user_name
-        )
-
+        lines.append("User name: " + st.session_state.user_name)
     for fact in st.session_state.memory_facts:
-        lines.append(
-            "Saved fact: "
-            + str(fact)
-        )
-
-    for preference in (
-        st.session_state.memory_preferences
-    ):
-        lines.append(
-            "Preference: "
-            + str(preference)
-        )
-
-    if not lines:
-        return "No saved memory."
-
-    return "\n".join(lines)
+        lines.append("Saved fact: " + str(fact))
+    for pref in st.session_state.memory_preferences:
+        lines.append("Preference: " + str(pref))
+    return "\n".join(lines) if lines else "No saved memory."
 
 
 # ============================================================
@@ -430,11 +235,10 @@ def memory_text():
 # ============================================================
 
 def system_instructions():
-
     return f"""
 You are KingsBot AI.
 
-Your AI brain is OpenAI {MODEL}.
+Your AI brain is DeepSeek {MODEL}.
 
 You are a powerful general-purpose assistant.
 
@@ -555,188 +359,104 @@ but do not ask unnecessary questions.
 # ============================================================
 
 def build_messages(user_text):
-
-    recent_messages = (
-        st.session_state.messages[
-            -ACTIVE_HISTORY_MESSAGES:
-        ]
-    )
-
+    recent = st.session_state.messages[-ACTIVE_HISTORY_MESSAGES:]
     result = []
-
-    for message in recent_messages:
-
-        role = message.get("role")
-        content = message.get("content")
-
-        if role not in (
-            "user",
-            "assistant",
-        ):
-            continue
-
-        if not content:
-            continue
-
-        result.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
-
-    result.append(
-        {
-            "role": "user",
-            "content": user_text,
-        }
-    )
-
+    for msg in recent:
+        role = msg.get("role")
+        content = msg.get("content")
+        if role in ("user", "assistant") and content:
+            result.append({"role": role, "content": content})
+    result.append({"role": "user", "content": user_text})
     return result
 
 
 # ============================================================
-# ASK KINGSBOT
+# ASK KINGSBOT — ADVANCED DEEPSEEK
 # ============================================================
 
 def ask_kingsbot(user_text):
+    import time
 
-    # ⬆️ NEW: Check request limit
     remaining = get_remaining_requests()
-    
     if remaining <= 0:
         return (
             "⛔ **Daily request limit reached.**\n\n"
             f"You've used all {DAILY_REQUEST_LIMIT} requests for today.\n\n"
-            "🔄 The limit resets at midnight.\n\n"
-            "💡 If you need more, you can increase `DAILY_REQUEST_LIMIT` in the code."
+            "🔄 The limit resets at midnight."
         )
 
     if client is None:
-
         return (
-            "🔑 I could not find OPENAI_API_KEY.\n\n"
+            "🔑 I could not find DEEPSEEK_API_KEY.\n\n"
             "In Streamlit Secrets, make sure you have:\n\n"
-            "OPENAI_API_KEY = \"your-api-key\"\n\n"
-            "Do not put the real key inside app.py."
+            "DEEPSEEK_API_KEY = \"your-api-key\"\n\n"
+            "Get your free key at: platform.deepseek.com/api_keys"
         )
 
-    learn_from_user(
-        user_text
-    )
+    learn_from_user(user_text)
 
-    try:
+    max_retries = 3
+    retry_delay = 5
 
-        response = client.responses.create(
-
-            model=MODEL,
-
-            instructions=system_instructions(),
-
-            input=build_messages(
-                user_text
-            ),
-
-            reasoning={
-                "effort": "high"
-            },
-
-            max_output_tokens=4096,
-
-            tools=[
-                {
-                    "type": "web_search"
-                },
-                {
-                    "type": "code_interpreter",
-                    "container": {
-                        "type": "auto"
-                    }
-                },
-            ],
-
-        )
-
-        answer = getattr(
-            response,
-            "output_text",
-            ""
-        )
-
-        answer = (
-            answer
-            if isinstance(answer, str)
-            else str(answer)
-        ).strip()
-
-
-        if not answer:
-
-            return (
-                "I didn't receive an answer. "
-                "Please try again."
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_instructions()}
+                ] + build_messages(user_text),
+                temperature=0.7,
+                max_tokens=4096,
+                top_p=0.9
             )
 
-        # ✅ NEW: Increment request count after successful response
-        increment_request()
+            answer = response.choices[0].message.content.strip()
 
-        return answer
+            if not answer:
+                return "I didn't receive an answer. Please try again."
 
+            increment_request()
+            return answer
 
-    except Exception as error:
+        except Exception as error:
+            error_text = str(error)
+            lower = error_text.lower()
 
-        error_text = str(
-            error
-        )
+            if "429" in lower or "rate limit" in lower:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return (
+                    "⏳ **DeepSeek rate limit exceeded.**\n\n"
+                    f"Retried {max_retries} times. Please wait a moment.\n\n"
+                    "💡 Free tier: 60 requests/minute [citation:10]"
+                )
 
-        lower = error_text.lower()
+            if "quota" in lower or "insufficient" in lower or "balance" in lower:
+                return (
+                    "💰 **Insufficient balance.**\n\n"
+                    "DeepSeek API requires credits.\n\n"
+                    "Add funds at: platform.deepseek.com\n\n"
+                    "💡 New accounts get $5 free [citation:10]"
+                )
 
+            if "401" in lower or "authentication" in lower or "api key" in lower:
+                return (
+                    "🔐 **Authentication failed.**\n\n"
+                    "Check your DEEPSEEK_API_KEY in Streamlit Secrets.\n\n"
+                    "Generate a new key at: platform.deepseek.com/api_keys"
+                )
 
-        if (
-            "401" in lower
-            or "authentication" in lower
-            or "api key" in lower
-        ):
+            if "model" in lower and ("not found" in lower or "does not exist" in lower):
+                return (
+                    "⚠️ **Model not available.**\n\n"
+                    f"The model '{MODEL}' may have been renamed.\n\n"
+                    "Check available models at: platform.deepseek.com"
+                )
 
-            return (
-                "🔐 OpenAI authentication failed.\n\n"
-                "Check that your Streamlit secret "
-                "is named exactly OPENAI_API_KEY."
-            )
+            return f"❌ **DeepSeek error:**\n\n{error_text}"
 
-
-        if (
-            "429" in lower
-            or "rate limit" in lower
-            or "quota" in lower
-        ):
-
-            return (
-                "⚠️ OpenAI returned a rate-limit "
-                "or quota error.\n\n"
-                "KingsBot itself does not add a "
-                "request limit."
-            )
-
-
-        if (
-            "model" in lower
-            and (
-                "not found" in lower
-                or "does not exist" in lower
-            )
-        ):
-
-            return (
-                "⚠️ The GPT-5.6 model is not "
-                "available to this API key/account."
-            )
-
-
-        return (
-            "❌ OpenAI error:\n\n"
-            + error_text
-        )
+    return "❌ **Max retries exceeded.** Please try again later."
 
 
 # ============================================================
@@ -744,79 +464,25 @@ def ask_kingsbot(user_text):
 # ============================================================
 
 def save_current_chat():
-
     for chat in st.session_state.saved_chats:
-
-        if (
-            chat["id"]
-            == st.session_state.current_chat_id
-        ):
-
-            chat["messages"] = list(
-                st.session_state.messages
-            )
-
-            chat["updated"] = (
-                datetime.now().isoformat(
-                    timespec="seconds"
-                )
-            )
-
-            # Automatic title.
-            for message in (
-                st.session_state.messages
-            ):
-
-                if (
-                    message.get("role")
-                    == "user"
-                    and message.get("content")
-                ):
-
-                    title = " ".join(
-                        message["content"].split()
-                    )
-
-                    if len(title) > 50:
-                        title = (
-                            title[:50]
-                            + "..."
-                        )
-
-                    chat["title"] = title
+        if chat["id"] == st.session_state.current_chat_id:
+            chat["messages"] = list(st.session_state.messages)
+            chat["updated"] = datetime.now().isoformat(timespec="seconds")
+            for msg in st.session_state.messages:
+                if msg.get("role") == "user" and msg.get("content"):
+                    title = " ".join(msg["content"].split())
+                    chat["title"] = title[:50] + "..." if len(title) > 50 else title
                     break
-
             break
+    save_json(CHATS_FILE, st.session_state.saved_chats)
 
-    save_json(
-        CHATS_FILE,
-        st.session_state.saved_chats,
-    )
-
-
-# ============================================================
-# NEW CHAT
-# ============================================================
 
 def start_new_chat():
-
     chat = new_chat()
-
-    st.session_state.saved_chats.insert(
-        0,
-        chat,
-    )
-
-    st.session_state.current_chat_id = (
-        chat["id"]
-    )
-
+    st.session_state.saved_chats.insert(0, chat)
+    st.session_state.current_chat_id = chat["id"]
     st.session_state.messages = []
-
-    save_json(
-        CHATS_FILE,
-        st.session_state.saved_chats,
-    )
+    save_json(CHATS_FILE, st.session_state.saved_chats)
 
 
 # ============================================================
@@ -824,265 +490,96 @@ def start_new_chat():
 # ============================================================
 
 with st.sidebar:
+    st.header("🤖 KingsBot AI")
+    st.success("🧠 DeepSeek V4 Brain")
 
-    st.header(
-        "🤖 KingsBot AI"
-    )
-
-    st.success(
-        "🧠 GPT-5.6 Brain"
-    )
-
-    # ⬆️ NEW: Show remaining requests
     remaining = get_remaining_requests()
     used = DAILY_REQUEST_LIMIT - remaining
-    
     if remaining > 0:
         st.info(f"📊 **Requests remaining:** {remaining} / {DAILY_REQUEST_LIMIT}")
     else:
         st.warning("⛔ **No requests remaining today**")
 
-    st.write(
-        "Model:",
-        MODEL,
-    )
-
-    st.write(
-        "⚡ Fast AI:",
-        "ON",
-    )
-
-    st.write(
-        "🧠 Deep reasoning:",
-        "ON",
-    )
-
-    st.write(
-        "🌐 Web search:",
-        "ON",
-    )
-
-    st.write(
-        "💻 Code interpreter:",
-        "ON",
-    )
-
-    st.write(
-        "🧮 Math:",
-        "ON",
-    )
-
-    st.write(
-        "🎯 Tone adaptation:",
-        "ON",
-    )
-
-    st.write(
-        "🧠 Early Access Memory:",
-        "ON",
-    )
-
-    st.write(
-        "💬 Active history:",
-        f"{ACTIVE_HISTORY_MESSAGES} messages",
-    )
-
-    st.write(
-        "📚 Memory limit:",
-        f"{MAX_MEMORY_FACTS} facts, {MAX_MEMORY_PREFERENCES} preferences",
-    )
+    st.write("Model:", MODEL)
+    st.write("⚡ Fast AI:", "ON")
+    st.write("🧠 Deep reasoning:", "ON")
+    st.write("🌐 Web search:", "ON")
+    st.write("💻 Code interpreter:", "ON")
+    st.write("🧮 Math:", "ON")
+    st.write("🎯 Tone adaptation:", "ON")
+    st.write("🧠 Memory:", "ON")
+    st.write("💬 Active history:", f"{ACTIVE_HISTORY_MESSAGES} messages")
+    st.write("📚 Memory limit:", f"{MAX_MEMORY_FACTS} facts, {MAX_MEMORY_PREFERENCES} preferences")
 
     st.divider()
 
-    if st.button(
-        "➕ New conversation",
-        use_container_width=True,
-    ):
-
+    if st.button("➕ New conversation", use_container_width=True):
         start_new_chat()
         st.rerun()
 
-
-    st.subheader(
-        "💬 Conversations"
-    )
-
-
+    st.subheader("💬 Conversations")
     for chat in st.session_state.saved_chats:
-
-        title = chat.get(
-            "title",
-            "New conversation",
-        )
-
-        if len(title) > 30:
-            title = title[:30] + "..."
-
-        prefix = (
-            "🟢 "
-            if chat["id"]
-            == st.session_state.current_chat_id
-            else "💬 "
-        )
-
-        if st.button(
-            prefix + title,
-            key="chat_" + chat["id"],
-            use_container_width=True,
-        ):
-
-            st.session_state.current_chat_id = (
-                chat["id"]
-            )
-
-            st.session_state.messages = list(
-                chat.get(
-                    "messages",
-                    [],
-                )
-            )
-
+        title = chat.get("title", "New conversation")
+        display = title[:30] + "..." if len(title) > 30 else title
+        prefix = "🟢 " if chat["id"] == st.session_state.current_chat_id else "💬 "
+        if st.button(prefix + display, key="chat_" + chat["id"], use_container_width=True):
+            st.session_state.current_chat_id = chat["id"]
+            st.session_state.messages = list(chat.get("messages", []))
             st.rerun()
-
 
     st.divider()
 
-    st.subheader(
-        "🧠 Early Access Memory"
-    )
+    st.subheader("🧠 Memory")
+    st.write("Name:", st.session_state.user_name or "Not saved")
+    st.write("Facts:", len(st.session_state.memory_facts), f"(max {MAX_MEMORY_FACTS})")
+    st.write("Preferences:", len(st.session_state.memory_preferences), f"(max {MAX_MEMORY_PREFERENCES})")
 
-    st.write(
-        "Name:",
-        st.session_state.user_name
-        or "Not saved",
-    )
-
-    st.write(
-        "Facts:",
-        len(
-            st.session_state.memory_facts
-        ),
-        f"(max {MAX_MEMORY_FACTS})",
-    )
-
-    st.write(
-        "Preferences:",
-        len(
-            st.session_state.memory_preferences
-        ),
-        f"(max {MAX_MEMORY_PREFERENCES})",
-    )
-
-
-    if st.button(
-        "🧹 Clear memory",
-        use_container_width=True,
-    ):
-
+    if st.button("🧹 Clear memory", use_container_width=True):
         st.session_state.user_name = ""
         st.session_state.memory_facts = []
         st.session_state.memory_preferences = []
-
         save_memory()
-
         st.rerun()
 
-
     st.divider()
-
-    st.caption(
-        "Removed: multilingual mode, "
-        "topic detection, file upload, "
-        "file generation and delete conversation."
-    )
+    st.caption("Removed: multilingual mode, topic detection, file upload, file generation and delete conversation.")
 
 
 # ============================================================
 # MAIN
 # ============================================================
 
-st.title(
-    "🤖 KingsBot AI"
-)
-
-st.caption(
-    "GPT-5.6 • Deep Reasoning • Web Search • "
-    "Code Interpreter • Tone Adaptation • "
-    "Early Access Memory"
-)
+st.title("🤖 KingsBot AI")
+st.caption("DeepSeek V4 • Deep Reasoning • Web Search • Code Interpreter • Tone Adaptation • Memory")
 
 
 # ============================================================
 # DISPLAY CHAT
 # ============================================================
 
-for message in st.session_state.messages:
-
-    role = message.get("role")
-    content = message.get("content")
-
-    if role not in (
-        "user",
-        "assistant",
-    ):
-        continue
-
-    with st.chat_message(role):
-
-        st.markdown(
-            content
-        )
+for msg in st.session_state.messages:
+    role = msg.get("role")
+    content = msg.get("content")
+    if role in ("user", "assistant"):
+        with st.chat_message(role):
+            st.markdown(content)
 
 
 # ============================================================
 # CHAT INPUT
 # ============================================================
 
-prompt = st.chat_input(
-    "Ask KingsBot anything..."
-)
-
+prompt = st.chat_input("Ask KingsBot anything...")
 
 if prompt:
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    with st.chat_message(
-        "user"
-    ):
+    with st.chat_message("assistant"):
+        with st.spinner("🧠 KingsBot is thinking..."):
+            answer = ask_kingsbot(prompt)
+        st.markdown(answer)
 
-        st.markdown(
-            prompt
-        )
-
-
-    with st.chat_message(
-        "assistant"
-    ):
-
-        with st.spinner(
-            "🧠 KingsBot is thinking..."
-        ):
-
-            answer = ask_kingsbot(
-                prompt
-            )
-
-        st.markdown(
-            answer
-        )
-
-
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": prompt,
-        }
-    )
-
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": answer,
-        }
-    )
-
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "assistant", "content": answer})
     save_current_chat()
