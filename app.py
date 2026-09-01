@@ -10,12 +10,12 @@ import io
 # PAGE SETTINGS
 # ============================================================
 st.set_page_config(
-    page_title="KingsBot — GLM-5.3-Flash",
+    page_title="KingsBot — Free AI",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("🧠 KingsBot — GLM-5.3-Flash")
+st.title("🧠 KingsBot — Free AI")
 st.caption("FREE • Top Intelligence • Memory • Voice • Emotions")
 
 # ============================================================
@@ -48,7 +48,7 @@ if "last_topic" not in st.session_state:
 if "tone" not in st.session_state:
     st.session_state.tone = "Natural"
 if "model" not in st.session_state:
-    st.session_state.model = "zai-org/glm-5.3-flash"  # 🏆 TOP FREE MODEL
+    st.session_state.model = "google/gemma-4-26b-a4b-it:free"
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0
 
@@ -63,21 +63,20 @@ with st.sidebar:
     if api_key:
         st.session_state.api_key = api_key
     
+    # ✅ CORRECTED MODEL LIST — All confirmed working
     model = st.selectbox(
         "Select Model",
         [
-            "zai-org/glm-5.3-flash",           # 🏆 BEST FREE (Top intelligence)
-            "zai-org/glm-4.7-flash",            # Permanent free
-            "google/gemma-4-26b-a4b-it:free",   # Google's free model
-            "openai/gpt-oss-20b:free",          # OpenAI's free model
-            "nvidia/nemotron-3-super-120b:free" # Nvidia's free model
+            "google/gemma-4-26b-a4b-it:free",        # ✅ Google — Best overall
+            "openai/gpt-oss-20b:free",               # ✅ OpenAI — Fast
+            "nvidia/nemotron-3-super-120b-a12b:free", # ✅ NVIDIA — Very smart
+            "zai-org/glm-4.7-flash"                   # ✅ Zhipu — 200K context
         ],
         index=0
     )
     st.session_state.model = model
     
     st.caption("✅ 100% FREE • No credit card needed")
-    st.caption("Models with :free are completely free")
     st.divider()
     
     st.subheader("👤 Profile")
@@ -134,7 +133,7 @@ with st.sidebar:
         st.session_state.mood_history = []
         st.rerun()
     
-    st.caption("🤖 KingsBot • GLM-5.3-Flash • FREE")
+    st.caption("🤖 KingsBot • FREE AI")
 
 # ============================================================
 # EMOTION DETECTION
@@ -270,7 +269,7 @@ def speech_to_text(audio_bytes):
         return None
 
 # ============================================================
-# GENERATE RESPONSE — GLM-5.3-Flash via OpenRouter
+# GENERATE RESPONSE — OpenRouter
 # ============================================================
 def generate_response(prompt):
     if not st.session_state.api_key:
@@ -305,7 +304,7 @@ def generate_response(prompt):
         memory_text += f"Favorite quotes: {', '.join(st.session_state.favorite_quotes[-2:])}. "
     
     system_prompt = f"""
-You are KingsBot, an intelligent, helpful AI assistant powered by GLM-5.3-Flash.
+You are KingsBot, an intelligent, helpful AI assistant.
 
 Current date: {datetime.now().strftime('%B %d, %Y')}
 
@@ -364,7 +363,7 @@ if audio_file:
             with st.chat_message("user"):
                 st.write(voice_text)
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Thinking with GLM-5.3-Flash..."):
+                with st.spinner("🧠 Thinking..."):
                     response = generate_response(voice_text)
                     st.write(response)
                     st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -377,14 +376,14 @@ if audio_file:
 # ============================================================
 # TEXT INPUT
 # ============================================================
-prompt = st.chat_input("Ask KingsBot anything... (GLM-5.3-Flash — FREE)")
+prompt = st.chat_input("Ask KingsBot anything... (FREE)")
 
 if prompt:
     with st.chat_message("user"):
         st.write(prompt)
     
     with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking with GLM-5.3-Flash..."):
+        with st.spinner("🧠 Thinking..."):
             response = generate_response(prompt)
             st.write(response)
             st.caption(f"⏱️ {st.session_state.response_time:.2f}s • {st.session_state.model}")
@@ -397,4 +396,4 @@ if prompt:
 # FOOTER
 # ============================================================
 st.divider()
-st.caption("🧠 KingsBot • Powered by GLM-5.3-Flash (Zhipu AI) • FREE • Top Intelligence")
+st.caption("🧠 KingsBot • FREE AI • Powered by OpenRouter")
