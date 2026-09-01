@@ -2,7 +2,7 @@ import io
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 
 import streamlit as st
 from openai import OpenAI
@@ -20,7 +20,7 @@ st.set_page_config(
 
 
 # ============================================================
-# SETTINGS — INCREASED LIMITS
+# SETTINGS
 # ============================================================
 
 MODEL = "gpt-5.6"
@@ -32,8 +32,51 @@ ACTIVE_HISTORY_MESSAGES = 120
 MAX_MEMORY_FACTS = 200
 MAX_MEMORY_PREFERENCES = 200
 
+# ⬆️ NEW: Request limit
+DAILY_REQUEST_LIMIT = 50  # Change this to your desired limit
+REQUEST_FILE = "kingsbot_requests.json"
+
 MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
+
+
+# ============================================================
+# REQUEST TRACKER
+# ============================================================
+
+def load_requests():
+    try:
+        if os.path.exists(REQUEST_FILE):
+            with open(REQUEST_FILE, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                # Check if it's today
+                if data.get("date") == str(date.today()):
+                    return data.get("count", 0)
+                else:
+                    # Reset for new day
+                    return 0
+    except Exception:
+        pass
+    return 0
+
+def save_request_count(count):
+    try:
+        with open(REQUEST_FILE, "w", encoding="utf-8") as file:
+            json.dump({
+                "date": str(date.today()),
+                "count": count
+            }, file, indent=2)
+    except Exception:
+        pass
+
+def get_remaining_requests():
+    used = load_requests()
+    remaining = DAILY_REQUEST_LIMIT - used
+    return max(0, remaining)
+
+def increment_request():
+    used = load_requests()
+    save_request_count(used + 1)
 
 
 # ============================================================
@@ -75,7 +118,7 @@ def save_json(filename, data):
 
 
 # ============================================================
-# MEMORY — WITH LIMITS
+# MEMORY
 # ============================================================
 
 def default_memory():
@@ -216,12 +259,11 @@ else:
 
 
 # ============================================================
-# MEMORY — WITH LIMITS
+# MEMORY
 # ============================================================
 
 def save_memory():
 
-    # ⬆️ INCREASED: Limit memory size
     facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
     preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
 
@@ -299,7 +341,6 @@ def learn_from_user(text):
                     fact
                 )
 
-                # ⬆️ INCREASED: Keep only last 200 facts
                 if len(st.session_state.memory_facts) > MAX_MEMORY_FACTS:
                     st.session_state.memory_facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
 
@@ -342,7 +383,6 @@ def learn_from_user(text):
                     preference
                 )
 
-                # ⬆️ INCREASED: Keep only last 200 preferences
                 if len(st.session_state.memory_preferences) > MAX_MEMORY_PREFERENCES:
                     st.session_state.memory_preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
 
@@ -516,7 +556,6 @@ but do not ask unnecessary questions.
 
 def build_messages(user_text):
 
-    # ⬆️ INCREASED: Now using 120 messages
     recent_messages = (
         st.session_state.messages[
             -ACTIVE_HISTORY_MESSAGES:
@@ -562,6 +601,17 @@ def build_messages(user_text):
 
 def ask_kingsbot(user_text):
 
+    # ⬆️ NEW: Check request limit
+    remaining = get_remaining_requests()
+    
+    if remaining <= 0:
+        return (
+            "⛔ **Daily request limit reached.**\n\n"
+            f"You've used all {DAILY_REQUEST_LIMIT} requests for today.\n\n"
+            "🔄 The limit resets at midnight.\n\n"
+            "💡 If you need more, you can increase `DAILY_REQUEST_LIMIT` in the code."
+        )
+
     if client is None:
 
         return (
@@ -587,12 +637,10 @@ def ask_kingsbot(user_text):
                 user_text
             ),
 
-            # ⬆️ INCREASED: High reasoning (maximum)
             reasoning={
                 "effort": "high"
             },
 
-            # ⬆️ INCREASED: Maximum tokens for longer responses
             max_output_tokens=4096,
 
             tools=[
@@ -629,6 +677,8 @@ def ask_kingsbot(user_text):
                 "Please try again."
             )
 
+        # ✅ NEW: Increment request count after successful response
+        increment_request()
 
         return answer
 
@@ -783,6 +833,15 @@ with st.sidebar:
         "🧠 GPT-5.6 Brain"
     )
 
+    # ⬆️ NEW: Show remaining requests
+    remaining = get_remaining_requests()
+    used = DAILY_REQUEST_LIMIT - remaining
+    
+    if remaining > 0:
+        st.info(f"📊 **Requests remaining:** {remaining} / {DAILY_REQUEST_LIMIT}")
+    else:
+        st.warning("⛔ **No requests remaining today**")
+
     st.write(
         "Model:",
         MODEL,
@@ -823,13 +882,11 @@ with st.sidebar:
         "ON",
     )
 
-    # ⬆️ INCREASED: Updated display
     st.write(
         "💬 Active history:",
         f"{ACTIVE_HISTORY_MESSAGES} messages",
     )
 
-    # ⬆️ INCREASED: Show memory limits
     st.write(
         "📚 Memory limit:",
         f"{MAX_MEMORY_FACTS} facts, {MAX_MEMORY_PREFERENCES} preferences",
