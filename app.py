@@ -20,13 +20,17 @@ st.set_page_config(
 
 
 # ============================================================
-# SETTINGS
+# SETTINGS — INCREASED LIMITS
 # ============================================================
 
 MODEL = "gpt-5.6"
 
-# Large but controlled conversation.
-ACTIVE_HISTORY_MESSAGES = 60
+# ⬆️ INCREASED: 60 → 120 messages
+ACTIVE_HISTORY_MESSAGES = 120
+
+# ⬆️ INCREASED: Memory limits
+MAX_MEMORY_FACTS = 200
+MAX_MEMORY_PREFERENCES = 200
 
 MEMORY_FILE = "kingsbot_memory.json"
 CHATS_FILE = "kingsbot_chats.json"
@@ -71,7 +75,7 @@ def save_json(filename, data):
 
 
 # ============================================================
-# MEMORY
+# MEMORY — WITH LIMITS
 # ============================================================
 
 def default_memory():
@@ -212,17 +216,21 @@ else:
 
 
 # ============================================================
-# MEMORY
+# MEMORY — WITH LIMITS
 # ============================================================
 
 def save_memory():
+
+    # ⬆️ INCREASED: Limit memory size
+    facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
+    preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
 
     save_json(
         MEMORY_FILE,
         {
             "name": st.session_state.user_name,
-            "facts": st.session_state.memory_facts,
-            "preferences": st.session_state.memory_preferences,
+            "facts": facts,
+            "preferences": preferences,
         },
     )
 
@@ -291,6 +299,10 @@ def learn_from_user(text):
                     fact
                 )
 
+                # ⬆️ INCREASED: Keep only last 200 facts
+                if len(st.session_state.memory_facts) > MAX_MEMORY_FACTS:
+                    st.session_state.memory_facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
+
                 changed = True
 
             break
@@ -329,6 +341,10 @@ def learn_from_user(text):
                 st.session_state.memory_preferences.append(
                     preference
                 )
+
+                # ⬆️ INCREASED: Keep only last 200 preferences
+                if len(st.session_state.memory_preferences) > MAX_MEMORY_PREFERENCES:
+                    st.session_state.memory_preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
 
                 changed = True
 
@@ -500,6 +516,7 @@ but do not ask unnecessary questions.
 
 def build_messages(user_text):
 
+    # ⬆️ INCREASED: Now using 120 messages
     recent_messages = (
         st.session_state.messages[
             -ACTIVE_HISTORY_MESSAGES:
@@ -570,9 +587,13 @@ def ask_kingsbot(user_text):
                 user_text
             ),
 
+            # ⬆️ INCREASED: High reasoning (maximum)
             reasoning={
                 "effort": "high"
             },
+
+            # ⬆️ INCREASED: Maximum tokens for longer responses
+            max_output_tokens=4096,
 
             tools=[
                 {
@@ -802,9 +823,16 @@ with st.sidebar:
         "ON",
     )
 
+    # ⬆️ INCREASED: Updated display
     st.write(
         "💬 Active history:",
-        "60 messages",
+        f"{ACTIVE_HISTORY_MESSAGES} messages",
+    )
+
+    # ⬆️ INCREASED: Show memory limits
+    st.write(
+        "📚 Memory limit:",
+        f"{MAX_MEMORY_FACTS} facts, {MAX_MEMORY_PREFERENCES} preferences",
     )
 
     st.divider()
@@ -877,6 +905,7 @@ with st.sidebar:
         len(
             st.session_state.memory_facts
         ),
+        f"(max {MAX_MEMORY_FACTS})",
     )
 
     st.write(
@@ -884,6 +913,7 @@ with st.sidebar:
         len(
             st.session_state.memory_preferences
         ),
+        f"(max {MAX_MEMORY_PREFERENCES})",
     )
 
 
