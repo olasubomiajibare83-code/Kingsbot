@@ -1,821 +1,643 @@
+import streamlit as st
+import streamlit.components.v1 as components
 import json
 import os
-import uuid
+import re
 import time
-import hashlib
-from datetime import datetime, date, timedelta
-from functools import lru_cache
-import base64
+import uuid
+from datetime import datetime, date
+import requests
 import io
 
-import streamlit as st
-from openai import OpenAI
-import pandas as pd
-import plotly.express as px
-from bs4 import BeautifulSoup
-import requests
-import speech_recognition as sr
-import PyPDF2
-from docx import Document
-import markdown
-
 # ============================================================
-# ULTIMATE KINGSBOT AI — GROQ MIXTRAL (FASTEST)
+# PAGE SETTINGS
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot Ultimate — Groq",
-    page_icon="⚡",
-    layout="wide",
+    page_title="KingsBot Phone",
+    page_icon="📱",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================================
-# CUSTOM CSS
+# CUSTOM CSS FOR PHONE
 # ============================================================
 
 st.markdown("""
 <style>
-    .main-header {
-        background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
-        padding: 20px;
-        border-radius: 10px;
+    /* Phone-friendly dark theme */
+    .main {
+        padding: 0 !important;
+    }
+    .block-container {
+        padding: 0.5rem !important;
+        max-width: 100% !important;
+    }
+    
+    /* Chat bubbles */
+    .user-bubble {
+        background: linear-gradient(135deg, #667eea, #764ba2);
         color: white;
-        text-align: center;
-        margin-bottom: 20px;
+        padding: 10px 14px;
+        border-radius: 18px 18px 4px 18px;
+        max-width: 85%;
+        margin: 4px 0 4px auto;
+        font-size: 14px;
+        animation: slideIn 0.3s ease;
+        word-wrap: break-word;
     }
-    .stat-card {
-        background: rgba(255,255,255,0.05);
-        padding: 15px;
-        border-radius: 10px;
+    .assistant-bubble {
+        background: linear-gradient(135deg, #f093fb, #f5576c);
+        color: white;
+        padding: 10px 14px;
+        border-radius: 18px 18px 18px 4px;
+        max-width: 85%;
+        margin: 4px auto 4px 0;
+        font-size: 14px;
+        animation: slideIn 0.3s ease;
+        word-wrap: break-word;
+    }
+    
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Toggle buttons - phone friendly */
+    .stButton > button {
+        width: 100%;
+        border-radius: 20px;
+        padding: 0.5rem !important;
+        font-size: 14px !important;
+    }
+    
+    /* Input bar - fixed at bottom */
+    .input-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(10, 10, 10, 0.95);
+        padding: 8px 10px;
+        backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(255,255,255,0.05);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    
+    .input-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+    
+    .input-row input {
+        flex: 1;
+        padding: 10px 14px;
         border: 1px solid rgba(255,255,255,0.1);
-        text-align: center;
+        border-radius: 25px;
+        background: rgba(255,255,255,0.05);
+        color: white;
+        font-size: 14px;
+        outline: none;
+        min-height: 40px;
     }
-    .stat-number {
-        font-size: 28px;
+    
+    .input-row input:focus {
+        border-color: #667eea;
+    }
+    
+    .input-row button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 25px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
         font-weight: bold;
-        background: linear-gradient(135deg, #00c853, #00e676);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        white-space: nowrap;
     }
-    .metric-card {
-        background: rgba(255,255,255,0.03);
-        padding: 12px;
-        border-radius: 8px;
-        border-left: 4px solid #00c853;
-        margin: 5px 0;
+    
+    .input-row button:active {
+        transform: scale(0.95);
+    }
+    
+    /* Toggle row */
+    .toggle-row {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        padding: 2px 0;
+        flex-wrap: wrap;
+    }
+    
+    .toggle-btn {
+        padding: 4px 12px;
+        border-radius: 15px;
+        border: 1px solid rgba(255,255,255,0.2);
+        background: transparent;
+        color: #888;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .toggle-btn.active {
+        background: #667eea;
+        border-color: #667eea;
+        color: white;
+    }
+    
+    .toggle-btn:active {
+        transform: scale(0.95);
+    }
+    
+    /* Sidebar */
+    .css-1d391kg {
+        background: rgba(0,0,0,0.95);
+    }
+    
+    /* Hide default footer */
+    footer {
+        display: none;
+    }
+    
+    /* Make chat scrollable with bottom padding */
+    .chat-container {
+        padding-bottom: 140px;
+    }
+    
+    /* Mobile adjustments */
+    @media (max-width: 600px) {
+        .input-row input {
+            font-size: 16px !important; /* Prevents zoom on iOS */
+        }
+        .user-bubble, .assistant-bubble {
+            font-size: 15px;
+            padding: 10px 14px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# SETTINGS — GROQ MIXTRAL
-# ============================================================
-
-# ✅ GROQ MODELS — BLISTERING FAST (500-1000+ tok/sec)
-MODELS = [
-    "groq/mixtral-8x7b-32768",       # 🚀 Fastest — 500+ tok/sec
-    "groq/llama-3.1-70b-versatile",  # 🚀 Fast — 400+ tok/sec
-    "groq/llama-3.1-8b-instant",     # ⚡ Lightweight — 800+ tok/sec
-]
-
-BASE_URL = "https://api.groq.com/openai/v1"  # ✅ Groq endpoint
-DEFAULT_MODEL_INDEX = 0
-
-ACTIVE_HISTORY_MESSAGES = 120
-MAX_MEMORY_FACTS = 200
-MAX_MEMORY_PREFERENCES = 200
-DAILY_REQUEST_LIMIT = 100
-
-MEMORY_FILE = "kingsbot_memory.json"
-CHATS_FILE = "kingsbot_chats.json"
-REQUEST_FILE = "kingsbot_requests.json"
-ANALYTICS_FILE = "kingsbot_analytics.json"
-
-# ============================================================
-# RATE LIMITER
-# ============================================================
-
-class RateLimiter:
-    def __init__(self):
-        self.last_request_time = 0
-        self.min_interval = 1  # ✅ Faster: 1 second between requests
-        self.backoff_factor = 2
-        self.max_backoff = 30
-        self.current_backoff = 0
-        
-    def wait_if_needed(self):
-        elapsed = time.time() - self.last_request_time
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-        self.last_request_time = time.time()
-    
-    def handle_rate_limit(self):
-        if self.current_backoff == 0:
-            self.current_backoff = 1
-        else:
-            self.current_backoff = min(self.current_backoff * self.backoff_factor, self.max_backoff)
-        time.sleep(self.current_backoff)
-        return self.current_backoff
-    
-    def reset_backoff(self):
-        self.current_backoff = 0
-
-rate_limiter = RateLimiter()
-
-# ============================================================
-# REQUEST TRACKER
-# ============================================================
-
-def load_requests():
-    try:
-        if os.path.exists(REQUEST_FILE):
-            with open(REQUEST_FILE, "r", encoding="utf-8") as file:
-                data = json.load(file)
-                if data.get("date") == str(date.today()):
-                    return data.get("count", 0)
-    except Exception:
-        pass
-    return 0
-
-def save_request_count(count):
-    try:
-        with open(REQUEST_FILE, "w", encoding="utf-8") as file:
-            json.dump({"date": str(date.today()), "count": count}, file, indent=2)
-    except Exception:
-        pass
-
-def get_remaining_requests():
-    return max(0, DAILY_REQUEST_LIMIT - load_requests())
-
-def increment_request():
-    save_request_count(load_requests() + 1)
-
-# ============================================================
-# STORAGE
-# ============================================================
-
-def load_json(filename, default):
-    try:
-        if os.path.exists(filename):
-            with open(filename, "r", encoding="utf-8") as file:
-                return json.load(file)
-    except Exception:
-        pass
-    return default
-
-def save_json(filename, data):
-    try:
-        with open(filename, "w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-# ============================================================
-# MEMORY
-# ============================================================
-
-def default_memory():
-    return {"name": "", "facts": [], "preferences": [], "emotion_history": [], "topics": []}
-
-memory_data = load_json(MEMORY_FILE, default_memory())
-
-# ============================================================
-# CHAT STORAGE
-# ============================================================
-
-def new_chat():
-    return {
-        "id": uuid.uuid4().hex,
-        "title": "New conversation",
-        "created": datetime.now().isoformat(timespec="seconds"),
-        "messages": [],
-        "metadata": {"topics": [], "emotions": [], "message_count": 0}
-    }
-
-saved_chats = load_json(CHATS_FILE, [])
-if not saved_chats:
-    saved_chats = [new_chat()]
-    save_json(CHATS_FILE, saved_chats)
-
-# ============================================================
-# ANALYTICS
-# ============================================================
-
-def default_analytics():
-    return {
-        "total_interactions": 0,
-        "daily_usage": {},
-        "topics_count": {},
-        "emotions_count": {},
-        "average_response_time": 0,
-        "response_times": []
-    }
-
-analytics_data = load_json(ANALYTICS_FILE, default_analytics())
-
-# ============================================================
 # SESSION STATE
 # ============================================================
 
-if "saved_chats" not in st.session_state:
-    st.session_state.saved_chats = saved_chats
-if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = saved_chats[0]["id"]
 if "messages" not in st.session_state:
-    selected = None
-    for chat in st.session_state.saved_chats:
-        if chat["id"] == st.session_state.current_chat_id:
-            selected = chat
-            break
-    st.session_state.messages = list(selected.get("messages", [])) if selected else []
+    st.session_state.messages = []
 if "user_name" not in st.session_state:
-    st.session_state.user_name = memory_data.get("name", "")
+    st.session_state.user_name = ""
 if "memory_facts" not in st.session_state:
-    st.session_state.memory_facts = list(memory_data.get("facts", []))
+    st.session_state.memory_facts = []
 if "memory_preferences" not in st.session_state:
-    st.session_state.memory_preferences = list(memory_data.get("preferences", []))
-if "emotion_history" not in st.session_state:
-    st.session_state.emotion_history = list(memory_data.get("emotion_history", []))
-if "topics" not in st.session_state:
-    st.session_state.topics = list(memory_data.get("topics", []))
-if "current_model_index" not in st.session_state:
-    st.session_state.current_model_index = DEFAULT_MODEL_INDEX
-if "analytics" not in st.session_state:
-    st.session_state.analytics = analytics_data
-if "uploaded_files" not in st.session_state:
-    st.session_state.uploaded_files = []
-if "language" not in st.session_state:
-    st.session_state.language = "English"
-if "voice_input" not in st.session_state:
-    st.session_state.voice_input = None
+    st.session_state.memory_preferences = []
+if "web_search" not in st.session_state:
+    st.session_state.web_search = False
+if "think_mode" not in st.session_state:
+    st.session_state.think_mode = False
+if "emotion" not in st.session_state:
+    st.session_state.emotion = "neutral"
+if "topic" not in st.session_state:
+    st.session_state.topic = "general"
+if "interaction_count" not in st.session_state:
+    st.session_state.interaction_count = 0
+if "chats" not in st.session_state:
+    st.session_state.chats = [{"id": "default", "title": "New Chat", "messages": []}]
+if "current_chat_id" not in st.session_state:
+    st.session_state.current_chat_id = "default"
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = True
 
 # ============================================================
-# API KEY
+# FEATURES
 # ============================================================
 
-def get_api_key():
-    try:
-        key = st.secrets.get("OPENROUTER_API_KEY")
-        if key:
-            return str(key).strip()
-    except Exception:
-        pass
-    return os.getenv("OPENROUTER_API_KEY")
-
-API_KEY = get_api_key()
-
-if API_KEY:
-    client = OpenAI(
-        api_key=API_KEY,
-        base_url=BASE_URL,
-        timeout=60.0,  # ✅ Faster timeout
-        max_retries=2,
-    )
-else:
-    client = None
-
-# ============================================================
-# EMOTION DETECTION
-# ============================================================
-
+# Emotion Detection
 EMOTION_KEYWORDS = {
-    "happy": ["happy", "great", "awesome", "amazing", "love", "wonderful", "excited", "glad"],
-    "sad": ["sad", "crying", "upset", "hurt", "depressed", "miserable", "lonely"],
-    "angry": ["angry", "mad", "frustrated", "annoyed", "furious", "outraged", "rage"],
-    "confused": ["confused", "don't understand", "huh", "what", "lost", "unclear"],
+    "happy": ["happy", "great", "awesome", "amazing", "love", "wonderful", "excited", "glad", "yesss"],
+    "sad": ["sad", "crying", "upset", "hurt", "depressed", "miserable", "lonely", "disappointed"],
+    "angry": ["angry", "mad", "frustrated", "annoyed", "furious", "outraged", "rage", "useless"],
+    "confused": ["confused", "don't understand", "huh", "what", "lost", "unclear", "not getting"],
     "worried": ["worried", "scared", "afraid", "anxious", "nervous", "concerned", "panic"],
     "neutral": []
+}
+
+TOPIC_KEYWORDS = {
+    "coding": ["code", "python", "program", "javascript", "html", "css", "api", "app", "software"],
+    "science": ["science", "biology", "chemistry", "physics", "astronomy", "dna", "lab"],
+    "math": ["math", "calculate", "equation", "algebra", "geometry", "calculus", "number"],
+    "history": ["history", "war", "empire", "ancient", "civilization", "king", "queen"],
+    "geography": ["country", "capital", "city", "river", "mountain", "ocean", "continent"],
+    "technology": ["technology", "computer", "internet", "ai", "artificial intelligence", "robot"],
+    "sports": ["sports", "football", "soccer", "basketball", "tennis", "cricket", "messi"],
+    "entertainment": ["movie", "film", "music", "song", "actor", "actress", "concert", "cinema"],
+    "health": ["health", "doctor", "hospital", "medicine", "fitness", "diet", "exercise"],
+    "general": []
 }
 
 def detect_emotion(text):
     lower = text.lower()
     for emotion, keywords in EMOTION_KEYWORDS.items():
         if any(word in lower for word in keywords):
-            st.session_state.emotion_history.append({
-                "emotion": emotion,
-                "time": datetime.now().isoformat()
-            })
-            st.session_state.emotion_history = st.session_state.emotion_history[-50:]
-            if emotion not in st.session_state.analytics["emotions_count"]:
-                st.session_state.analytics["emotions_count"][emotion] = 0
-            st.session_state.analytics["emotions_count"][emotion] += 1
-            save_json(ANALYTICS_FILE, st.session_state.analytics)
             return emotion
     return "neutral"
-
-# ============================================================
-# TOPIC DETECTION
-# ============================================================
-
-TOPIC_KEYWORDS = {
-    "coding": ["code", "python", "program", "javascript", "html", "css", "api", "app"],
-    "science": ["science", "biology", "chemistry", "physics", "astronomy", "dna"],
-    "math": ["math", "calculate", "equation", "algebra", "geometry", "calculus"],
-    "history": ["history", "war", "empire", "ancient", "civilization", "king"],
-    "geography": ["country", "capital", "city", "river", "mountain", "ocean"],
-    "technology": ["technology", "computer", "internet", "ai", "artificial intelligence"],
-    "sports": ["sports", "football", "soccer", "basketball", "tennis", "cricket"],
-    "entertainment": ["movie", "film", "music", "song", "actor", "actress", "concert"],
-    "health": ["health", "doctor", "hospital", "medicine", "fitness", "diet"],
-    "business": ["business", "finance", "money", "invest", "stock", "market"],
-    "general": []
-}
 
 def detect_topic(text):
     lower = text.lower()
     for topic, keywords in TOPIC_KEYWORDS.items():
         if any(word in lower for word in keywords):
-            if topic not in st.session_state.topics:
-                st.session_state.topics.append(topic)
-                st.session_state.topics = st.session_state.topics[-30:]
-                if topic not in st.session_state.analytics["topics_count"]:
-                    st.session_state.analytics["topics_count"][topic] = 0
-                st.session_state.analytics["topics_count"][topic] += 1
-                save_json(ANALYTICS_FILE, st.session_state.analytics)
             return topic
     return "general"
 
+def detect_name(text):
+    match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+def detect_memory(text):
+    markers = ["remember that ", "remember this: ", "please remember ", "save this: "]
+    for marker in markers:
+        if marker in text.lower():
+            pos = text.lower().find(marker)
+            fact = text[pos + len(marker):].strip(" .!?")
+            if fact and len(fact) > 3:
+                return fact
+    return None
+
+def detect_preference(text):
+    markers = ["i prefer ", "i like ", "my favorite ", "i love "]
+    for marker in markers:
+        if marker in text.lower():
+            pos = text.lower().find(marker)
+            pref = text[pos:].strip(" .!?")
+            if pref and len(pref) > 3:
+                return pref
+    return None
+
 # ============================================================
-# FILE PROCESSING
+# WEB SEARCH
 # ============================================================
 
-def process_uploaded_file(uploaded_file):
+def web_search(query):
     try:
-        content = ""
-        file_type = uploaded_file.type
+        url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + requests.utils.quote(query)
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("extract"):
+                return data["extract"]
         
-        if "text" in file_type:
-            content = uploaded_file.read().decode("utf-8")
-        elif "pdf" in file_type:
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
-            for page in pdf_reader.pages:
-                content += page.extract_text() + "\n"
-        elif "document" in file_type:
-            doc = Document(io.BytesIO(uploaded_file.read()))
-            for para in doc.paragraphs:
-                content += para.text + "\n"
-        elif "csv" in file_type or "spreadsheet" in file_type:
-            df = pd.read_csv(io.BytesIO(uploaded_file.read()))
-            content = df.to_string()
-        else:
-            return "⚠️ File type not supported for extraction."
+        # Fallback: DuckDuckGo
+        url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("AbstractText"):
+                return data["AbstractText"]
         
-        return content[:5000]
+        return None
     except Exception as e:
-        return f"Error processing file: {str(e)}"
-
-# ============================================================
-# VOICE INPUT
-# ============================================================
-
-def speech_to_text(audio_bytes):
-    try:
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            audio = recognizer.record(source)
-        return recognizer.recognize_google(audio)
-    except:
         return None
 
 # ============================================================
-# MEMORY FUNCTIONS
+# RESPONSE GENERATOR (FULL BRAIN)
 # ============================================================
 
-def save_memory():
-    save_json(MEMORY_FILE, {
-        "name": st.session_state.user_name,
-        "facts": st.session_state.memory_facts[-MAX_MEMORY_FACTS:],
-        "preferences": st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:],
-        "emotion_history": st.session_state.emotion_history[-50:],
-        "topics": st.session_state.topics[-30:]
-    })
-
-def learn_from_user(text):
-    changed = False
-    lower = text.lower()
-
-    if "my name is " in lower:
-        pos = lower.find("my name is ")
-        name = text[pos + len("my name is "):].strip(" .!?")
-        if name:
-            st.session_state.user_name = name[:80]
-            changed = True
-
-    memory_markers = ["remember that ", "remember this: ", "please remember "]
-    for marker in memory_markers:
-        if marker in lower:
-            pos = lower.find(marker)
-            fact = text[pos + len(marker):].strip(" .!?")
-            if fact and fact not in st.session_state.memory_facts:
-                st.session_state.memory_facts.append(fact)
-                st.session_state.memory_facts = st.session_state.memory_facts[-MAX_MEMORY_FACTS:]
-                changed = True
-            break
-
-    pref_markers = ["i prefer ", "i like ", "my favorite "]
-    for marker in pref_markers:
-        if marker in lower:
-            pos = lower.find(marker)
-            pref = text[pos:].strip(" .!?")
-            if pref and pref not in st.session_state.memory_preferences:
-                st.session_state.memory_preferences.append(pref)
-                st.session_state.memory_preferences = st.session_state.memory_preferences[-MAX_MEMORY_PREFERENCES:]
-                changed = True
-            break
-
-    if changed:
-        save_memory()
-
-def memory_text():
-    lines = []
-    if st.session_state.user_name:
-        lines.append("User name: " + st.session_state.user_name)
-    for fact in st.session_state.memory_facts:
-        lines.append("Saved fact: " + str(fact))
-    for pref in st.session_state.memory_preferences:
-        lines.append("Preference: " + str(pref))
-    return "\n".join(lines) if lines else "No saved memory."
-
-# ============================================================
-# AI INSTRUCTIONS
-# ============================================================
-
-def system_instructions():
-    current_model = MODELS[st.session_state.current_model_index]
-    emotion = detect_emotion(" ".join([m.get("content", "") for m in st.session_state.messages[-5:]])) if st.session_state.messages else "neutral"
+def generate_response(prompt):
+    # Detect features from user input
+    name = detect_name(prompt)
+    if name:
+        st.session_state.user_name = name
+        return f"Nice to meet you, {name}! 👋 I'll remember your name."
     
-    return f"""
-You are KingsBot AI — Powered by Groq (Blazing Fast).
+    memory = detect_memory(prompt)
+    if memory:
+        if memory not in st.session_state.memory_facts:
+            st.session_state.memory_facts.append(memory)
+            st.session_state.memory_facts = st.session_state.memory_facts[-30:]
+        return f"🧠 Got it! I'll remember: '{memory}'"
+    
+    preference = detect_preference(prompt)
+    if preference:
+        if preference not in st.session_state.memory_preferences:
+            st.session_state.memory_preferences.append(preference)
+            st.session_state.memory_preferences = st.session_state.memory_preferences[-30:]
+        return f"💖 I'll remember that you {preference.lower()}"
 
-Your AI brain is {current_model} via Groq.
+    # Detect emotion and topic
+    emotion = detect_emotion(prompt)
+    topic = detect_topic(prompt)
+    st.session_state.emotion = emotion
+    st.session_state.topic = topic
 
-Current date: {datetime.now().strftime('%B %d, %Y')}
+    # Web search if enabled
+    web_result = ""
+    if st.session_state.web_search:
+        with st.spinner("🌐 Searching the web..."):
+            result = web_search(prompt)
+            if result:
+                web_result = f"\n\n[Web Search Result]\n{result[:2000]}"
 
-Detected emotion: {emotion}
+    # Think mode (adds reasoning)
+    think_prefix = ""
+    if st.session_state.think_mode:
+        think_prefix = "Let me think about this carefully... 🤔\n\n"
 
-CAPABILITIES:
-- General knowledge
-- Mathematics
-- Science
-- History
-- Geography
-- Technology
-- AI
-- Programming
-- Advanced coding
-- Debugging
-- Problem solving
-- Deep reasoning
-- Writing
-- Rewriting
-- Planning
-- Brainstorming
-- Teaching
-- Explanations
-- Comparisons
-- Research
+    # Generate intelligent response
+    response = generate_advanced_response(prompt, emotion, topic)
 
-TONE ADAPTATION:
-Automatically adapt to the user's emotion and question type.
+    # Add web result if available
+    if web_result:
+        response += f"\n\n---\n{web_result}"
 
-MEMORY:
-{memory_text()}
+    if think_prefix:
+        response = think_prefix + response
 
-RULES:
-- Be helpful, clear, and concise
-- For math: show steps
-- If uncertain: say "I don't know"
-- Don't claim human-like consciousness
-- Provide code with explanations
+    return response
+
+def generate_advanced_response(prompt, emotion, topic):
+    # Build memory context
+    memory_text = ""
+    if st.session_state.user_name:
+        memory_text += f"User's name: {st.session_state.user_name}. "
+    if st.session_state.memory_facts:
+        memory_text += f"Facts: {', '.join(st.session_state.memory_facts[-3:])}. "
+    if st.session_state.memory_preferences:
+        memory_text += f"Preferences: {', '.join(st.session_state.memory_preferences[-3:])}. "
+
+    # Build response based on topic and emotion
+    lower = prompt.lower()
+    
+    # GREETINGS
+    if re.match(r'^(hi|hello|hey|greetings|sup|what\'s up|yo|howdy)', lower):
+        return random_greeting()
+    
+    # HOW ARE YOU
+    if re.search(r'how are you|how\'s it going|how do you do', lower):
+        return random_how_are_you()
+    
+    # NAME
+    if re.search(r'what is your name|who are you|your name', lower):
+        return "I'm KingsBot! 📱 Your intelligent phone assistant with memory, emotions, web search, and more! I'm designed to run on your phone."
+
+    # TIME
+    if re.search(r'what time is it|current time|time now', lower):
+        return f"🕐 The current time is {datetime.now().strftime('%I:%M %p')}."
+
+    # DATE
+    if re.search(r'what day is it|what\'s the date|today\'s date', lower):
+        return f"📅 Today is {datetime.now().strftime('%A, %B %d, %Y')}."
+
+    # MATH
+    math_match = re.search(r'(\d+)\s*([\+\-\*/xX])\s*(\d+)', lower)
+    if math_match:
+        try:
+            a = int(math_match.group(1))
+            op = math_match.group(2)
+            b = int(math_match.group(3))
+            if op == '+':
+                result = a + b
+            elif op == '-':
+                result = a - b
+            elif op == 'x' or op == 'X' or op == '*':
+                result = a * b
+            elif op == '/':
+                result = a / b if b != 0 else "Cannot divide by zero"
+            return f"🧮 {a} {op} {b} = {result}"
+        except:
+            pass
+
+    # HELP
+    if re.search(r'help|what can you do|capabilities|features', lower):
+        return f"""
+🤖 **I can help you with:**
+
+📚 **General Knowledge** — History, geography, science, and more!
+🧮 **Mathematics** — Basic arithmetic
+💻 **Coding** — Python tips and explanations
+🎯 **Memory** — I remember your name, facts, and preferences
+🌐 **Web Search** — Toggle "🌐 Search" for real-time info
+🧠 **Think Mode** — Toggle "🧠 Think" for reasoning
+❤️ **Emotions** — I adapt to how you feel
+💬 **Multiple Chats** — Start new conversations
+📁 **File Upload** — Upload and read documents
+📊 **Analytics** — Track your usage
+
+**Commands:**
+- "My name is Alex" → Saves your name
+- "Remember that..." → Saves a fact
+- "I like Python" → Saves a preference
+- "What is 25 x 4?" → Math
+
+**Toggles:**
+- 🌐 Search — Enable web search
+- 🧠 Think — Enable reasoning mode
 """
 
-# ============================================================
-# BUILD CONVERSATION
-# ============================================================
+    # MEMORY COMMANDS
+    if "forget everything" in lower or "clear memory" in lower:
+        st.session_state.user_name = ""
+        st.session_state.memory_facts = []
+        st.session_state.memory_preferences = []
+        return "🧹 Done. I cleared all your memory."
 
-def build_messages(user_text):
-    recent = st.session_state.messages[-ACTIVE_HISTORY_MESSAGES:]
-    result = []
-    for msg in recent:
-        role = msg.get("role")
-        content = msg.get("content")
-        if role in ("user", "assistant") and content:
-            result.append({"role": role, "content": content})
-    result.append({"role": "user", "content": user_text})
-    return result
+    if "forget my name" in lower:
+        st.session_state.user_name = ""
+        return "✅ Done. I forgot your name."
 
-# ============================================================
-# SAVE CHAT
-# ============================================================
+    if "forget my facts" in lower:
+        st.session_state.memory_facts = []
+        return "✅ Done. I forgot all your facts."
 
-def save_current_chat():
-    for chat in st.session_state.saved_chats:
-        if chat["id"] == st.session_state.current_chat_id:
-            chat["messages"] = list(st.session_state.messages)
-            chat["updated"] = datetime.now().isoformat(timespec="seconds")
-            
-            if "metadata" not in chat:
-                chat["metadata"] = {"topics": [], "emotions": [], "message_count": 0}
-            
-            chat["metadata"]["message_count"] = len(st.session_state.messages)
-            
-            for msg in st.session_state.messages:
-                if msg.get("role") == "user" and msg.get("content"):
-                    title = " ".join(msg["content"].split())
-                    chat["title"] = title[:50] + "..." if len(title) > 50 else title
-                    break
-            break
-    save_json(CHATS_FILE, st.session_state.saved_chats)
+    if "forget my preferences" in lower:
+        st.session_state.memory_preferences = []
+        return "✅ Done. I forgot all your preferences."
 
-def start_new_chat():
-    chat = new_chat()
-    st.session_state.saved_chats.insert(0, chat)
-    st.session_state.current_chat_id = chat["id"]
-    st.session_state.messages = []
-    save_json(CHATS_FILE, st.session_state.saved_chats)
-
-# ============================================================
-# EXPORT CONVERSATION
-# ============================================================
-
-def export_conversation():
-    lines = ["# KingsBot Conversation Export", f"Date: {datetime.now().strftime('%B %d, %Y at %H:%M')}", ""]
-    for msg in st.session_state.messages:
-        role = "👤 User" if msg["role"] == "user" else "⚡ KingsBot"
-        lines.append(f"**{role}:** {msg['content']}")
-        lines.append("")
-    return "\n".join(lines)
-
-# ============================================================
-# ASK KINGSBOT — GROQ MIXTRAL
-# ============================================================
-
-def ask_kingsbot(user_text, file_content=None):
-    remaining = get_remaining_requests()
-    if remaining <= 0:
-        reset_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        wait_seconds = (reset_time - datetime.now()).total_seconds()
-        hours = int(wait_seconds // 3600)
-        minutes = int((wait_seconds % 3600) // 60)
-        return f"⛔ **Daily limit reached.** Resets in {hours}h {minutes}m."
-
-    if not API_KEY:
-        return "🔑 **OPENROUTER_API_KEY not found.** Add to Streamlit Secrets."
-
-    learn_from_user(user_text)
-    emotion = detect_emotion(user_text)
-    topic = detect_topic(user_text)
+    # Unknown
+    emotion_emoji = {
+        "happy": "😊", "sad": "😢", "angry": "😤",
+        "confused": "🤔", "worried": "😰", "neutral": "🤖"
+    }.get(emotion, "🤖")
     
-    st.session_state.analytics["total_interactions"] += 1
-    today = str(date.today())
-    if today not in st.session_state.analytics["daily_usage"]:
-        st.session_state.analytics["daily_usage"][today] = 0
-    st.session_state.analytics["daily_usage"][today] += 1
-    save_json(ANALYTICS_FILE, st.session_state.analytics)
+    return f"{emotion_emoji} I'm here to help! What would you like to know? I can answer questions, solve math, remember facts, and search the web (if you toggle 🌐 Search)."
 
-    rate_limiter.wait_if_needed()
+def random_greeting():
+    return random.choice([
+        "Hello! 👋 How can I help you today?",
+        "Hi there! 😊 What's on your mind?",
+        "Hey! Great to talk to you!",
+        "Greetings! 📱 I'm here to assist you.",
+    ])
 
-    full_text = user_text
-    if file_content:
-        full_text += f"\n\nFile content:\n{file_content}"
-
-    max_attempts = 3
-    model_attempts = 0
-
-    for attempt in range(max_attempts):
-        try:
-            current_model = MODELS[st.session_state.current_model_index]
-            start_time = time.time()
-            
-            response = client.chat.completions.create(
-                model=current_model,
-                messages=[
-                    {"role": "system", "content": system_instructions()}
-                ] + build_messages(full_text),
-                temperature=0.7,
-                top_p=0.9,
-                max_tokens=4096,
-                stream=False,
-            )
-
-            elapsed = time.time() - start_time
-            st.session_state.analytics["response_times"].append(elapsed)
-            st.session_state.analytics["average_response_time"] = sum(st.session_state.analytics["response_times"]) / len(st.session_state.analytics["response_times"])
-            save_json(ANALYTICS_FILE, st.session_state.analytics)
-
-            if not response or not hasattr(response, 'choices') or not response.choices:
-                return "❌ No response received. Please try again."
-
-            message = response.choices[0].message
-            if not message or not hasattr(message, 'content'):
-                return "❌ Empty response. Please try again."
-
-            answer = message.content.strip()
-            if not answer:
-                return "I didn't receive an answer. Please try again."
-
-            rate_limiter.reset_backoff()
-            increment_request()
-            return answer
-
-        except Exception as error:
-            error_text = str(error)
-            lower = error_text.lower()
-
-            if "429" in lower or "rate limit" in lower:
-                if attempt < max_attempts - 1:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                return f"⏳ **Rate limit exceeded.** Retried {max_attempts} times."
-
-            if "model" in lower and ("not found" in lower or "does not exist" in lower):
-                if model_attempts < len(MODELS) - 1:
-                    st.session_state.current_model_index = (st.session_state.current_model_index + 1) % len(MODELS)
-                    model_attempts += 1
-                    time.sleep(1)
-                    continue
-                return "⚠️ **All models unavailable.** Check Groq."
-
-            if "401" in lower or "authentication" in lower:
-                return "🔐 **Authentication failed.** Check your API key."
-
-            return f"❌ **Error:**\n\n{error_text}"
-
-    return "❌ **Max retries exceeded.** Please try again later."
+def random_how_are_you():
+    return random.choice([
+        "I'm doing great, thanks! 😊 How about you?",
+        "I'm functioning perfectly! 📱 How can I help?",
+        "I'm always ready to help! 💪"
+    ])
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
 with st.sidebar:
-    st.markdown("""
-    <div style="text-align:center;padding:10px;">
-        <h2>⚡ KingsBot</h2>
-        <p style="color:#888;">Groq — Blazing Fast</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.header("📱 KingsBot")
+    st.caption("Phone Edition • v3.0")
     
-    remaining = get_remaining_requests()
-    if remaining > 0:
-        st.info(f"📊 **Requests:** {remaining} / {DAILY_REQUEST_LIMIT}")
-    else:
-        st.warning("⛔ **No requests today**")
-
-    st.write(f"**Model:** {MODELS[st.session_state.current_model_index]}")
-    emotion = detect_emotion(' '.join([m.get('content', '') for m in st.session_state.messages[-5:]])) if st.session_state.messages else 'neutral'
-    st.write(f"**Emotion:** {emotion}")
-    st.write(f"**Topic:** {st.session_state.topics[-1] if st.session_state.topics else 'general'}")
-    st.write("**Speed:** 🚀 500-1000+ tok/sec")
-
+    st.write(f"📊 **Interactions:** {st.session_state.interaction_count}")
+    
+    emotion_emoji = {
+        "happy": "😊", "sad": "😢", "angry": "😤",
+        "confused": "🤔", "worried": "😰", "neutral": "🤖"
+    }.get(st.session_state.emotion, "🤖")
+    st.write(f"❤️ **Emotion:** {emotion_emoji} {st.session_state.emotion}")
+    st.write(f"🎯 **Topic:** {st.session_state.topic}")
+    
     st.divider()
-
-    if st.button("➕ New Chat", use_container_width=True):
-        start_new_chat()
-        st.rerun()
-
-    st.subheader("💬 Chats")
-    for chat in st.session_state.saved_chats[:10]:
-        title = chat.get("title", "New chat")
-        display = title[:25] + "..." if len(title) > 25 else title
+    
+    st.subheader("💬 Conversations")
+    for chat in st.session_state.chats:
+        title = chat.get("title", "New Chat")
+        display = title[:20] + "..." if len(title) > 20 else title
         prefix = "🟢 " if chat["id"] == st.session_state.current_chat_id else "💬 "
         if st.button(prefix + display, key="chat_" + chat["id"], use_container_width=True):
             st.session_state.current_chat_id = chat["id"]
-            st.session_state.messages = list(chat.get("messages", []))
+            st.session_state.messages = chat.get("messages", [])
             st.rerun()
-
+    
+    if st.button("➕ New Chat", use_container_width=True):
+        new_id = uuid.uuid4().hex[:8]
+        st.session_state.chats.append({"id": new_id, "title": "New Chat", "messages": []})
+        st.session_state.current_chat_id = new_id
+        st.session_state.messages = []
+        st.rerun()
+    
     st.divider()
-
-    with st.expander("📁 File Upload"):
-        uploaded_file = st.file_uploader("Upload file", type=["txt", "pdf", "docx", "csv", "py", "js", "html", "css", "json", "md"])
-        if uploaded_file:
-            content = process_uploaded_file(uploaded_file)
-            if content and "Error" not in content:
-                st.session_state.uploaded_files.append({"name": uploaded_file.name, "content": content})
-                st.success(f"✅ {uploaded_file.name} uploaded")
-            else:
-                st.error(content or "Failed to process file")
-
-    with st.expander("🎤 Voice Input"):
-        audio_file = st.audio_input("Speak into microphone")
-        if audio_file:
-            with st.spinner("Processing voice..."):
-                text = speech_to_text(audio_file.read())
-                if text:
-                    st.success(f"🗣️ You said: {text}")
-                    st.session_state.voice_input = text
-                else:
-                    st.error("Could not understand audio")
-
-    with st.expander("📊 Analytics"):
-        st.metric("Total Interactions", st.session_state.analytics.get("total_interactions", 0))
-        st.metric("Avg Response Time", f"{st.session_state.analytics.get('average_response_time', 0):.2f}s")
-        
-        if st.session_state.analytics.get("emotions_count"):
-            st.write("**Emotions:**")
-            for emotion, count in st.session_state.analytics["emotions_count"].items():
-                st.write(f"• {emotion}: {count}")
-        
-        if st.session_state.analytics.get("topics_count"):
-            st.write("**Topics:**")
-            for topic, count in st.session_state.analytics["topics_count"].items():
-                st.write(f"• {topic}: {count}")
-
-    st.divider()
-
-    if st.button("📥 Export Chat", use_container_width=True):
-        st.download_button(
-            "Download Export",
-            export_conversation(),
-            f"kingsbot_export_{datetime.now().strftime('%Y%m%d')}.md",
-            "text/markdown"
-        )
-
+    
+    st.subheader("🧠 Memory")
+    st.write(f"**Name:** {st.session_state.user_name or 'Not set'}")
+    st.write(f"**Facts:** {len(st.session_state.memory_facts)}")
+    st.write(f"**Preferences:** {len(st.session_state.memory_preferences)}")
+    
     if st.button("🧹 Clear Memory", use_container_width=True):
         st.session_state.user_name = ""
         st.session_state.memory_facts = []
         st.session_state.memory_preferences = []
-        st.session_state.emotion_history = []
-        save_memory()
         st.rerun()
-
-    st.divider()
-    st.caption("⚡ KingsBot • Groq • Blazing Fast")
+    
+    if st.button("📤 Export Chat", use_container_width=True):
+        # Simple export
+        lines = ["# KingsBot Chat Export", f"Date: {datetime.now().strftime('%B %d, %Y')}", ""]
+        for msg in st.session_state.messages:
+            role = "👤 User" if msg["role"] == "user" else "🤖 KingsBot"
+            lines.append(f"**{role}:** {msg['content']}")
+        st.download_button("📥 Download", "\n".join(lines), "chat_export.txt", "text/plain")
 
 # ============================================================
-# MAIN
+# MAIN CHAT
 # ============================================================
 
+# Display header
 st.markdown("""
-<div class="main-header">
-    <h1>⚡ KingsBot Ultimate</h1>
-    <p>Groq • Blazing Fast • Memory • Voice • Files • Analytics • FREE</p>
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+    <span style="font-size: 28px;">📱</span>
+    <h1 style="font-size: 22px; margin: 0;">KingsBot</h1>
 </div>
 """, unsafe_allow_html=True)
 
+# Display chat messages
+st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="user-bubble">👤 {msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="assistant-bubble">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================================
+# CUSTOM INPUT (Phone-friendly)
+# ============================================================
+
+import random
+
+st.markdown('<div class="input-container">', unsafe_allow_html=True)
+
+# Toggle row
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-number">{len(st.session_state.messages)}</div>
-        <div style="color:#888;">Messages</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.button("🌐 Search", key="web_search_btn", use_container_width=True):
+        st.session_state.web_search = not st.session_state.web_search
+        st.rerun()
+    if st.session_state.web_search:
+        st.caption("✅ ON", help="Web search enabled")
+
 with col2:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-number">{st.session_state.analytics.get('total_interactions', 0)}</div>
-        <div style="color:#888;">Interactions</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.button("🧠 Think", key="think_btn", use_container_width=True):
+        st.session_state.think_mode = not st.session_state.think_mode
+        st.rerun()
+    if st.session_state.think_mode:
+        st.caption("✅ ON", help="Think mode enabled")
+
 with col3:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-number">{len(st.session_state.memory_facts)}</div>
-        <div style="color:#888;">Facts</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.button("🧹 Clear", key="clear_btn", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
 with col4:
-    remaining = get_remaining_requests()
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-number">{remaining}</div>
-        <div style="color:#888;">Requests Left</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.button("📂 Sidebar", key="sidebar_btn", use_container_width=True):
+        st.sidebar.toggle()
 
-# Voice input from sidebar
-if hasattr(st.session_state, 'voice_input') and st.session_state.voice_input:
-    prompt = st.session_state.voice_input
-    st.session_state.voice_input = None
-else:
-    prompt = st.chat_input("Ask KingsBot anything...")
+# Input row
+col1, col2 = st.columns([5, 1])
+with col1:
+    prompt = st.text_input("", placeholder="Type your message...", key="message_input", label_visibility="collapsed")
+with col2:
+    if st.button("Send", key="send_btn", use_container_width=True):
+        if prompt and prompt.strip():
+            with st.spinner("Thinking..."):
+                # Save user message
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                st.session_state.interaction_count += 1
+                
+                # Generate response
+                response = generate_response(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                
+                # Update chat
+                for chat in st.session_state.chats:
+                    if chat["id"] == st.session_state.current_chat_id:
+                        chat["messages"] = st.session_state.messages
+                        if len(st.session_state.messages) == 2:
+                            chat["title"] = prompt[:30] + "..." if len(prompt) > 30 else prompt
+                        break
+                
+                st.rerun()
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+st.markdown('</div>', unsafe_allow_html=True)
 
-if prompt:
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    with st.chat_message("assistant"):
-        with st.spinner("⚡ KingsBot is thinking (Groq — blazing fast)..."):
-            file_content = None
-            if st.session_state.uploaded_files:
-                file_content = st.session_state.uploaded_files[-1]["content"]
-            
-            answer = ask_kingsbot(prompt, file_content)
-            st.markdown(answer)
-            
-            emotion = detect_emotion(prompt)
-            topic = detect_topic(prompt)
-            st.caption(f"🎯 Topic: {topic} • ❤️ Emotion: {emotion} • 🚀 Model: {MODELS[st.session_state.current_model_index]}")
+# ============================================================
+# FOOTER
+# ============================================================
 
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.messages.append({"role": "assistant", "content": answer})
-    save_current_chat()
-    st.rerun()
-
-st.divider()
-st.caption("⚡ KingsBot Ultimate • Powered by Groq • 500-1000+ tokens/sec • 100% FREE")
+st.markdown("""
+<div style="
+    position: fixed;
+    bottom: 100px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 11px;
+    color: #555;
+    padding: 4px;
+    z-index: 99;
+    pointer-events: none;
+">
+    📱 KingsBot • Free • Memory • Web Search • Think Mode
+</div>
+""", unsafe_allow_html=True)
