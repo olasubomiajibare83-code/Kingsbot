@@ -20,7 +20,7 @@ from docx import Document
 import markdown
 
 # ============================================================
-# ULTIMATE KINGSBOT AI — ALL FEATURES
+# ULTIMATE KINGSBOT AI — ALL FEATURES (FIXED)
 # ============================================================
 
 st.set_page_config(
@@ -182,7 +182,7 @@ def default_memory():
 memory_data = load_json(MEMORY_FILE, default_memory())
 
 # ============================================================
-# CHAT STORAGE
+# CHAT STORAGE — FIXED
 # ============================================================
 
 def new_chat():
@@ -248,6 +248,8 @@ if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
 if "language" not in st.session_state:
     st.session_state.language = "English"
+if "voice_input" not in st.session_state:
+    st.session_state.voice_input = None
 
 # ============================================================
 # API KEY
@@ -291,7 +293,6 @@ def detect_emotion(text):
                 "time": datetime.now().isoformat()
             })
             st.session_state.emotion_history = st.session_state.emotion_history[-50:]
-            # Update analytics
             if emotion not in st.session_state.analytics["emotions_count"]:
                 st.session_state.analytics["emotions_count"][emotion] = 0
             st.session_state.analytics["emotions_count"][emotion] += 1
@@ -324,7 +325,6 @@ def detect_topic(text):
             if topic not in st.session_state.topics:
                 st.session_state.topics.append(topic)
                 st.session_state.topics = st.session_state.topics[-30:]
-                # Update analytics
                 if topic not in st.session_state.analytics["topics_count"]:
                     st.session_state.analytics["topics_count"][topic] = 0
                 st.session_state.analytics["topics_count"][topic] += 1
@@ -357,7 +357,7 @@ def process_uploaded_file(uploaded_file):
         else:
             return "⚠️ File type not supported for extraction."
         
-        return content[:5000]  # Limit to 5000 chars
+        return content[:5000]
     except Exception as e:
         return f"Error processing file: {str(e)}"
 
@@ -372,11 +372,7 @@ def speech_to_text(audio_bytes):
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
             audio = recognizer.record(source)
         return recognizer.recognize_google(audio)
-    except sr.UnknownValueError:
-        return None
-    except sr.RequestError:
-        return None
-    except Exception:
+    except:
         return None
 
 # ============================================================
@@ -510,15 +506,50 @@ def build_messages(user_text):
     return result
 
 # ============================================================
-# CACHED RESPONSE
+# SAVE CHAT — FIXED
 # ============================================================
 
-@lru_cache(maxsize=100)
-def get_cached_response(prompt_hash: str) -> str:
-    return None
+def save_current_chat():
+    for chat in st.session_state.saved_chats:
+        if chat["id"] == st.session_state.current_chat_id:
+            chat["messages"] = list(st.session_state.messages)
+            chat["updated"] = datetime.now().isoformat(timespec="seconds")
+            
+            # ✅ FIX: Ensure metadata exists
+            if "metadata" not in chat:
+                chat["metadata"] = {"topics": [], "emotions": [], "message_count": 0}
+            
+            chat["metadata"]["message_count"] = len(st.session_state.messages)
+            
+            for msg in st.session_state.messages:
+                if msg.get("role") == "user" and msg.get("content"):
+                    title = " ".join(msg["content"].split())
+                    chat["title"] = title[:50] + "..." if len(title) > 50 else title
+                    break
+            break
+    save_json(CHATS_FILE, st.session_state.saved_chats)
+
+def start_new_chat():
+    chat = new_chat()
+    st.session_state.saved_chats.insert(0, chat)
+    st.session_state.current_chat_id = chat["id"]
+    st.session_state.messages = []
+    save_json(CHATS_FILE, st.session_state.saved_chats)
 
 # ============================================================
-# ASK KINGSBOT — ULTIMATE
+# EXPORT CONVERSATION
+# ============================================================
+
+def export_conversation():
+    lines = ["# KingsBot Conversation Export", f"Date: {datetime.now().strftime('%B %d, %Y at %H:%M')}", ""]
+    for msg in st.session_state.messages:
+        role = "👤 User" if msg["role"] == "user" else "🤖 KingsBot"
+        lines.append(f"**{role}:** {msg['content']}")
+        lines.append("")
+    return "\n".join(lines)
+
+# ============================================================
+# ASK KINGSBOT
 # ============================================================
 
 def ask_kingsbot(user_text, file_content=None):
@@ -537,7 +568,6 @@ def ask_kingsbot(user_text, file_content=None):
     emotion = detect_emotion(user_text)
     topic = detect_topic(user_text)
     
-    # Update analytics
     st.session_state.analytics["total_interactions"] += 1
     today = str(date.today())
     if today not in st.session_state.analytics["daily_usage"]:
@@ -547,7 +577,6 @@ def ask_kingsbot(user_text, file_content=None):
 
     rate_limiter.wait_if_needed()
 
-    # Add file content to prompt if provided
     full_text = user_text
     if file_content:
         full_text += f"\n\nFile content:\n{file_content}"
@@ -618,43 +647,6 @@ def ask_kingsbot(user_text, file_content=None):
     return "❌ **Max retries exceeded.** Please try again later."
 
 # ============================================================
-# SAVE CHAT
-# ============================================================
-
-def save_current_chat():
-    for chat in st.session_state.saved_chats:
-        if chat["id"] == st.session_state.current_chat_id:
-            chat["messages"] = list(st.session_state.messages)
-            chat["updated"] = datetime.now().isoformat(timespec="seconds")
-            chat["metadata"]["message_count"] = len(st.session_state.messages)
-            for msg in st.session_state.messages:
-                if msg.get("role") == "user" and msg.get("content"):
-                    title = " ".join(msg["content"].split())
-                    chat["title"] = title[:50] + "..." if len(title) > 50 else title
-                    break
-            break
-    save_json(CHATS_FILE, st.session_state.saved_chats)
-
-def start_new_chat():
-    chat = new_chat()
-    st.session_state.saved_chats.insert(0, chat)
-    st.session_state.current_chat_id = chat["id"]
-    st.session_state.messages = []
-    save_json(CHATS_FILE, st.session_state.saved_chats)
-
-# ============================================================
-# EXPORT CONVERSATION
-# ============================================================
-
-def export_conversation():
-    lines = ["# KingsBot Conversation Export", f"Date: {datetime.now().strftime('%B %d, %Y at %H:%M')}", ""]
-    for msg in st.session_state.messages:
-        role = "👤 User" if msg["role"] == "user" else "🤖 KingsBot"
-        lines.append(f"**{role}:** {msg['content']}")
-        lines.append("")
-    return "\n".join(lines)
-
-# ============================================================
 # SIDEBAR
 # ============================================================
 
@@ -673,7 +665,8 @@ with st.sidebar:
         st.warning("⛔ **No requests today**")
 
     st.write(f"**Model:** {MODELS[st.session_state.current_model_index]}")
-    st.write(f"**Emotion:** {detect_emotion(' '.join([m.get('content', '') for m in st.session_state.messages[-5:]])) if st.session_state.messages else 'neutral'}")
+    emotion = detect_emotion(' '.join([m.get('content', '') for m in st.session_state.messages[-5:]])) if st.session_state.messages else 'neutral'
+    st.write(f"**Emotion:** {emotion}")
     st.write(f"**Topic:** {st.session_state.topics[-1] if st.session_state.topics else 'general'}")
 
     st.divider()
@@ -761,7 +754,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Stats row
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown(f"""
@@ -800,19 +792,16 @@ if hasattr(st.session_state, 'voice_input') and st.session_state.voice_input:
 else:
     prompt = st.chat_input("Ask KingsBot anything...")
 
-# Display chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Process prompt
 if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
     
     with st.chat_message("assistant"):
         with st.spinner("🧠 KingsBot is thinking..."):
-            # Check for file content
             file_content = None
             if st.session_state.uploaded_files:
                 file_content = st.session_state.uploaded_files[-1]["content"]
@@ -820,7 +809,6 @@ if prompt:
             answer = ask_kingsbot(prompt, file_content)
             st.markdown(answer)
             
-            # Show metadata
             emotion = detect_emotion(prompt)
             topic = detect_topic(prompt)
             st.caption(f"🎯 Topic: {topic} • ❤️ Emotion: {emotion} • 🧠 Model: {MODELS[st.session_state.current_model_index]}")
@@ -829,10 +817,6 @@ if prompt:
     st.session_state.messages.append({"role": "assistant", "content": answer})
     save_current_chat()
     st.rerun()
-
-# ============================================================
-# FOOTER
-# ============================================================
 
 st.divider()
 st.caption("🧠 KingsBot Ultimate • All Features • 100% FREE • Powered by OpenRouter")
