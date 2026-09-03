@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, date
 import requests
 import io
+import random
 
 # ============================================================
 # PAGE SETTINGS
@@ -26,7 +27,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* Phone-friendly dark theme */
     .main {
         padding: 0 !important;
     }
@@ -35,7 +35,6 @@ st.markdown("""
         max-width: 100% !important;
     }
     
-    /* Chat bubbles */
     .user-bubble {
         background: linear-gradient(135deg, #667eea, #764ba2);
         color: white;
@@ -64,15 +63,37 @@ st.markdown("""
         to { opacity: 1; transform: translateY(0); }
     }
     
-    /* Toggle buttons - phone friendly */
     .stButton > button {
         width: 100%;
         border-radius: 20px;
         padding: 0.5rem !important;
         font-size: 14px !important;
+        border: none;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
     }
     
-    /* Input bar - fixed at bottom */
+    .stButton > button:hover {
+        transform: scale(1.02);
+    }
+    
+    .stButton > button:active {
+        transform: scale(0.95);
+    }
+    
+    .stTextInput > div > div > input {
+        border-radius: 25px;
+        padding: 12px 16px;
+        font-size: 16px !important;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: white;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #667eea;
+    }
+    
     .input-container {
         position: fixed;
         bottom: 0;
@@ -126,7 +147,6 @@ st.markdown("""
         transform: scale(0.95);
     }
     
-    /* Toggle row */
     .toggle-row {
         display: flex;
         gap: 6px;
@@ -156,25 +176,17 @@ st.markdown("""
         transform: scale(0.95);
     }
     
-    /* Sidebar */
-    .css-1d391kg {
-        background: rgba(0,0,0,0.95);
+    .chat-container {
+        padding-bottom: 160px;
     }
     
-    /* Hide default footer */
     footer {
         display: none;
     }
     
-    /* Make chat scrollable with bottom padding */
-    .chat-container {
-        padding-bottom: 140px;
-    }
-    
-    /* Mobile adjustments */
     @media (max-width: 600px) {
         .input-row input {
-            font-size: 16px !important; /* Prevents zoom on iOS */
+            font-size: 16px !important;
         }
         .user-bubble, .assistant-bubble {
             font-size: 15px;
@@ -210,8 +222,21 @@ if "chats" not in st.session_state:
     st.session_state.chats = [{"id": "default", "title": "New Chat", "messages": []}]
 if "current_chat_id" not in st.session_state:
     st.session_state.current_chat_id = "default"
-if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = True
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+
+# ============================================================
+# API KEY
+# ============================================================
+
+def get_api_key():
+    try:
+        key = st.secrets.get("OPENROUTER_API_KEY")
+        if key:
+            return str(key).strip()
+    except Exception:
+        pass
+    return st.session_state.api_key
 
 # ============================================================
 # FEATURES
@@ -293,24 +318,95 @@ def web_search(query):
             if data.get("extract"):
                 return data["extract"]
         
-        # Fallback: DuckDuckGo
         url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("AbstractText"):
                 return data["AbstractText"]
-        
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 # ============================================================
-# RESPONSE GENERATOR (FULL BRAIN)
+# REAL AI RESPONSE — KNOWS EVERYTHING
+# ============================================================
+
+def real_ai_response(prompt, emotion, topic, memory_text):
+    api_key = get_api_key()
+    
+    if not api_key:
+        return "🔑 **API Key Missing.**\n\nPlease enter your OpenRouter API key in the sidebar, or add it to Streamlit Secrets.\n\nGet a free key at: openrouter.ai/settings/keys"
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Build memory context
+        memory = f"User's name: {st.session_state.user_name or 'Unknown'}. "
+        if st.session_state.memory_facts:
+            memory += f"Facts: {', '.join(st.session_state.memory_facts[-3:])}. "
+        if st.session_state.memory_preferences:
+            memory += f"Preferences: {', '.join(st.session_state.memory_preferences[-3:])}. "
+
+        system_prompt = f"""You are KingsBot, a helpful AI assistant.
+
+Current date: {datetime.now().strftime('%B %d, %Y')}
+
+User emotion: {emotion}
+User topic: {topic}
+
+Memory: {memory}
+
+Be helpful, clear, and concise. Answer any question the user asks. If you don't know something, say so."""
+
+        # Build conversation
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in st.session_state.messages[-15:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": prompt})
+
+        # Add web search result if enabled
+        if st.session_state.web_search:
+            search_result = web_search(prompt)
+            if search_result:
+                messages.append({"role": "system", "content": f"Web search result: {search_result[:2000]}"})
+
+        data = {
+            "model": "google/gemma-4-26b-a4b-it:free",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 600
+        }
+
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        elif response.status_code == 429:
+            return "⏳ **Rate limit exceeded.** Please wait a moment and try again."
+        else:
+            return f"❌ **Error:** {response.status_code} - {response.text}"
+
+    except requests.exceptions.Timeout:
+        return "⏳ **Request timed out.** Please try again."
+    except Exception as e:
+        return f"❌ **Error:** {str(e)}"
+
+# ============================================================
+# RESPONSE GENERATOR
 # ============================================================
 
 def generate_response(prompt):
-    # Detect features from user input
+    # Detect features
     name = detect_name(prompt)
     if name:
         st.session_state.user_name = name
@@ -336,33 +432,7 @@ def generate_response(prompt):
     st.session_state.emotion = emotion
     st.session_state.topic = topic
 
-    # Web search if enabled
-    web_result = ""
-    if st.session_state.web_search:
-        with st.spinner("🌐 Searching the web..."):
-            result = web_search(prompt)
-            if result:
-                web_result = f"\n\n[Web Search Result]\n{result[:2000]}"
-
-    # Think mode (adds reasoning)
-    think_prefix = ""
-    if st.session_state.think_mode:
-        think_prefix = "Let me think about this carefully... 🤔\n\n"
-
-    # Generate intelligent response
-    response = generate_advanced_response(prompt, emotion, topic)
-
-    # Add web result if available
-    if web_result:
-        response += f"\n\n---\n{web_result}"
-
-    if think_prefix:
-        response = think_prefix + response
-
-    return response
-
-def generate_advanced_response(prompt, emotion, topic):
-    # Build memory context
+    # Memory context for AI
     memory_text = ""
     if st.session_state.user_name:
         memory_text += f"User's name: {st.session_state.user_name}. "
@@ -371,116 +441,8 @@ def generate_advanced_response(prompt, emotion, topic):
     if st.session_state.memory_preferences:
         memory_text += f"Preferences: {', '.join(st.session_state.memory_preferences[-3:])}. "
 
-    # Build response based on topic and emotion
-    lower = prompt.lower()
-    
-    # GREETINGS
-    if re.match(r'^(hi|hello|hey|greetings|sup|what\'s up|yo|howdy)', lower):
-        return random_greeting()
-    
-    # HOW ARE YOU
-    if re.search(r'how are you|how\'s it going|how do you do', lower):
-        return random_how_are_you()
-    
-    # NAME
-    if re.search(r'what is your name|who are you|your name', lower):
-        return "I'm KingsBot! 📱 Your intelligent phone assistant with memory, emotions, web search, and more! I'm designed to run on your phone."
-
-    # TIME
-    if re.search(r'what time is it|current time|time now', lower):
-        return f"🕐 The current time is {datetime.now().strftime('%I:%M %p')}."
-
-    # DATE
-    if re.search(r'what day is it|what\'s the date|today\'s date', lower):
-        return f"📅 Today is {datetime.now().strftime('%A, %B %d, %Y')}."
-
-    # MATH
-    math_match = re.search(r'(\d+)\s*([\+\-\*/xX])\s*(\d+)', lower)
-    if math_match:
-        try:
-            a = int(math_match.group(1))
-            op = math_match.group(2)
-            b = int(math_match.group(3))
-            if op == '+':
-                result = a + b
-            elif op == '-':
-                result = a - b
-            elif op == 'x' or op == 'X' or op == '*':
-                result = a * b
-            elif op == '/':
-                result = a / b if b != 0 else "Cannot divide by zero"
-            return f"🧮 {a} {op} {b} = {result}"
-        except:
-            pass
-
-    # HELP
-    if re.search(r'help|what can you do|capabilities|features', lower):
-        return f"""
-🤖 **I can help you with:**
-
-📚 **General Knowledge** — History, geography, science, and more!
-🧮 **Mathematics** — Basic arithmetic
-💻 **Coding** — Python tips and explanations
-🎯 **Memory** — I remember your name, facts, and preferences
-🌐 **Web Search** — Toggle "🌐 Search" for real-time info
-🧠 **Think Mode** — Toggle "🧠 Think" for reasoning
-❤️ **Emotions** — I adapt to how you feel
-💬 **Multiple Chats** — Start new conversations
-📁 **File Upload** — Upload and read documents
-📊 **Analytics** — Track your usage
-
-**Commands:**
-- "My name is Alex" → Saves your name
-- "Remember that..." → Saves a fact
-- "I like Python" → Saves a preference
-- "What is 25 x 4?" → Math
-
-**Toggles:**
-- 🌐 Search — Enable web search
-- 🧠 Think — Enable reasoning mode
-"""
-
-    # MEMORY COMMANDS
-    if "forget everything" in lower or "clear memory" in lower:
-        st.session_state.user_name = ""
-        st.session_state.memory_facts = []
-        st.session_state.memory_preferences = []
-        return "🧹 Done. I cleared all your memory."
-
-    if "forget my name" in lower:
-        st.session_state.user_name = ""
-        return "✅ Done. I forgot your name."
-
-    if "forget my facts" in lower:
-        st.session_state.memory_facts = []
-        return "✅ Done. I forgot all your facts."
-
-    if "forget my preferences" in lower:
-        st.session_state.memory_preferences = []
-        return "✅ Done. I forgot all your preferences."
-
-    # Unknown
-    emotion_emoji = {
-        "happy": "😊", "sad": "😢", "angry": "😤",
-        "confused": "🤔", "worried": "😰", "neutral": "🤖"
-    }.get(emotion, "🤖")
-    
-    return f"{emotion_emoji} I'm here to help! What would you like to know? I can answer questions, solve math, remember facts, and search the web (if you toggle 🌐 Search)."
-
-def random_greeting():
-    return random.choice([
-        "Hello! 👋 How can I help you today?",
-        "Hi there! 😊 What's on your mind?",
-        "Hey! Great to talk to you!",
-        "Greetings! 📱 I'm here to assist you.",
-    ])
-
-def random_how_are_you():
-    return random.choice([
-        "I'm doing great, thanks! 😊 How about you?",
-        "I'm functioning perfectly! 📱 How can I help?",
-        "I'm always ready to help! 💪"
-    ])
+    # Use REAL AI (knows everything)
+    return real_ai_response(prompt, emotion, topic, memory_text)
 
 # ============================================================
 # SIDEBAR
@@ -488,7 +450,18 @@ def random_how_are_you():
 
 with st.sidebar:
     st.header("📱 KingsBot")
-    st.caption("Phone Edition • v3.0")
+    st.caption("Knows Everything • Phone Edition")
+    
+    # API Key input
+    st.subheader("🔑 API Key")
+    api_key = st.text_input("OpenRouter API Key", type="password", placeholder="sk-or-...")
+    if api_key:
+        st.session_state.api_key = api_key
+        st.success("✅ Key saved")
+    else:
+        st.caption("Get free key at openrouter.ai/settings/keys")
+    
+    st.divider()
     
     st.write(f"📊 **Interactions:** {st.session_state.interaction_count}")
     
@@ -532,7 +505,6 @@ with st.sidebar:
         st.rerun()
     
     if st.button("📤 Export Chat", use_container_width=True):
-        # Simple export
         lines = ["# KingsBot Chat Export", f"Date: {datetime.now().strftime('%B %d, %Y')}", ""]
         for msg in st.session_state.messages:
             role = "👤 User" if msg["role"] == "user" else "🤖 KingsBot"
@@ -543,15 +515,15 @@ with st.sidebar:
 # MAIN CHAT
 # ============================================================
 
-# Display header
 st.markdown("""
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
     <span style="font-size: 28px;">📱</span>
     <h1 style="font-size: 22px; margin: 0;">KingsBot</h1>
+    <span style="font-size: 12px; color: #667eea; margin-left: auto;">Knows Everything</span>
 </div>
 """, unsafe_allow_html=True)
 
-# Display chat messages
+# Display chat
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 for msg in st.session_state.messages:
     if msg["role"] == "user":
@@ -561,10 +533,8 @@ for msg in st.session_state.messages:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# CUSTOM INPUT (Phone-friendly)
+# INPUT
 # ============================================================
-
-import random
 
 st.markdown('<div class="input-container">', unsafe_allow_html=True)
 
@@ -575,14 +545,14 @@ with col1:
         st.session_state.web_search = not st.session_state.web_search
         st.rerun()
     if st.session_state.web_search:
-        st.caption("✅ ON", help="Web search enabled")
+        st.caption("✅ ON")
 
 with col2:
     if st.button("🧠 Think", key="think_btn", use_container_width=True):
         st.session_state.think_mode = not st.session_state.think_mode
         st.rerun()
     if st.session_state.think_mode:
-        st.caption("✅ ON", help="Think mode enabled")
+        st.caption("✅ ON")
 
 with col3:
     if st.button("🧹 Clear", key="clear_btn", use_container_width=True):
@@ -596,20 +566,17 @@ with col4:
 # Input row
 col1, col2 = st.columns([5, 1])
 with col1:
-    prompt = st.text_input("", placeholder="Type your message...", key="message_input", label_visibility="collapsed")
+    prompt = st.text_input("", placeholder="Ask anything...", key="message_input", label_visibility="collapsed")
 with col2:
     if st.button("Send", key="send_btn", use_container_width=True):
         if prompt and prompt.strip():
-            with st.spinner("Thinking..."):
-                # Save user message
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                st.session_state.interaction_count += 1
-                
-                # Generate response
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            st.session_state.interaction_count += 1
+            
+            with st.spinner("🧠 Thinking..."):
                 response = generate_response(prompt)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 
-                # Update chat
                 for chat in st.session_state.chats:
                     if chat["id"] == st.session_state.current_chat_id:
                         chat["messages"] = st.session_state.messages
@@ -638,6 +605,6 @@ st.markdown("""
     z-index: 99;
     pointer-events: none;
 ">
-    📱 KingsBot • Free • Memory • Web Search • Think Mode
+    📱 KingsBot • Knows Everything • Free API • Memory • Web Search
 </div>
 """, unsafe_allow_html=True)
