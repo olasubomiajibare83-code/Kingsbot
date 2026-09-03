@@ -1,13 +1,11 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import json
 import os
 import re
 import time
 import uuid
-from datetime import datetime, date
+from datetime import datetime
 import requests
-import io
 import random
 
 # ============================================================
@@ -18,11 +16,11 @@ st.set_page_config(
     page_title="KingsBot Phone",
     page_icon="📱",
     layout="centered",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ============================================================
-# CUSTOM CSS FOR PHONE
+# CUSTOM CSS
 # ============================================================
 
 st.markdown("""
@@ -147,37 +145,8 @@ st.markdown("""
         transform: scale(0.95);
     }
     
-    .toggle-row {
-        display: flex;
-        gap: 6px;
-        justify-content: center;
-        padding: 2px 0;
-        flex-wrap: wrap;
-    }
-    
-    .toggle-btn {
-        padding: 4px 12px;
-        border-radius: 15px;
-        border: 1px solid rgba(255,255,255,0.2);
-        background: transparent;
-        color: #888;
-        font-size: 12px;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-    
-    .toggle-btn.active {
-        background: #667eea;
-        border-color: #667eea;
-        color: white;
-    }
-    
-    .toggle-btn:active {
-        transform: scale(0.95);
-    }
-    
     .chat-container {
-        padding-bottom: 160px;
+        padding-bottom: 100px;
     }
     
     footer {
@@ -242,7 +211,6 @@ def get_api_key():
 # FEATURES
 # ============================================================
 
-# Emotion Detection
 EMOTION_KEYWORDS = {
     "happy": ["happy", "great", "awesome", "amazing", "love", "wonderful", "excited", "glad", "yesss"],
     "sad": ["sad", "crying", "upset", "hurt", "depressed", "miserable", "lonely", "disappointed"],
@@ -329,14 +297,14 @@ def web_search(query):
         return None
 
 # ============================================================
-# REAL AI RESPONSE — KNOWS EVERYTHING
+# REAL AI RESPONSE
 # ============================================================
 
-def real_ai_response(prompt, emotion, topic, memory_text):
+def real_ai_response(prompt, emotion, topic):
     api_key = get_api_key()
     
     if not api_key:
-        return "🔑 **API Key Missing.**\n\nPlease enter your OpenRouter API key in the sidebar, or add it to Streamlit Secrets.\n\nGet a free key at: openrouter.ai/settings/keys"
+        return "🔑 **API Key Missing.**\n\nPlease enter your OpenRouter API key in the sidebar.\n\nGet a free key at: openrouter.ai/settings/keys"
 
     try:
         headers = {
@@ -344,7 +312,6 @@ def real_ai_response(prompt, emotion, topic, memory_text):
             "Content-Type": "application/json"
         }
         
-        # Build memory context
         memory = f"User's name: {st.session_state.user_name or 'Unknown'}. "
         if st.session_state.memory_facts:
             memory += f"Facts: {', '.join(st.session_state.memory_facts[-3:])}. "
@@ -362,13 +329,11 @@ Memory: {memory}
 
 Be helpful, clear, and concise. Answer any question the user asks. If you don't know something, say so."""
 
-        # Build conversation
         messages = [{"role": "system", "content": system_prompt}]
         for msg in st.session_state.messages[-15:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": prompt})
 
-        # Add web search result if enabled
         if st.session_state.web_search:
             search_result = web_search(prompt)
             if search_result:
@@ -391,6 +356,8 @@ Be helpful, clear, and concise. Answer any question the user asks. If you don't 
         if response.status_code == 200:
             result = response.json()
             return result["choices"][0]["message"]["content"]
+        elif response.status_code == 401:
+            return "🔑 **Invalid API Key.**\n\nPlease check your OpenRouter API key and try again.\n\nGet a free key at: openrouter.ai/settings/keys"
         elif response.status_code == 429:
             return "⏳ **Rate limit exceeded.** Please wait a moment and try again."
         else:
@@ -406,7 +373,6 @@ Be helpful, clear, and concise. Answer any question the user asks. If you don't 
 # ============================================================
 
 def generate_response(prompt):
-    # Detect features
     name = detect_name(prompt)
     if name:
         st.session_state.user_name = name
@@ -426,26 +392,19 @@ def generate_response(prompt):
             st.session_state.memory_preferences = st.session_state.memory_preferences[-30:]
         return f"💖 I'll remember that you {preference.lower()}"
 
-    # Detect emotion and topic
     emotion = detect_emotion(prompt)
     topic = detect_topic(prompt)
     st.session_state.emotion = emotion
     st.session_state.topic = topic
 
-    # Memory context for AI
-    memory_text = ""
-    if st.session_state.user_name:
-        memory_text += f"User's name: {st.session_state.user_name}. "
-    if st.session_state.memory_facts:
-        memory_text += f"Facts: {', '.join(st.session_state.memory_facts[-3:])}. "
-    if st.session_state.memory_preferences:
-        memory_text += f"Preferences: {', '.join(st.session_state.memory_preferences[-3:])}. "
-
-    # Use REAL AI (knows everything)
-    return real_ai_response(prompt, emotion, topic, memory_text)
+    # Think mode
+    if st.session_state.think_mode:
+        return f"🤔 **Thinking...**\n\n{real_ai_response(prompt, emotion, topic)}"
+    
+    return real_ai_response(prompt, emotion, topic)
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR — ALL BUTTONS HERE
 # ============================================================
 
 with st.sidebar:
@@ -454,7 +413,7 @@ with st.sidebar:
     
     # API Key input
     st.subheader("🔑 API Key")
-    api_key = st.text_input("OpenRouter API Key", type="password", placeholder="sk-or-...")
+    api_key = st.text_input("OpenRouter API Key", type="password", placeholder="sk-or-...", key="api_key_input")
     if api_key:
         st.session_state.api_key = api_key
         st.success("✅ Key saved")
@@ -463,18 +422,49 @@ with st.sidebar:
     
     st.divider()
     
-    st.write(f"📊 **Interactions:** {st.session_state.interaction_count}")
+    # Stats
+    st.subheader("📊 Stats")
+    st.write(f"**Interactions:** {st.session_state.interaction_count}")
     
     emotion_emoji = {
         "happy": "😊", "sad": "😢", "angry": "😤",
         "confused": "🤔", "worried": "😰", "neutral": "🤖"
     }.get(st.session_state.emotion, "🤖")
-    st.write(f"❤️ **Emotion:** {emotion_emoji} {st.session_state.emotion}")
-    st.write(f"🎯 **Topic:** {st.session_state.topic}")
+    st.write(f"**Emotion:** {emotion_emoji} {st.session_state.emotion}")
+    st.write(f"**Topic:** {st.session_state.topic}")
     
     st.divider()
     
-    st.subheader("💬 Conversations")
+    # FEATURES — ALL BUTTONS HERE
+    st.subheader("⚙️ Features")
+    
+    # Web Search Toggle
+    if st.button("🌐 Web Search", use_container_width=True):
+        st.session_state.web_search = not st.session_state.web_search
+        st.rerun()
+    if st.session_state.web_search:
+        st.success("✅ Web Search ON")
+    else:
+        st.info("⏸️ Web Search OFF")
+    
+    # Think Mode Toggle
+    if st.button("🧠 Think Mode", use_container_width=True):
+        st.session_state.think_mode = not st.session_state.think_mode
+        st.rerun()
+    if st.session_state.think_mode:
+        st.success("✅ Think Mode ON")
+    else:
+        st.info("⏸️ Think Mode OFF")
+    
+    # Clear Conversation
+    if st.button("🧹 Clear Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.divider()
+    
+    # Chats
+    st.subheader("💬 Chats")
     for chat in st.session_state.chats:
         title = chat.get("title", "New Chat")
         display = title[:20] + "..." if len(title) > 20 else title
@@ -493,6 +483,7 @@ with st.sidebar:
     
     st.divider()
     
+    # Memory
     st.subheader("🧠 Memory")
     st.write(f"**Name:** {st.session_state.user_name or 'Not set'}")
     st.write(f"**Facts:** {len(st.session_state.memory_facts)}")
@@ -538,32 +529,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="input-container">', unsafe_allow_html=True)
 
-# Toggle row
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    if st.button("🌐 Search", key="web_search_btn", use_container_width=True):
-        st.session_state.web_search = not st.session_state.web_search
-        st.rerun()
-    if st.session_state.web_search:
-        st.caption("✅ ON")
-
-with col2:
-    if st.button("🧠 Think", key="think_btn", use_container_width=True):
-        st.session_state.think_mode = not st.session_state.think_mode
-        st.rerun()
-    if st.session_state.think_mode:
-        st.caption("✅ ON")
-
-with col3:
-    if st.button("🧹 Clear", key="clear_btn", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
-
-with col4:
-    if st.button("📂 Sidebar", key="sidebar_btn", use_container_width=True):
-        st.sidebar.toggle()
-
-# Input row
+# Input row only
 col1, col2 = st.columns([5, 1])
 with col1:
     prompt = st.text_input("", placeholder="Ask anything...", key="message_input", label_visibility="collapsed")
@@ -595,16 +561,16 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown("""
 <div style="
     position: fixed;
-    bottom: 100px;
+    bottom: 80px;
     left: 0;
     right: 0;
     text-align: center;
-    font-size: 11px;
-    color: #555;
+    font-size: 10px;
+    color: #444;
     padding: 4px;
     z-index: 99;
     pointer-events: none;
 ">
-    📱 KingsBot • Knows Everything • Free API • Memory • Web Search
+    📱 KingsBot • Free AI • Memory • Web Search • Think Mode
 </div>
 """, unsafe_allow_html=True)
