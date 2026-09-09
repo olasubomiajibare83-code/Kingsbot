@@ -1,168 +1,125 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import json
-import os
-import re
-import time
-import uuid
-from datetime import datetime, date
-import requests
-import io
 import random
+import time
+import base64
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # ============================================================
 # PAGE SETTINGS
 # ============================================================
 
 st.set_page_config(
-    page_title="KingsBot — Groq",
-    page_icon="⚡",
+    page_title="🥊 Shadow Fight Ultimate",
+    page_icon="🥊",
     layout="centered",
-    initial_sidebar_state="expanded",
 )
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
 
 st.markdown("""
 <style>
-    .main {
-        padding: 0 !important;
+    .fight-title {
+        font-size: 42px;
+        font-weight: bold;
+        text-align: center;
+        background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: glow 2s ease-in-out infinite alternate;
     }
-    .block-container {
-        padding: 0.5rem !important;
-        max-width: 100% !important;
+    @keyframes glow {
+        from { text-shadow: 0 0 10px #ff6b6b; }
+        to { text-shadow: 0 0 30px #4d96ff; }
     }
-    
-    .user-bubble {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-        padding: 10px 14px;
-        border-radius: 18px 18px 4px 18px;
-        max-width: 85%;
-        margin: 4px 0 4px auto;
-        font-size: 14px;
-        animation: slideIn 0.3s ease;
-        word-wrap: break-word;
+    .health-bar {
+        height: 25px;
+        border-radius: 12px;
+        background: #333;
+        overflow: hidden;
+        border: 2px solid #555;
     }
-    .assistant-bubble {
-        background: linear-gradient(135deg, #f093fb, #f5576c);
-        color: white;
-        padding: 10px 14px;
-        border-radius: 18px 18px 18px 4px;
-        max-width: 85%;
-        margin: 4px auto 4px 0;
-        font-size: 14px;
-        animation: slideIn 0.3s ease;
-        word-wrap: break-word;
+    .health-bar-fill {
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.5s ease;
+        background: linear-gradient(90deg, #ff6b6b, #ffd93d);
     }
-    
-    @keyframes slideIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+    .health-bar-fill.enemy {
+        background: linear-gradient(90deg, #ff6b6b, #ff4444);
     }
-    
-    .stButton > button {
-        width: 100%;
-        border-radius: 20px;
-        padding: 0.5rem !important;
-        font-size: 14px !important;
+    .energy-bar {
+        height: 15px;
+        border-radius: 10px;
+        background: #1a1a2e;
+        overflow: hidden;
+        border: 1px solid #4d96ff;
+    }
+    .energy-bar-fill {
+        height: 100%;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #4d96ff, #6bcb77);
+        transition: width 0.3s ease;
+    }
+    .fight-log {
+        max-height: 200px;
+        overflow-y: auto;
+        background: rgba(0,0,0,0.7);
+        border-radius: 10px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 13px;
+        border: 1px solid #333;
+    }
+    .attack-btn {
         border: none;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-    }
-    
-    .stButton > button:hover {
-        transform: scale(1.02);
-    }
-    
-    .stButton > button:active {
-        transform: scale(0.95);
-    }
-    
-    .stTextInput > div > div > input {
-        border-radius: 25px;
-        padding: 12px 16px;
-        font-size: 16px !important;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
-        color: white;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #667eea;
-    }
-    
-    .input-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: rgba(10, 10, 10, 0.95);
-        padding: 8px 10px;
-        backdrop-filter: blur(10px);
-        border-top: 1px solid rgba(255,255,255,0.05);
-        z-index: 100;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-    
-    .input-row {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-    }
-    
-    .input-row input {
-        flex: 1;
-        padding: 10px 14px;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 25px;
-        background: rgba(255,255,255,0.05);
-        color: white;
+        border-radius: 12px;
+        padding: 12px 8px;
+        font-weight: bold;
         font-size: 14px;
-        outline: none;
-        min-height: 40px;
-    }
-    
-    .input-row input:focus {
-        border-color: #667eea;
-    }
-    
-    .input-row button {
-        padding: 10px 16px;
-        border: none;
-        border-radius: 25px;
-        background: linear-gradient(135deg, #667eea, #764ba2);
         color: white;
         cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        white-space: nowrap;
+        transition: all 0.2s ease;
+        width: 100%;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
     }
-    
-    .input-row button:active {
+    .attack-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 20px rgba(255,255,255,0.2);
+    }
+    .attack-btn:active {
         transform: scale(0.95);
     }
-    
-    .chat-container {
-        padding-bottom: 100px;
+    .punch-btn { background: linear-gradient(135deg, #f7971e, #ffd200); }
+    .kick-btn { background: linear-gradient(135deg, #00b09b, #96c93d); }
+    .special-btn { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .combo-btn { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+    .block-btn { background: linear-gradient(135deg, #4a00e0, #8e2de2); }
+    .vs-text {
+        font-size: 28px;
+        font-weight: bold;
+        text-align: center;
+        color: #ff6b6b;
+        text-shadow: 0 0 20px rgba(255,107,107,0.5);
     }
-    
-    footer {
-        display: none;
+    .player-name { color: #4d96ff; font-weight: bold; font-size: 18px; }
+    .enemy-name { color: #ff6b6b; font-weight: bold; font-size: 18px; }
+    .combo-display {
+        font-size: 24px;
+        font-weight: bold;
+        text-align: center;
+        color: #ffd93d;
+        text-shadow: 0 0 20px rgba(255,217,61,0.5);
+        animation: pulse 0.5s ease-in-out infinite alternate;
     }
-    
-    @media (max-width: 600px) {
-        .input-row input {
-            font-size: 16px !important;
-        }
-        .user-bubble, .assistant-bubble {
-            font-size: 15px;
-            padding: 10px 14px;
-        }
+    @keyframes pulse {
+        from { transform: scale(1); }
+        to { transform: scale(1.05); }
+    }
+    .hit-effect {
+        animation: hitFlash 0.3s ease;
+    }
+    @keyframes hitFlash {
+        0% { background-color: rgba(255,0,0,0.3); }
+        100% { background-color: transparent; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -171,414 +128,335 @@ st.markdown("""
 # SESSION STATE
 # ============================================================
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "user_name" not in st.session_state:
-    st.session_state.user_name = ""
-if "memory_facts" not in st.session_state:
-    st.session_state.memory_facts = []
-if "memory_preferences" not in st.session_state:
-    st.session_state.memory_preferences = []
-if "web_search" not in st.session_state:
-    st.session_state.web_search = False
-if "think_mode" not in st.session_state:
-    st.session_state.think_mode = False
-if "emotion" not in st.session_state:
-    st.session_state.emotion = "neutral"
-if "topic" not in st.session_state:
-    st.session_state.topic = "general"
-if "interaction_count" not in st.session_state:
-    st.session_state.interaction_count = 0
-if "chats" not in st.session_state:
-    st.session_state.chats = [{"id": "default", "title": "New Chat", "messages": []}]
-if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = "default"
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
+if "player_health" not in st.session_state:
+    st.session_state.player_health = 100
+if "enemy_health" not in st.session_state:
+    st.session_state.enemy_health = 100
+if "player_energy" not in st.session_state:
+    st.session_state.player_energy = 100
+if "enemy_energy" not in st.session_state:
+    st.session_state.enemy_energy = 100
+if "game_over" not in st.session_state:
+    st.session_state.game_over = False
+if "winner" not in st.session_state:
+    st.session_state.winner = None
+if "round" not in st.session_state:
+    st.session_state.round = 1
+if "fight_log" not in st.session_state:
+    st.session_state.fight_log = []
+if "combo" not in st.session_state:
+    st.session_state.combo = 0
+if "player_wins" not in st.session_state:
+    st.session_state.player_wins = 0
+if "enemy_wins" not in st.session_state:
+    st.session_state.enemy_wins = 0
+if "last_attack" not in st.session_state:
+    st.session_state.last_attack = ""
+if "hit_effect" not in st.session_state:
+    st.session_state.hit_effect = False
+if "enemy_hit_effect" not in st.session_state:
+    st.session_state.enemy_hit_effect = False
 
 # ============================================================
-# API KEY
+# GAME FUNCTIONS
 # ============================================================
 
-def get_api_key():
-    try:
-        key = st.secrets.get("GROQ_API_KEY")
-        if key:
-            return str(key).strip()
-    except Exception:
-        pass
-    return st.session_state.api_key
+def reset_game():
+    st.session_state.player_health = 100
+    st.session_state.enemy_health = 100
+    st.session_state.player_energy = 100
+    st.session_state.enemy_energy = 100
+    st.session_state.game_over = False
+    st.session_state.winner = None
+    st.session_state.round += 1
+    st.session_state.fight_log = []
+    st.session_state.combo = 0
+    st.session_state.last_attack = ""
+    st.session_state.hit_effect = False
+    st.session_state.enemy_hit_effect = False
 
-# ============================================================
-# GROQ BRAIN — CONFIRMED WORKING
-# ============================================================
+def full_reset():
+    st.session_state.player_health = 100
+    st.session_state.enemy_health = 100
+    st.session_state.player_energy = 100
+    st.session_state.enemy_energy = 100
+    st.session_state.game_over = False
+    st.session_state.winner = None
+    st.session_state.round = 1
+    st.session_state.fight_log = []
+    st.session_state.combo = 0
+    st.session_state.player_wins = 0
+    st.session_state.enemy_wins = 0
+    st.session_state.last_attack = ""
+    st.session_state.hit_effect = False
+    st.session_state.enemy_hit_effect = False
 
-# ✅ CONFIRMED WORKING GROQ MODELS (September 2026)
-GROQ_MODELS = [
-    "gpt-oss-20b",           # 🏆 Best balance — 1000 tok/sec
-    "gpt-oss-120b",          # 🧠 Smarter — 500 tok/sec
-    "qwen-qwen3.6-27b",      # 🤔 Reasoning
-    "llama-3.3-70b-versatile", # 📚 General purpose
-    "llama-3.1-8b-instant",  # ⚡ Fastest
-]
-
-# ✅ CORRECT GROQ ENDPOINT
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
-# ============================================================
-# WEB SEARCH
-# ============================================================
-
-def web_search(query):
-    try:
-        url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + requests.utils.quote(query)
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("extract"):
-                return data["extract"]
-        
-        url = f"https://api.duckduckgo.com/?q={requests.utils.quote(query)}&format=json&no_html=1"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("AbstractText"):
-                return data["AbstractText"]
-        return None
-    except Exception:
-        return None
-
-# ============================================================
-# GROQ AI RESPONSE
-# ============================================================
-
-def groq_response(prompt, emotion, topic):
-    api_key = get_api_key()
+def attack(attack_type):
+    if st.session_state.game_over:
+        st.session_state.fight_log.append("❌ Game is already over! Reset to fight again.")
+        return
     
-    if not api_key:
-        return "🔑 **API Key Missing.**\n\nPlease enter your Groq API key in the sidebar.\n\nGet a free key at: console.groq.com/keys"
-
-    try:
-        from openai import OpenAI
-        
-        client = OpenAI(
-            api_key=api_key,
-            base_url=GROQ_BASE_URL,
-            timeout=60.0,
-            max_retries=2,
-        )
-        
-        memory = f"User's name: {st.session_state.user_name or 'Unknown'}. "
-        if st.session_state.memory_facts:
-            memory += f"Facts: {', '.join(st.session_state.memory_facts[-3:])}. "
-        if st.session_state.memory_preferences:
-            memory += f"Preferences: {', '.join(st.session_state.memory_preferences[-3:])}. "
-
-        system_prompt = f"""You are KingsBot, a helpful AI assistant powered by Groq (blazing fast).
-
-Current date: {datetime.now().strftime('%B %d, %Y')}
-
-User emotion: {emotion}
-User topic: {topic}
-
-Memory: {memory}
-
-Be helpful, clear, and concise. Answer any question the user asks. If you don't know something, say so."""
-
-        messages = [{"role": "system", "content": system_prompt}]
-        for msg in st.session_state.messages[-15:]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-        messages.append({"role": "user", "content": prompt})
-
-        if st.session_state.web_search:
-            search_result = web_search(prompt)
-            if search_result:
-                messages.append({"role": "system", "content": f"Web search result: {search_result[:2000]}"})
-
-        # ✅ Try models in order
-        for model in GROQ_MODELS:
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=600,
-                )
-                return response.choices[0].message.content
-            except Exception:
-                continue  # Try next model
-        
-        return "❌ All Groq models failed. Please try again later."
-
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "rate limit" in error_msg.lower():
-            return "⏳ **Rate limit exceeded.** Please wait a moment and try again."
-        if "401" in error_msg or "authentication" in error_msg.lower():
-            return "🔑 **Invalid API Key.** Check your Groq API key."
-        return f"❌ **Error:** {error_msg}"
-
-# ============================================================
-# FEATURES
-# ============================================================
-
-EMOTION_KEYWORDS = {
-    "happy": ["happy", "great", "awesome", "amazing", "love", "wonderful", "excited", "glad", "yesss"],
-    "sad": ["sad", "crying", "upset", "hurt", "depressed", "miserable", "lonely", "disappointed"],
-    "angry": ["angry", "mad", "frustrated", "annoyed", "furious", "outraged", "rage", "useless"],
-    "confused": ["confused", "don't understand", "huh", "what", "lost", "unclear", "not getting"],
-    "worried": ["worried", "scared", "afraid", "anxious", "nervous", "concerned", "panic"],
-    "neutral": []
-}
-
-TOPIC_KEYWORDS = {
-    "coding": ["code", "python", "program", "javascript", "html", "css", "api", "app", "software"],
-    "science": ["science", "biology", "chemistry", "physics", "astronomy", "dna", "lab"],
-    "math": ["math", "calculate", "equation", "algebra", "geometry", "calculus", "number"],
-    "history": ["history", "war", "empire", "ancient", "civilization", "king", "queen"],
-    "geography": ["country", "capital", "city", "river", "mountain", "ocean", "continent"],
-    "technology": ["technology", "computer", "internet", "ai", "artificial intelligence", "robot"],
-    "sports": ["sports", "football", "soccer", "basketball", "tennis", "cricket", "messi"],
-    "entertainment": ["movie", "film", "music", "song", "actor", "actress", "concert", "cinema"],
-    "health": ["health", "doctor", "hospital", "medicine", "fitness", "diet", "exercise"],
-    "general": []
-}
-
-def detect_emotion(text):
-    lower = text.lower()
-    for emotion, keywords in EMOTION_KEYWORDS.items():
-        if any(word in lower for word in keywords):
-            return emotion
-    return "neutral"
-
-def detect_topic(text):
-    lower = text.lower()
-    for topic, keywords in TOPIC_KEYWORDS.items():
-        if any(word in lower for word in keywords):
-            return topic
-    return "general"
-
-def detect_name(text):
-    match = re.search(r"my name is ([A-Za-z ]+)", text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return None
-
-def detect_memory(text):
-    markers = ["remember that ", "remember this: ", "please remember ", "save this: "]
-    for marker in markers:
-        if marker in text.lower():
-            pos = text.lower().find(marker)
-            fact = text[pos + len(marker):].strip(" .!?")
-            if fact and len(fact) > 3:
-                return fact
-    return None
-
-def detect_preference(text):
-    markers = ["i prefer ", "i like ", "my favorite ", "i love "]
-    for marker in markers:
-        if marker in text.lower():
-            pos = text.lower().find(marker)
-            pref = text[pos:].strip(" .!?")
-            if pref and len(pref) > 3:
-                return pref
-    return None
-
-# ============================================================
-# RESPONSE GENERATOR
-# ============================================================
-
-def generate_response(prompt):
-    name = detect_name(prompt)
-    if name:
-        st.session_state.user_name = name
-        return f"Nice to meet you, {name}! 👋 I'll remember your name."
+    damage = 0
+    energy_cost = 0
+    attack_name = ""
     
-    memory = detect_memory(prompt)
-    if memory:
-        if memory not in st.session_state.memory_facts:
-            st.session_state.memory_facts.append(memory)
-            st.session_state.memory_facts = st.session_state.memory_facts[-30:]
-        return f"🧠 Got it! I'll remember: '{memory}'"
+    if attack_type == "punch":
+        damage = random.randint(8, 15)
+        energy_cost = 5
+        attack_name = "👊 Punch"
+    elif attack_type == "kick":
+        damage = random.randint(12, 20)
+        energy_cost = 10
+        attack_name = "🦵 Kick"
+    elif attack_type == "special":
+        damage = random.randint(20, 35)
+        energy_cost = 25
+        attack_name = "💥 Special Attack!"
+    elif attack_type == "combo":
+        damage = random.randint(30, 50)
+        energy_cost = 40
+        attack_name = "🔥 COMBO ATTACK!"
+    elif attack_type == "block":
+        st.session_state.fight_log.append("🛡️ You blocked! Enemy's attack is reduced.")
+        block_damage = random.randint(2, 6)
+        st.session_state.player_health -= block_damage
+        enemy_attack(block_damage // 2)
+        st.session_state.last_attack = "🛡️ Block"
+        return
     
-    preference = detect_preference(prompt)
-    if preference:
-        if preference not in st.session_state.memory_preferences:
-            st.session_state.memory_preferences.append(preference)
-            st.session_state.memory_preferences = st.session_state.memory_preferences[-30:]
-        return f"💖 I'll remember that you {preference.lower()}"
-
-    emotion = detect_emotion(prompt)
-    topic = detect_topic(prompt)
-    st.session_state.emotion = emotion
-    st.session_state.topic = topic
-
-    if st.session_state.think_mode:
-        return f"🤔 **Thinking...**\n\n{groq_response(prompt, emotion, topic)}"
+    if st.session_state.player_energy < energy_cost:
+        st.session_state.fight_log.append(f"⚠️ Not enough energy! ({energy_cost} needed)")
+        st.session_state.last_attack = "⚠️ Not enough energy"
+        return
     
-    return groq_response(prompt, emotion, topic)
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-with st.sidebar:
-    st.header("⚡ KingsBot")
-    st.caption("Groq • Blazing Fast")
+    st.session_state.player_energy -= energy_cost
+    st.session_state.enemy_health -= damage
+    st.session_state.last_attack = f"💥 {attack_name} - {damage} DMG"
+    st.session_state.enemy_hit_effect = True
     
-    st.subheader("🔑 API Key")
-    api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...", key="api_key_input")
-    if api_key:
-        st.session_state.api_key = api_key
-        st.success("✅ Key saved")
+    if attack_type in ["punch", "kick"]:
+        st.session_state.combo += 1
     else:
-        st.caption("Get free key at console.groq.com/keys")
+        st.session_state.combo = 0
     
-    st.divider()
+    st.session_state.fight_log.append(f"💥 {attack_name} did {damage} damage!")
     
-    st.subheader("📊 Stats")
-    st.write(f"**Interactions:** {st.session_state.interaction_count}")
+    if random.random() < 0.15:
+        crit_damage = random.randint(5, 15)
+        st.session_state.enemy_health -= crit_damage
+        st.session_state.fight_log.append(f"💀 CRITICAL HIT! +{crit_damage} damage!")
+        st.session_state.last_attack += f" 💀 CRITICAL +{crit_damage}"
     
-    emotion_emoji = {
-        "happy": "😊", "sad": "😢", "angry": "😤",
-        "confused": "🤔", "worried": "😰", "neutral": "🤖"
-    }.get(st.session_state.emotion, "🤖")
-    st.write(f"**Emotion:** {emotion_emoji} {st.session_state.emotion}")
-    st.write(f"**Topic:** {st.session_state.topic}")
-    st.write(f"**Speed:** 🚀 500-1000+ tok/sec")
+    if st.session_state.enemy_health <= 0:
+        st.session_state.enemy_health = 0
+        st.session_state.game_over = True
+        st.session_state.winner = "player"
+        st.session_state.player_wins += 1
+        st.session_state.fight_log.append("🏆 YOU WIN! 🏆")
+        return
     
-    st.divider()
+    enemy_attack()
     
-    st.subheader("⚙️ Features")
+    if st.session_state.player_health <= 0:
+        st.session_state.player_health = 0
+        st.session_state.game_over = True
+        st.session_state.winner = "enemy"
+        st.session_state.enemy_wins += 1
+        st.session_state.fight_log.append("💀 You were defeated...")
+
+def enemy_attack():
+    attack_choice = random.choice(["punch", "punch", "kick", "special", "block"])
+    damage = 0
     
-    if st.button("🌐 Web Search", use_container_width=True):
-        st.session_state.web_search = not st.session_state.web_search
-        st.rerun()
-    if st.session_state.web_search:
-        st.success("✅ Web Search ON")
-    else:
-        st.info("⏸️ Web Search OFF")
+    if attack_choice == "punch":
+        damage = random.randint(5, 12)
+        st.session_state.fight_log.append(f"👊 Enemy punches you for {damage} damage!")
+        st.session_state.last_attack = f"👊 Enemy Punch - {damage} DMG"
+    elif attack_choice == "kick":
+        damage = random.randint(10, 18)
+        st.session_state.fight_log.append(f"🦵 Enemy kicks you for {damage} damage!")
+        st.session_state.last_attack = f"🦵 Enemy Kick - {damage} DMG"
+    elif attack_choice == "special":
+        damage = random.randint(15, 25)
+        st.session_state.fight_log.append(f"💥 Enemy special attack! {damage} damage!")
+        st.session_state.last_attack = f"💥 Enemy Special - {damage} DMG"
+    elif attack_choice == "block":
+        damage = random.randint(1, 3)
+        st.session_state.fight_log.append(f"🛡️ Enemy blocks! {damage} damage reflected!")
+        st.session_state.last_attack = f"🛡️ Enemy Block - {damage} DMG"
     
-    if st.button("🧠 Think Mode", use_container_width=True):
-        st.session_state.think_mode = not st.session_state.think_mode
-        st.rerun()
-    if st.session_state.think_mode:
-        st.success("✅ Think Mode ON")
-    else:
-        st.info("⏸️ Think Mode OFF")
+    st.session_state.player_health -= damage
+    st.session_state.player_health = max(0, st.session_state.player_health)
+    if damage > 0:
+        st.session_state.hit_effect = True
+
+def regenerate_energy():
+    if not st.session_state.game_over:
+        st.session_state.player_energy = min(100, st.session_state.player_energy + 10)
+        st.session_state.enemy_energy = min(100, st.session_state.enemy_energy + 8)
+
+# ============================================================
+# UI
+# ============================================================
+
+st.markdown('<h1 class="fight-title">🥊 SHADOW FIGHT</h1>', unsafe_allow_html=True)
+
+# VS Display
+col1, col2, col3 = st.columns([2, 1, 2])
+
+with col1:
+    st.markdown('<p class="player-name">👤 YOU</p>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<p class="vs-text">⚔️ VS</p>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<p class="enemy-name">👹 SHADOW</p>', unsafe_allow_html=True)
+
+# Health bars
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown(f"""
+    <div class="health-bar">
+        <div class="health-bar-fill" style="width: {st.session_state.player_health}%;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
+        <span>❤️ Health: {st.session_state.player_health}%</span>
+    </div>
+    <div class="energy-bar" style="margin-top:5px;">
+        <div class="energy-bar-fill" style="width: {st.session_state.player_energy}%;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
+        <span>⚡ Energy: {st.session_state.player_energy}%</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class="health-bar">
+        <div class="health-bar-fill enemy" style="width: {st.session_state.enemy_health}%;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
+        <span>❤️ Health: {st.session_state.enemy_health}%</span>
+    </div>
+    <div class="energy-bar" style="margin-top:5px;">
+        <div class="energy-bar-fill" style="width: {st.session_state.enemy_energy}%;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
+        <span>⚡ Energy: {st.session_state.enemy_energy}%</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Combo display
+if st.session_state.combo > 2:
+    st.markdown(f'<div class="combo-display">🔥 {st.session_state.combo}x COMBO!</div>', unsafe_allow_html=True)
+
+# Score
+st.info(f"🏆 Wins: {st.session_state.player_wins} | Losses: {st.session_state.enemy_wins} | Round: {st.session_state.round}")
+
+# Last attack
+if st.session_state.last_attack:
+    st.write(f"**Last action:** {st.session_state.last_attack}")
+
+# Fight buttons
+if not st.session_state.game_over:
+    st.write("---")
+    st.write("### ⚔️ Choose your move:")
     
-    if st.button("🧹 Clear Chat", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
+    col1, col2, col3, col4, col5 = st.columns(5)
     
-    st.divider()
-    
-    st.subheader("💬 Chats")
-    for chat in st.session_state.chats:
-        title = chat.get("title", "New Chat")
-        display = title[:20] + "..." if len(title) > 20 else title
-        prefix = "🟢 " if chat["id"] == st.session_state.current_chat_id else "💬 "
-        if st.button(prefix + display, key="chat_" + chat["id"], use_container_width=True):
-            st.session_state.current_chat_id = chat["id"]
-            st.session_state.messages = chat.get("messages", [])
+    with col1:
+        if st.button("👊 Punch", use_container_width=True):
+            attack("punch")
+            regenerate_energy()
             st.rerun()
     
-    if st.button("➕ New Chat", use_container_width=True):
-        new_id = uuid.uuid4().hex[:8]
-        st.session_state.chats.append({"id": new_id, "title": "New Chat", "messages": []})
-        st.session_state.current_chat_id = new_id
-        st.session_state.messages = []
-        st.rerun()
+    with col2:
+        if st.button("🦵 Kick", use_container_width=True):
+            attack("kick")
+            regenerate_energy()
+            st.rerun()
     
-    st.divider()
+    with col3:
+        if st.button("💥 Special", use_container_width=True):
+            attack("special")
+            regenerate_energy()
+            st.rerun()
     
-    st.subheader("🧠 Memory")
-    st.write(f"**Name:** {st.session_state.user_name or 'Not set'}")
-    st.write(f"**Facts:** {len(st.session_state.memory_facts)}")
-    st.write(f"**Preferences:** {len(st.session_state.memory_preferences)}")
+    with col4:
+        if st.button("🔥 Combo", use_container_width=True):
+            attack("combo")
+            regenerate_energy()
+            st.rerun()
     
-    if st.button("🧹 Clear Memory", use_container_width=True):
-        st.session_state.user_name = ""
-        st.session_state.memory_facts = []
-        st.session_state.memory_preferences = []
-        st.rerun()
-    
-    if st.button("📤 Export Chat", use_container_width=True):
-        lines = ["# KingsBot Chat Export", f"Date: {datetime.now().strftime('%B %d, %Y')}", ""]
-        for msg in st.session_state.messages:
-            role = "👤 User" if msg["role"] == "user" else "⚡ KingsBot"
-            lines.append(f"**{role}:** {msg['content']}")
-        st.download_button("📥 Download", "\n".join(lines), "chat_export.txt", "text/plain")
+    with col5:
+        if st.button("🛡️ Block", use_container_width=True):
+            attack("block")
+            regenerate_energy()
+            st.rerun()
 
-# ============================================================
-# MAIN CHAT
-# ============================================================
-
-st.markdown("""
-<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-    <span style="font-size: 28px;">⚡</span>
-    <h1 style="font-size: 22px; margin: 0;">KingsBot</h1>
-    <span style="font-size: 12px; color: #00c853; margin-left: auto;">Groq • Blazing Fast</span>
-</div>
-""", unsafe_allow_html=True)
-
-# Display chat
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f'<div class="user-bubble">👤 {msg["content"]}</div>', unsafe_allow_html=True)
+# Game Over
+if st.session_state.game_over:
+    st.write("---")
+    if st.session_state.winner == "player":
+        st.balloons()
+        st.success("🎉 YOU WIN! Amazing fight! 🎉")
     else:
-        st.markdown(f'<div class="assistant-bubble">⚡ {msg["content"]}</div>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+        st.error("💀 You lost... Better luck next time!")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Next Round", use_container_width=True):
+            reset_game()
+            st.rerun()
+    with col2:
+        if st.button("🔄 Full Reset", use_container_width=True):
+            full_reset()
+            st.rerun()
+
+# Energy regenerate button
+if not st.session_state.game_over:
+    if st.button("⚡ Regenerate Energy (+10)"):
+        regenerate_energy()
+        st.rerun()
+
+# Fight log
+st.write("---")
+st.write("### 📜 Fight Log")
+with st.expander("Show fight log", expanded=False):
+    st.markdown('<div class="fight-log">', unsafe_allow_html=True)
+    for log in st.session_state.fight_log[-20:]:
+        st.write(log)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# INPUT
+# INSTRUCTIONS
 # ============================================================
 
-st.markdown('<div class="input-container">', unsafe_allow_html=True)
-
-# Input row only
-col1, col2 = st.columns([5, 1])
-with col1:
-    prompt = st.text_input("", placeholder="Ask anything...", key="message_input", label_visibility="collapsed")
-with col2:
-    if st.button("Send", key="send_btn", use_container_width=True):
-        if prompt and prompt.strip():
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            st.session_state.interaction_count += 1
-            
-            with st.spinner("⚡ Thinking (Groq — blazing fast)..."):
-                response = generate_response(prompt)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                
-                for chat in st.session_state.chats:
-                    if chat["id"] == st.session_state.current_chat_id:
-                        chat["messages"] = st.session_state.messages
-                        if len(st.session_state.messages) == 2:
-                            chat["title"] = prompt[:30] + "..." if len(prompt) > 30 else prompt
-                        break
-                
-                st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
+with st.expander("📖 How to Play"):
+    st.write("""
+    **🎯 Goal:** Defeat the Shadow Warrior!
+    
+    **⚔️ Moves:**
+    - 👊 **Punch** — Quick attack (low damage, low energy)
+    - 🦵 **Kick** — Medium attack (medium damage, medium energy)
+    - 💥 **Special** — Strong attack (high damage, high energy)
+    - 🔥 **Combo** — Devastating attack (massive damage, high energy)
+    - 🛡️ **Block** — Reduce enemy damage
+    
+    **💡 Tips:**
+    - Manage your energy wisely!
+    - Build combos for extra damage
+    - Block when enemy is about to attack
+    - Use Special and Combo when enemy is weak
+    
+    **⚡ Energy regenerates automatically after each move!**
+    """)
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.markdown("""
-<div style="
-    position: fixed;
-    bottom: 80px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 10px;
-    color: #444;
-    padding: 4px;
-    z-index: 99;
-    pointer-events: none;
-">
-    ⚡ KingsBot • Groq • 500-1000+ tok/sec • Free • Memory • Web Search
-</div>
-""", unsafe_allow_html=True)
+st.divider()
+st.caption("🥊 Shadow Fight Ultimate • Made with ❤️ • Python + Streamlit")
