@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import secrets
 import json
+import os
 import requests
 import time
 from datetime import datetime
@@ -86,18 +87,6 @@ def init_db():
         )
     """)
     c.execute("""
-        CREATE TABLE IF NOT EXISTS calls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id INTEGER,
-            user_id INTEGER,
-            transcript TEXT,
-            duration_seconds INTEGER DEFAULT 0,
-            credits_used REAL DEFAULT 0,
-            sentiment TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -110,7 +99,36 @@ def init_db():
     conn.commit()
     conn.close()
 
+def migrate_db():
+    """Add missing columns to existing database (safe migration)."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    # Check agents table
+    c.execute("PRAGMA table_info(agents)")
+    columns = [row[1] for row in c.fetchall()]
+    
+    if "temperature" not in columns:
+        try:
+            c.execute("ALTER TABLE agents ADD COLUMN temperature REAL DEFAULT 0.7")
+        except:
+            pass
+    if "voice_id" not in columns:
+        try:
+            c.execute("ALTER TABLE agents ADD COLUMN voice_id TEXT DEFAULT 'Cartesia'")
+        except:
+            pass
+    if "language" not in columns:
+        try:
+            c.execute("ALTER TABLE agents ADD COLUMN language TEXT DEFAULT 'en-US'")
+        except:
+            pass
+    
+    conn.commit()
+    conn.close()
+
 init_db()
+migrate_db()
 
 def get_db():
     conn = sqlite3.connect(DB_FILE)
@@ -192,6 +210,8 @@ if "name" not in st.session_state:
     st.session_state.name = None
 if "is_owner" not in st.session_state:
     st.session_state.is_owner = False
+if "page" not in st.session_state:
+    st.session_state.page = "🏠 Dashboard"
 
 # ============================================================
 # AUTH PAGE
@@ -284,6 +304,11 @@ def main_app():
     user = c.fetchone()
     conn.close()
     
+    if not user:
+        st.session_state.user_id = None
+        st.rerun()
+        return
+    
     is_owner = bool(user["is_owner"])
     
     with st.sidebar:
@@ -297,18 +322,16 @@ def main_app():
             st.metric("💰 Balance", f"${user['credit_balance']:.2f}")
         
         st.divider()
-        page = st.radio("Navigation", [
-            "🏠 Dashboard",
-            "🤖 Agents",
-            "💬 Playground",
-            "📚 Knowledge Base",
-            "📊 Analytics",
-            "💳 Billing",
-            "⚙️ Settings"
-        ], label_visibility="collapsed")
+        
+        # Navigation
+        pages = ["🏠 Dashboard", "🤖 Agents", "💬 Playground", "📚 Knowledge Base", "📊 Analytics", "💳 Billing", "⚙️ Settings"]
+        current_idx = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+        selected_page = st.radio("Navigation", pages, index=current_idx, label_visibility="collapsed")
+        st.session_state.page = selected_page
+        
         st.divider()
         if st.button("🚪 Log Out", use_container_width=True):
-            for k in ["user_id", "name", "is_owner", "playground_messages", "current_agent_id"]:
+            for k in ["user_id", "name", "is_owner", "playground_messages", "playground_agent", "page"]:
                 if k in st.session_state:
                     del st.session_state[k]
             st.rerun()
@@ -316,7 +339,7 @@ def main_app():
     # ========================================================
     # DASHBOARD
     # ========================================================
-    if page == "🏠 Dashboard":
+    if st.session_state.page == "🏠 Dashboard":
         st.title(f"Welcome back, {user['name']} 👋")
         
         conn = get_db()
@@ -351,7 +374,7 @@ def main_app():
     # ========================================================
     # AGENTS
     # ========================================================
-    elif page == "🤖 Agents":
+    elif st.session_state.page == "🤖 Agents":
         st.title("Voice Agents")
         st.caption("Create and manage AI voice agents")
         
@@ -378,16 +401,21 @@ Rules:
                     if not agent_name:
                         st.error("Please enter a name")
                     else:
-                        conn = get_db()
-                        c = conn.cursor()
-                        c.execute("""
-                            INSERT INTO agents (user_id, name, system_prompt, llm_model, voice_id, language, temperature, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (user_id, agent_name, prompt, model, voice, language, temperature, datetime.now().isoformat()))
-                        conn.commit()
-                        conn.close()
-                        st.success(f"✅ Agent '{agent_name}' created!")
-                        st.rerun()
+                        try:
+                            conn = get_db()
+                            c = conn.cursor()
+                            c.execute("""
+                                INSERT INTO agents 
+                                (user_id, name, system_prompt, llm_model, voice_id, language, temperature, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (user_id, agent_name, prompt, model, voice, language, temperature, datetime.now().isoformat()))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ Agent '{agent_name}' created!")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error creating agent: {str(e)}")
         
         st.divider()
         
@@ -423,11 +451,11 @@ Rules:
                         st.text(a['system_prompt'])
     
     # ========================================================
-    # PLAYGROUND — TEST YOUR AGENT
+    # PLAYGROUND
     # ========================================================
-    elif page == "💬 Playground":
+    elif st.session_state.page == "💬 Playground":
         st.title("💬 Agent Playground")
-        st.caption("Test your agent in real-time — exactly like Retell")
+        st.caption("Test your agent in real-time")
         
         conn = get_db()
         c = conn.cursor()
@@ -437,9 +465,11 @@ Rules:
         
         if not agents:
             st.warning("Create an agent first to test it!")
+            if st.button("➕ Create Agent"):
+                st.session_state.page = "🤖 Agents"
+                st.rerun()
             return
         
-        # Agent selector
         agent_options = {f"{a['name']}": a for a in agents}
         default_idx = 0
         if "playground_agent" in st.session_state:
@@ -483,26 +513,21 @@ Rules:
         
         # Chat input
         if prompt := st.chat_input(f"Message {selected_agent['name']}..."):
-            # Add user message
             st.session_state.playground_messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
             
-            # Generate response
             with st.chat_message("assistant"):
                 with st.spinner("🧠 Agent is thinking..."):
-                    # Build messages with system prompt
                     messages = [{"role": "system", "content": selected_agent['system_prompt']}]
                     messages.extend(st.session_state.playground_messages[-10:])
                     
-                    # Get response from free AI
                     response = duckduckgo_chat(messages)
                     st.write(response)
                     
-                    # Save
                     st.session_state.playground_messages.append({"role": "assistant", "content": response})
                     
-                    # Save conversation to DB
+                    # Save conversation
                     try:
                         conn = get_db()
                         c = conn.cursor()
@@ -518,15 +543,15 @@ Rules:
                             """, (conv_id, m["role"], m["content"], datetime.now().isoformat()))
                         conn.commit()
                         conn.close()
-                    except Exception as e:
+                    except:
                         pass
     
     # ========================================================
     # KNOWLEDGE BASE
     # ========================================================
-    elif page == "📚 Knowledge Base":
+    elif st.session_state.page == "📚 Knowledge Base":
         st.title("Knowledge Base")
-        st.caption("Add context for your agents — unlimited, no per-KB fee")
+        st.caption("Add context for your agents")
         
         with st.form("new_kb"):
             kb_name = st.text_input("Name")
@@ -571,7 +596,7 @@ Rules:
     # ========================================================
     # ANALYTICS
     # ========================================================
-    elif page == "📊 Analytics":
+    elif st.session_state.page == "📊 Analytics":
         st.title("Analytics")
         
         conn = get_db()
@@ -601,7 +626,7 @@ Rules:
         conn.close()
         
         if not convs:
-            st.info("No conversations yet. Test your agent in the Playground!")
+            st.info("No conversations yet.")
         else:
             for conv in convs:
                 with st.expander(f"💬 {conv['agent_name']} — {conv['created_at'][:19]}"):
@@ -610,7 +635,7 @@ Rules:
     # ========================================================
     # BILLING
     # ========================================================
-    elif page == "💳 Billing":
+    elif st.session_state.page == "💳 Billing":
         st.title("Billing & Credits")
         
         if is_owner:
@@ -661,7 +686,7 @@ Rules:
     # ========================================================
     # SETTINGS
     # ========================================================
-    elif page == "⚙️ Settings":
+    elif st.session_state.page == "⚙️ Settings":
         st.title("Settings")
         
         st.subheader("Account")
@@ -687,6 +712,4 @@ Rules:
 if st.session_state.user_id is None:
     auth_page()
 else:
-    if "page" not in st.session_state:
-        st.session_state.page = "🏠 Dashboard"
     main_app()
