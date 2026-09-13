@@ -1,16 +1,12 @@
 import streamlit as st
 import sqlite3
 import hashlib
-import secrets
 import json
 import os
 import requests
 import time
 from datetime import datetime
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
 st.set_page_config(
     page_title="VoiceAI Platform",
     page_icon="🎙️",
@@ -32,6 +28,7 @@ FREE_SIGNUP_CREDITS = 10.00
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +43,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS agents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,9 +54,11 @@ def init_db():
             voice_id TEXT DEFAULT 'Cartesia',
             language TEXT DEFAULT 'en-US',
             temperature REAL DEFAULT 0.7,
+            first_message TEXT,
             created_at TEXT NOT NULL
         )
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS knowledge_bases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,6 +68,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +78,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +88,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,34 +99,21 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    
     conn.commit()
     conn.close()
 
 def migrate_db():
-    """Add missing columns to existing database (safe migration)."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    # Check agents table
     c.execute("PRAGMA table_info(agents)")
-    columns = [row[1] for row in c.fetchall()]
-    
-    if "temperature" not in columns:
-        try:
-            c.execute("ALTER TABLE agents ADD COLUMN temperature REAL DEFAULT 0.7")
-        except:
-            pass
-    if "voice_id" not in columns:
-        try:
-            c.execute("ALTER TABLE agents ADD COLUMN voice_id TEXT DEFAULT 'Cartesia'")
-        except:
-            pass
-    if "language" not in columns:
-        try:
-            c.execute("ALTER TABLE agents ADD COLUMN language TEXT DEFAULT 'en-US'")
-        except:
-            pass
-    
+    cols = [row[1] for row in c.fetchall()]
+    for col, default in [("temperature", "0.7"), ("voice_id", "'Cartesia'"), ("language", "'en-US'"), ("first_message", "''")]:
+        if col not in cols:
+            try:
+                c.execute(f"ALTER TABLE agents ADD COLUMN {col} DEFAULT {default}")
+            except:
+                pass
     conn.commit()
     conn.close()
 
@@ -142,64 +132,45 @@ def is_owner_email(email):
     return email.lower() in [e.lower() for e in OWNER_EMAILS]
 
 # ============================================================
-# DUCKDUCKGO AI (FREE — no API key needed)
+# FREE AI — Pollinations (no key, no blocking)
 # ============================================================
-def get_vqd():
+def pollinations_chat(messages, temperature=0.7):
+    """Call Pollinations AI — completely free, no API key, no blocking."""
     try:
-        r = requests.get(
-            "https://duckduckgo.com/duckchat/v1/status",
-            headers={
-                "x-vqd-accept": "1",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            },
-            timeout=10
-        )
+        # Build prompt from messages
+        prompt = ""
+        for m in messages:
+            if m["role"] == "system":
+                prompt += f"{m['content']}\n\n"
+            elif m["role"] == "user":
+                prompt += f"User: {m['content']}\n"
+            elif m["role"] == "assistant":
+                prompt += f"Assistant: {m['content']}\n"
+        prompt += "Assistant:"
+        
+        url = "https://text.pollinations.ai/openai"
+        payload = {
+            "model": "openai",
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 1000
+        }
+        
+        r = requests.post(url, json=payload, timeout=60)
         if r.status_code == 200:
-            return r.headers.get("x-vqd-4")
-    except:
-        pass
-    return None
-
-def duckduckgo_chat(messages):
-    """Call DuckDuckGo AI Chat — free GPT-4o mini."""
-    vqd = get_vqd()
-    if not vqd:
-        return "❌ Could not connect to AI service. Please try again."
-    
-    try:
-        r = requests.post(
-            "https://duckduckgo.com/duckchat/v1/chat",
-            headers={
-                "x-vqd-4": vqd,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            },
-            json={"model": "gpt-4o-mini", "messages": messages},
-            timeout=60,
-            stream=True
-        )
+            data = r.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
         
-        if r.status_code != 200:
-            return f"❌ AI service error: {r.status_code}"
+        # Fallback: try the simple endpoint
+        url2 = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
+        r2 = requests.get(url2, timeout=60)
+        if r2.status_code == 200:
+            return r2.text
         
-        full = ""
-        for line in r.iter_lines():
-            if line:
-                line = line.decode("utf-8")
-                if line.startswith("data: "):
-                    data = line[6:]
-                    if data == "[DONE]":
-                        break
-                    try:
-                        parsed = json.loads(data)
-                        if "message" in parsed:
-                            full += parsed["message"]
-                    except:
-                        pass
-        
-        return full if full else "No response from AI."
+        return f"❌ AI service returned {r.status_code}. Try again."
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"❌ Connection error: {str(e)}"
 
 # ============================================================
 # SESSION STATE
@@ -240,10 +211,8 @@ def auth_page():
                     else:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("""
-                            SELECT id, name, is_owner FROM users 
-                            WHERE (username = ? OR email = ?) AND password_hash = ?
-                        """, (u, u, hash_pw(p)))
+                        c.execute("""SELECT id, name, is_owner FROM users 
+                            WHERE (username = ? OR email = ?) AND password_hash = ?""", (u, u, hash_pw(p)))
                         user = c.fetchone()
                         conn.close()
                         if user:
@@ -278,11 +247,10 @@ def auth_page():
                             credits = 999999.99 if owner else FREE_SIGNUP_CREDITS
                             conn = get_db()
                             c = conn.cursor()
-                            c.execute("""
-                                INSERT INTO users 
+                            c.execute("""INSERT INTO users 
                                 (username, email, password_hash, name, is_owner, credit_balance, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (u, e, hash_pw(p), n, owner, credits, datetime.now().isoformat()))
+                                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                (u, e, hash_pw(p), n, owner, credits, datetime.now().isoformat()))
                             conn.commit()
                             conn.close()
                             if owner:
@@ -322,13 +290,10 @@ def main_app():
             st.metric("💰 Balance", f"${user['credit_balance']:.2f}")
         
         st.divider()
-        
-        # Navigation
         pages = ["🏠 Dashboard", "🤖 Agents", "💬 Playground", "📚 Knowledge Base", "📊 Analytics", "💳 Billing", "⚙️ Settings"]
         current_idx = pages.index(st.session_state.page) if st.session_state.page in pages else 0
         selected_page = st.radio("Navigation", pages, index=current_idx, label_visibility="collapsed")
         st.session_state.page = selected_page
-        
         st.divider()
         if st.button("🚪 Log Out", use_container_width=True):
             for k in ["user_id", "name", "is_owner", "playground_messages", "playground_agent", "page"]:
@@ -356,10 +321,7 @@ def main_app():
         c1.metric("🤖 Agents", agent_count)
         c2.metric("📚 Knowledge Bases", kb_count)
         c3.metric("💬 Conversations", conv_count)
-        if is_owner:
-            c4.metric("💰 Credits", "♾️ Unlimited")
-        else:
-            c4.metric("💰 Credits", f"${user['credit_balance']:.2f}")
+        c4.metric("💰 Credits", "♾️ Unlimited" if is_owner else f"${user['credit_balance']:.2f}")
         
         st.divider()
         st.subheader("🚀 Get Started")
@@ -381,6 +343,7 @@ def main_app():
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
                 agent_name = st.text_input("Agent Name", placeholder="e.g. Customer Support")
+                first_message = st.text_input("First Message", placeholder="Hello! How can I help you today?", value="Hello! How can I help you today?")
                 prompt = st.text_area("System Prompt", height=180, value="""You are a helpful voice assistant.
 
 Rules:
@@ -404,18 +367,17 @@ Rules:
                         try:
                             conn = get_db()
                             c = conn.cursor()
-                            c.execute("""
-                                INSERT INTO agents 
-                                (user_id, name, system_prompt, llm_model, voice_id, language, temperature, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (user_id, agent_name, prompt, model, voice, language, temperature, datetime.now().isoformat()))
+                            c.execute("""INSERT INTO agents 
+                                (user_id, name, system_prompt, llm_model, voice_id, language, temperature, first_message, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                (user_id, agent_name, prompt, model, voice, language, temperature, first_message, datetime.now().isoformat()))
                             conn.commit()
                             conn.close()
                             st.success(f"✅ Agent '{agent_name}' created!")
                             time.sleep(0.5)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error creating agent: {str(e)}")
+                            st.error(f"Error: {str(e)}")
         
         st.divider()
         
@@ -478,40 +440,31 @@ Rules:
                     default_idx = i
                     break
         
-        selected_name = st.selectbox(
-            "🤖 Select Agent to Test",
-            list(agent_options.keys()),
-            index=default_idx
-        )
+        selected_name = st.selectbox("🤖 Select Agent to Test", list(agent_options.keys()), index=default_idx)
         selected_agent = agent_options[selected_name]
         
-        # Sidebar config
         with st.sidebar:
             st.divider()
             st.subheader("⚙️ Test Controls")
             if st.button("🗑️ Clear Conversation", use_container_width=True):
                 st.session_state.playground_messages = []
                 st.rerun()
-            
             st.caption("**Agent Config**")
             st.write(f"Model: `{selected_agent['llm_model']}`")
             st.write(f"Voice: `{selected_agent['voice_id']}`")
             st.write(f"Language: `{selected_agent['language']}`")
             st.write(f"Temperature: `{selected_agent['temperature']}`")
         
-        # Init chat
         if "playground_messages" not in st.session_state:
             st.session_state.playground_messages = []
         if "playground_agent" not in st.session_state or st.session_state.playground_agent != selected_agent['id']:
             st.session_state.playground_messages = []
             st.session_state.playground_agent = selected_agent['id']
         
-        # Display chat
         for msg in st.session_state.playground_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
         
-        # Chat input
         if prompt := st.chat_input(f"Message {selected_agent['name']}..."):
             st.session_state.playground_messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
@@ -522,25 +475,20 @@ Rules:
                     messages = [{"role": "system", "content": selected_agent['system_prompt']}]
                     messages.extend(st.session_state.playground_messages[-10:])
                     
-                    response = duckduckgo_chat(messages)
+                    response = pollinations_chat(messages, selected_agent.get('temperature', 0.7))
                     st.write(response)
                     
                     st.session_state.playground_messages.append({"role": "assistant", "content": response})
                     
-                    # Save conversation
                     try:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("""
-                            INSERT INTO conversations (agent_id, user_id, title, created_at)
-                            VALUES (?, ?, ?, ?)
-                        """, (selected_agent['id'], user_id, prompt[:50], datetime.now().isoformat()))
+                        c.execute("""INSERT INTO conversations (agent_id, user_id, title, created_at)
+                            VALUES (?, ?, ?, ?)""", (selected_agent['id'], user_id, prompt[:50], datetime.now().isoformat()))
                         conv_id = c.lastrowid
                         for m in st.session_state.playground_messages[-2:]:
-                            c.execute("""
-                                INSERT INTO messages (conversation_id, role, content, created_at)
-                                VALUES (?, ?, ?, ?)
-                            """, (conv_id, m["role"], m["content"], datetime.now().isoformat()))
+                            c.execute("""INSERT INTO messages (conversation_id, role, content, created_at)
+                                VALUES (?, ?, ?, ?)""", (conv_id, m["role"], m["content"], datetime.now().isoformat()))
                         conn.commit()
                         conn.close()
                     except:
@@ -562,10 +510,8 @@ Rules:
                 else:
                     conn = get_db()
                     c = conn.cursor()
-                    c.execute("""
-                        INSERT INTO knowledge_bases (user_id, name, content, created_at)
-                        VALUES (?, ?, ?, ?)
-                    """, (user_id, kb_name, kb_content, datetime.now().isoformat()))
+                    c.execute("""INSERT INTO knowledge_bases (user_id, name, content, created_at)
+                        VALUES (?, ?, ?, ?)""", (user_id, kb_name, kb_content, datetime.now().isoformat()))
                     conn.commit()
                     conn.close()
                     st.success(f"✅ '{kb_name}' saved!")
@@ -615,13 +561,9 @@ Rules:
         
         conn = get_db()
         c = conn.cursor()
-        c.execute("""
-            SELECT conv.*, a.name as agent_name
-            FROM conversations conv
+        c.execute("""SELECT conv.*, a.name as agent_name FROM conversations conv
             LEFT JOIN agents a ON conv.agent_id = a.id
-            WHERE conv.user_id = ?
-            ORDER BY conv.created_at DESC LIMIT 20
-        """, (user_id,))
+            WHERE conv.user_id = ? ORDER BY conv.created_at DESC LIMIT 20""", (user_id,))
         convs = c.fetchall()
         conn.close()
         
@@ -640,7 +582,6 @@ Rules:
         
         if is_owner:
             st.success("👑 Owner Account — Unlimited Free Credits")
-            st.info("You are the platform owner. Never charged for usage.")
             
             conn = get_db()
             c = conn.cursor()
@@ -697,7 +638,6 @@ Rules:
         
         st.divider()
         st.subheader("🔑 Bring Your Own Keys (BYOK)")
-        st.caption("Plug in your own API keys — no markup.")
         st.text_input("OpenAI API Key", type="password", key="k_openai")
         st.text_input("ElevenLabs API Key", type="password", key="k_11")
         st.text_input("Cartesia API Key", type="password", key="k_cart")
