@@ -2,9 +2,10 @@ import streamlit as st
 import sqlite3
 import hashlib
 import secrets
-from datetime import datetime, timedelta
-import os
+import json
 import requests
+import time
+from datetime import datetime
 
 # ============================================================
 # PAGE CONFIG
@@ -18,19 +19,11 @@ st.set_page_config(
 
 DB_FILE = "voiceai.db"
 
-# ============================================================
-# ⚠️ OWNER CONFIG — CHANGE THIS TO YOUR EMAIL
-# ============================================================
-OWNER_EMAILS = [
-    "your-email@gmail.com",      # ← CHANGE THIS
-    "owner@voiceai.com",         # ← Add more if needed
-]
+# ⚠️ CHANGE THIS TO YOUR EMAIL
+OWNER_EMAILS = ["your-email@gmail.com"]
 
-# ============================================================
-# CREDIT COSTS (per minute)
-# ============================================================
-COST_PER_MINUTE = 0.05   # $0.05/min (cheaper than Retell)
-FREE_SIGNUP_CREDITS = 10.00  # $10 free for new users
+COST_PER_MINUTE = 0.05
+FREE_SIGNUP_CREDITS = 10.00
 
 # ============================================================
 # DATABASE
@@ -38,7 +31,6 @@ FREE_SIGNUP_CREDITS = 10.00  # $10 free for new users
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,24 +42,22 @@ def init_db():
             credit_balance REAL DEFAULT 0,
             total_spent REAL DEFAULT 0,
             total_minutes REAL DEFAULT 0,
-            plan TEXT DEFAULT 'free',
             created_at TEXT NOT NULL
         )
     """)
-    
     c.execute("""
         CREATE TABLE IF NOT EXISTS agents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             system_prompt TEXT NOT NULL,
-            llm_model TEXT DEFAULT 'gpt-4o-mini',
+            llm_model TEXT DEFAULT 'llama-3.3-70b',
             voice_id TEXT DEFAULT 'Cartesia',
             language TEXT DEFAULT 'en-US',
+            temperature REAL DEFAULT 0.7,
             created_at TEXT NOT NULL
         )
     """)
-    
     c.execute("""
         CREATE TABLE IF NOT EXISTS knowledge_bases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +67,24 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
-    
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            title TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +97,6 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
-    
     c.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +107,6 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
-    
     conn.commit()
     conn.close()
 
@@ -115,6 +120,69 @@ def get_db():
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
+def is_owner_email(email):
+    return email.lower() in [e.lower() for e in OWNER_EMAILS]
+
+# ============================================================
+# DUCKDUCKGO AI (FREE — no API key needed)
+# ============================================================
+def get_vqd():
+    try:
+        r = requests.get(
+            "https://duckduckgo.com/duckchat/v1/status",
+            headers={
+                "x-vqd-accept": "1",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            timeout=10
+        )
+        if r.status_code == 200:
+            return r.headers.get("x-vqd-4")
+    except:
+        pass
+    return None
+
+def duckduckgo_chat(messages):
+    """Call DuckDuckGo AI Chat — free GPT-4o mini."""
+    vqd = get_vqd()
+    if not vqd:
+        return "❌ Could not connect to AI service. Please try again."
+    
+    try:
+        r = requests.post(
+            "https://duckduckgo.com/duckchat/v1/chat",
+            headers={
+                "x-vqd-4": vqd,
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            json={"model": "gpt-4o-mini", "messages": messages},
+            timeout=60,
+            stream=True
+        )
+        
+        if r.status_code != 200:
+            return f"❌ AI service error: {r.status_code}"
+        
+        full = ""
+        for line in r.iter_lines():
+            if line:
+                line = line.decode("utf-8")
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        parsed = json.loads(data)
+                        if "message" in parsed:
+                            full += parsed["message"]
+                    except:
+                        pass
+        
+        return full if full else "No response from AI."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
 # ============================================================
 # SESSION STATE
 # ============================================================
@@ -126,71 +194,19 @@ if "is_owner" not in st.session_state:
     st.session_state.is_owner = False
 
 # ============================================================
-# HELPERS
-# ============================================================
-def get_user(user_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    u = c.fetchone()
-    conn.close()
-    return u
-
-def deduct_credits(user_id, minutes, description="Call usage"):
-    """Deduct credits from user's balance. Owner is exempt."""
-    user = get_user(user_id)
-    if user["is_owner"]:
-        return True  # Owner never charged
-    
-    cost = minutes * COST_PER_MINUTE
-    if user["credit_balance"] < cost:
-        return False  # Insufficient balance
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE users 
-        SET credit_balance = credit_balance - ?,
-            total_spent = total_spent + ?,
-            total_minutes = total_minutes + ?
-        WHERE id = ?
-    """, (cost, cost, minutes, user_id))
-    c.execute("""
-        INSERT INTO transactions (user_id, amount, type, description, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_id, -cost, "usage", description, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-    return True
-
-def add_credits(user_id, amount, description="Credit purchase"):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE users SET credit_balance = credit_balance + ? WHERE id = ?
-    """, (amount, user_id))
-    c.execute("""
-        INSERT INTO transactions (user_id, amount, type, description, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_id, amount, "purchase", description, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-def is_owner_email(email):
-    return email.lower() in [e.lower() for e in OWNER_EMAILS]
-
-# ============================================================
 # AUTH PAGE
 # ============================================================
 def auth_page():
     st.markdown("""
-    <div style="text-align:center; padding:30px 0;">
-        <h1 style="font-size:42px;">🎙️ VoiceAI Platform</h1>
-        <p style="opacity:0.7; font-size:16px;">Build AI voice agents that sound human.</p>
+    <div style="text-align:center; padding:40px 0;">
+        <h1 style="font-size:48px; margin:0;">🎙️ VoiceAI Platform</h1>
+        <p style="opacity:0.7; font-size:18px; margin-top:10px;">
+            Build AI voice agents that sound human.
+        </p>
     </div>
     """, unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 1.2, 1])
+    col1, col2, col3 = st.columns([1, 1.3, 1])
     with col2:
         tab1, tab2 = st.tabs(["🔐 Log In", "✨ Sign Up"])
         
@@ -216,10 +232,10 @@ def auth_page():
                             st.session_state.is_owner = bool(user["is_owner"])
                             st.rerun()
                         else:
-                            st.error("Invalid credentials")
+                            st.error("Invalid credentials. Try signing up first.")
             
             st.markdown("---")
-            st.caption("🔵 Google Sign-In (requires OAuth setup)")
+            st.caption("🔵 Google Sign-In requires OAuth setup")
             st.button("Sign in with Google", disabled=True, use_container_width=True)
         
         with tab2:
@@ -239,9 +255,7 @@ def auth_page():
                     else:
                         try:
                             owner = 1 if is_owner_email(e) else 0
-                            # Owner gets unlimited credits, others get free signup
                             credits = 999999.99 if owner else FREE_SIGNUP_CREDITS
-                            
                             conn = get_db()
                             c = conn.cursor()
                             c.execute("""
@@ -251,7 +265,6 @@ def auth_page():
                             """, (u, e, hash_pw(p), n, owner, credits, datetime.now().isoformat()))
                             conn.commit()
                             conn.close()
-                            
                             if owner:
                                 st.success("👑 Owner account created with unlimited credits!")
                             else:
@@ -264,24 +277,30 @@ def auth_page():
 # ============================================================
 def main_app():
     user_id = st.session_state.user_id
-    user = get_user(user_id)
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    conn.close()
+    
     is_owner = bool(user["is_owner"])
     
     with st.sidebar:
         st.markdown("### 🎙️ VoiceAI")
         st.caption(f"👤 {user['name']}")
         
-        # Owner badge
         if is_owner:
-            st.success("👑 **OWNER ACCOUNT**")
+            st.success("👑 OWNER")
             st.caption("♾️ Unlimited credits")
         else:
-            st.metric("💰 Credit Balance", f"${user['credit_balance']:.2f}")
+            st.metric("💰 Balance", f"${user['credit_balance']:.2f}")
         
         st.divider()
         page = st.radio("Navigation", [
             "🏠 Dashboard",
             "🤖 Agents",
+            "💬 Playground",
             "📚 Knowledge Base",
             "📊 Analytics",
             "💳 Billing",
@@ -289,8 +308,9 @@ def main_app():
         ], label_visibility="collapsed")
         st.divider()
         if st.button("🚪 Log Out", use_container_width=True):
-            for k in ["user_id", "name", "is_owner"]:
-                st.session_state[k] = None
+            for k in ["user_id", "name", "is_owner", "playground_messages", "current_agent_id"]:
+                if k in st.session_state:
+                    del st.session_state[k]
             st.rerun()
     
     # ========================================================
@@ -305,54 +325,54 @@ def main_app():
         agent_count = c.fetchone()["x"]
         c.execute("SELECT COUNT(*) as x FROM knowledge_bases WHERE user_id = ?", (user_id,))
         kb_count = c.fetchone()["x"]
-        c.execute("SELECT COUNT(*) as x FROM calls WHERE user_id = ?", (user_id,))
-        call_count = c.fetchone()["x"]
+        c.execute("SELECT COUNT(*) as x FROM conversations WHERE user_id = ?", (user_id,))
+        conv_count = c.fetchone()["x"]
         conn.close()
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🤖 Agents", agent_count)
-        c2.metric("📚 KBs", kb_count)
-        c3.metric("📞 Calls", call_count)
+        c2.metric("📚 Knowledge Bases", kb_count)
+        c3.metric("💬 Conversations", conv_count)
         if is_owner:
             c4.metric("💰 Credits", "♾️ Unlimited")
         else:
             c4.metric("💰 Credits", f"${user['credit_balance']:.2f}")
         
         st.divider()
-        st.subheader("⚡ Quick Actions")
+        st.subheader("🚀 Get Started")
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("➕ Create Agent", use_container_width=True):
-                st.info("Go to Agents tab in sidebar")
+            st.info("**1. Create Agent**\n\nSet up your first voice agent")
         with c2:
-            if st.button("📚 Add Knowledge", use_container_width=True):
-                st.info("Go to Knowledge Base tab in sidebar")
+            st.info("**2. Test Playground**\n\nChat with your agent")
         with c3:
-            if st.button("💳 Buy Credits", use_container_width=True):
-                st.info("Go to Billing tab in sidebar")
+            st.info("**3. Add Knowledge**\n\nGive your agent context")
     
     # ========================================================
     # AGENTS
     # ========================================================
     elif page == "🤖 Agents":
         st.title("Voice Agents")
+        st.caption("Create and manage AI voice agents")
         
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
-                agent_name = st.text_input("Agent Name")
+                agent_name = st.text_input("Agent Name", placeholder="e.g. Customer Support")
                 prompt = st.text_area("System Prompt", height=180, value="""You are a helpful voice assistant.
 
 Rules:
 - Keep responses short (1-3 sentences)
 - Be polite and professional
-- Ask clarifying questions when needed""")
+- Ask clarifying questions when needed
+- Never make up information""")
+                
                 c1, c2 = st.columns(2)
                 with c1:
-                    model = st.selectbox("LLM Model", ["gpt-4o-mini", "gpt-4o", "claude-4.5-sonnet", "gemini-3-flash"])
+                    model = st.selectbox("LLM Model", ["llama-3.3-70b", "gpt-4o-mini", "claude-4.5-sonnet", "gemini-3-flash"])
                     language = st.selectbox("Language", ["en-US", "en-GB", "es-ES", "fr-FR", "de-DE", "pt-BR", "hi-IN"])
                 with c2:
-                    voice = st.selectbox("Voice Provider", ["Cartesia", "ElevenLabs", "Minimax", "OpenAI", "Custom"])
-                    speed = st.slider("Voice Speed", 0.5, 2.0, 1.0, 0.1)
+                    voice = st.selectbox("Voice Provider", ["Cartesia", "ElevenLabs", "Minimax", "OpenAI"])
+                    temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
                 
                 if st.form_submit_button("🚀 Create Agent", use_container_width=True):
                     if not agent_name:
@@ -361,15 +381,16 @@ Rules:
                         conn = get_db()
                         c = conn.cursor()
                         c.execute("""
-                            INSERT INTO agents (user_id, name, system_prompt, llm_model, voice_id, language, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (user_id, agent_name, prompt, model, voice, language, datetime.now().isoformat()))
+                            INSERT INTO agents (user_id, name, system_prompt, llm_model, voice_id, language, temperature, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (user_id, agent_name, prompt, model, voice, language, temperature, datetime.now().isoformat()))
                         conn.commit()
                         conn.close()
                         st.success(f"✅ Agent '{agent_name}' created!")
                         st.rerun()
         
         st.divider()
+        
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
@@ -377,31 +398,135 @@ Rules:
         conn.close()
         
         if not agents:
-            st.info("No agents yet.")
+            st.info("No agents yet. Create your first one above!")
         else:
             for a in agents:
                 with st.container(border=True):
-                    c1, c2 = st.columns([4, 1])
+                    c1, c2, c3 = st.columns([3, 1, 1])
                     with c1:
                         st.subheader(f"🎙️ {a['name']}")
                         st.caption(f"`{a['llm_model']}` • `{a['voice_id']}` • `{a['language']}`")
-                        with st.expander("View Prompt"):
-                            st.text(a['system_prompt'])
                     with c2:
-                        if st.button("🗑️", key=f"da_{a['id']}"):
+                        if st.button("💬 Test", key=f"test_{a['id']}", use_container_width=True):
+                            st.session_state.playground_agent = a['id']
+                            st.session_state.page = "💬 Playground"
+                            st.rerun()
+                    with c3:
+                        if st.button("🗑️", key=f"del_{a['id']}", use_container_width=True):
                             conn = get_db()
                             c = conn.cursor()
                             c.execute("DELETE FROM agents WHERE id = ?", (a['id'],))
                             conn.commit()
                             conn.close()
                             st.rerun()
+                    with st.expander("View Prompt"):
+                        st.text(a['system_prompt'])
+    
+    # ========================================================
+    # PLAYGROUND — TEST YOUR AGENT
+    # ========================================================
+    elif page == "💬 Playground":
+        st.title("💬 Agent Playground")
+        st.caption("Test your agent in real-time — exactly like Retell")
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM agents WHERE user_id = ?", (user_id,))
+        agents = c.fetchall()
+        conn.close()
+        
+        if not agents:
+            st.warning("Create an agent first to test it!")
+            return
+        
+        # Agent selector
+        agent_options = {f"{a['name']}": a for a in agents}
+        default_idx = 0
+        if "playground_agent" in st.session_state:
+            for i, a in enumerate(agents):
+                if a['id'] == st.session_state.playground_agent:
+                    default_idx = i
+                    break
+        
+        selected_name = st.selectbox(
+            "🤖 Select Agent to Test",
+            list(agent_options.keys()),
+            index=default_idx
+        )
+        selected_agent = agent_options[selected_name]
+        
+        # Sidebar config
+        with st.sidebar:
+            st.divider()
+            st.subheader("⚙️ Test Controls")
+            if st.button("🗑️ Clear Conversation", use_container_width=True):
+                st.session_state.playground_messages = []
+                st.rerun()
+            
+            st.caption("**Agent Config**")
+            st.write(f"Model: `{selected_agent['llm_model']}`")
+            st.write(f"Voice: `{selected_agent['voice_id']}`")
+            st.write(f"Language: `{selected_agent['language']}`")
+            st.write(f"Temperature: `{selected_agent['temperature']}`")
+        
+        # Init chat
+        if "playground_messages" not in st.session_state:
+            st.session_state.playground_messages = []
+        if "playground_agent" not in st.session_state or st.session_state.playground_agent != selected_agent['id']:
+            st.session_state.playground_messages = []
+            st.session_state.playground_agent = selected_agent['id']
+        
+        # Display chat
+        for msg in st.session_state.playground_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+        
+        # Chat input
+        if prompt := st.chat_input(f"Message {selected_agent['name']}..."):
+            # Add user message
+            st.session_state.playground_messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.write(prompt)
+            
+            # Generate response
+            with st.chat_message("assistant"):
+                with st.spinner("🧠 Agent is thinking..."):
+                    # Build messages with system prompt
+                    messages = [{"role": "system", "content": selected_agent['system_prompt']}]
+                    messages.extend(st.session_state.playground_messages[-10:])
+                    
+                    # Get response from free AI
+                    response = duckduckgo_chat(messages)
+                    st.write(response)
+                    
+                    # Save
+                    st.session_state.playground_messages.append({"role": "assistant", "content": response})
+                    
+                    # Save conversation to DB
+                    try:
+                        conn = get_db()
+                        c = conn.cursor()
+                        c.execute("""
+                            INSERT INTO conversations (agent_id, user_id, title, created_at)
+                            VALUES (?, ?, ?, ?)
+                        """, (selected_agent['id'], user_id, prompt[:50], datetime.now().isoformat()))
+                        conv_id = c.lastrowid
+                        for m in st.session_state.playground_messages[-2:]:
+                            c.execute("""
+                                INSERT INTO messages (conversation_id, role, content, created_at)
+                                VALUES (?, ?, ?, ?)
+                            """, (conv_id, m["role"], m["content"], datetime.now().isoformat()))
+                        conn.commit()
+                        conn.close()
+                    except Exception as e:
+                        pass
     
     # ========================================================
     # KNOWLEDGE BASE
     # ========================================================
     elif page == "📚 Knowledge Base":
         st.title("Knowledge Base")
-        st.caption("Unlimited knowledge bases — no per-KB fee.")
+        st.caption("Add context for your agents — unlimited, no per-KB fee")
         
         with st.form("new_kb"):
             kb_name = st.text_input("Name")
@@ -428,16 +553,20 @@ Rules:
         kbs = c.fetchall()
         conn.close()
         
-        for kb in kbs:
-            with st.expander(f"📚 {kb['name']}"):
-                st.text(kb['content'][:500] if kb['content'] else "")
-                if st.button("🗑️ Delete", key=f"dk_{kb['id']}"):
-                    conn = get_db()
-                    c = conn.cursor()
-                    c.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb['id'],))
-                    conn.commit()
-                    conn.close()
-                    st.rerun()
+        if not kbs:
+            st.info("No knowledge bases yet.")
+        else:
+            for kb in kbs:
+                with st.expander(f"📚 {kb['name']}"):
+                    st.caption(f"Added: {kb['created_at'][:19]}")
+                    st.text(kb['content'][:500] if kb['content'] else "")
+                    if st.button("🗑️ Delete", key=f"dk_{kb['id']}"):
+                        conn = get_db()
+                        c = conn.cursor()
+                        c.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb['id'],))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
     
     # ========================================================
     # ANALYTICS
@@ -447,39 +576,36 @@ Rules:
         
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as x FROM calls WHERE user_id = ?", (user_id,))
+        c.execute("SELECT COUNT(*) as x FROM conversations WHERE user_id = ?", (user_id,))
         total = c.fetchone()["x"]
-        c.execute("SELECT SUM(duration_seconds) as s FROM calls WHERE user_id = ?", (user_id,))
-        secs = c.fetchone()["s"] or 0
-        c.execute("SELECT SUM(credits_used) as c FROM calls WHERE user_id = ?", (user_id,))
-        credits = c.fetchone()["c"] or 0
         conn.close()
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("Total Calls", total)
-        c2.metric("Minutes", f"{secs/60:.1f}")
-        c3.metric("Credits Used", f"${credits:.2f}")
+        c1.metric("Total Conversations", total)
+        c2.metric("Minutes Used", f"{user['total_minutes']:.1f}")
+        c3.metric("Credits Spent", f"${user['total_spent']:.2f}")
         
         st.divider()
-        st.subheader("Recent Calls")
+        st.subheader("Recent Conversations")
+        
         conn = get_db()
         c = conn.cursor()
         c.execute("""
-            SELECT ca.*, a.name as agent_name FROM calls ca
-            LEFT JOIN agents a ON ca.agent_id = a.id
-            WHERE ca.user_id = ? ORDER BY ca.created_at DESC LIMIT 20
+            SELECT conv.*, a.name as agent_name
+            FROM conversations conv
+            LEFT JOIN agents a ON conv.agent_id = a.id
+            WHERE conv.user_id = ?
+            ORDER BY conv.created_at DESC LIMIT 20
         """, (user_id,))
-        calls = c.fetchall()
+        convs = c.fetchall()
         conn.close()
         
-        if not calls:
-            st.info("No calls yet.")
+        if not convs:
+            st.info("No conversations yet. Test your agent in the Playground!")
         else:
-            for call in calls:
-                with st.expander(f"📞 {call['agent_name'] or 'Agent'} — {call['created_at'][:19]}"):
-                    st.write(f"**Duration:** {call['duration_seconds']}s")
-                    st.write(f"**Credits:** ${call['credits_used']:.3f}")
-                    st.write(f"**Sentiment:** {call['sentiment'] or 'N/A'}")
+            for conv in convs:
+                with st.expander(f"💬 {conv['agent_name']} — {conv['created_at'][:19]}"):
+                    st.write(f"**Title:** {conv['title']}")
     
     # ========================================================
     # BILLING
@@ -488,64 +614,37 @@ Rules:
         st.title("Billing & Credits")
         
         if is_owner:
-            st.success("👑 **Owner Account — Unlimited Free Credits**")
-            st.info("You are the platform owner. You are never charged for usage.")
+            st.success("👑 Owner Account — Unlimited Free Credits")
+            st.info("You are the platform owner. Never charged for usage.")
             
-            st.divider()
-            st.subheader("Platform Revenue")
             conn = get_db()
             c = conn.cursor()
-            c.execute("SELECT COUNT(*) as users FROM users WHERE is_owner = 0")
-            total_users = c.fetchone()["users"]
-            c.execute("SELECT SUM(total_spent) as revenue FROM users WHERE is_owner = 0")
-            revenue = c.fetchone()["revenue"] or 0
-            c.execute("SELECT SUM(total_minutes) as minutes FROM users WHERE is_owner = 0")
-            total_minutes = c.fetchone()["minutes"] or 0
+            c.execute("SELECT COUNT(*) as x FROM users WHERE is_owner = 0")
+            total_users = c.fetchone()["x"]
+            c.execute("SELECT SUM(total_spent) as r FROM users WHERE is_owner = 0")
+            revenue = c.fetchone()["r"] or 0
             conn.close()
             
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             c1.metric("👥 Paying Users", total_users)
             c2.metric("💰 Total Revenue", f"${revenue:.2f}")
-            c3.metric("⏱️ Minutes Served", f"{total_minutes:.1f}")
-            
-            st.divider()
-            st.subheader("All Users")
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("""
-                SELECT username, email, credit_balance, total_spent, total_minutes, plan
-                FROM users WHERE is_owner = 0 ORDER BY total_spent DESC
-            """)
-            users = c.fetchall()
-            conn.close()
-            
-            if users:
-                for u in users:
-                    st.write(f"**{u['username']}** ({u['email']}) — ${u['credit_balance']:.2f} balance • ${u['total_spent']:.2f} spent • {u['total_minutes']:.1f} min")
         else:
             st.metric("💰 Credit Balance", f"${user['credit_balance']:.2f}")
             st.caption(f"Rate: ${COST_PER_MINUTE:.2f} per minute")
             
             st.divider()
-            st.subheader("💳 Buy Credits")
+            st.subheader("Buy Credits")
             cols = st.columns(4)
-            packages = [
-                (10, "Starter"),
-                (25, "Popular"),
-                (50, "Pro"),
-                (100, "Business")
-            ]
-            for col, (amount, label) in zip(cols, packages):
+            for col, (amount, label) in zip(cols, [(10, "Starter"), (25, "Popular"), (50, "Pro"), (100, "Business")]):
                 with col:
                     st.markdown(f"### ${amount}")
                     st.caption(label)
-                    st.caption(f"{amount/COST_PER_MINUTE:.0f} minutes")
+                    st.caption(f"{amount/COST_PER_MINUTE:.0f} min")
                     if st.button(f"Buy ${amount}", key=f"buy_{amount}", use_container_width=True):
-                        st.info("🔗 Stripe checkout would open here")
-                        st.caption("Add Stripe API key in Settings to enable")
+                        st.info("🔗 Payment gateway would open here")
             
             st.divider()
-            st.subheader("📜 Transaction History")
+            st.subheader("Transaction History")
             conn = get_db()
             c = conn.cursor()
             c.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
@@ -558,7 +657,6 @@ Rules:
                 for tx in txs:
                     emoji = "💚" if tx["amount"] > 0 else "💸"
                     st.write(f"{emoji} **${abs(tx['amount']):.2f}** — {tx['type'].title()} — {tx['description']}")
-                    st.caption(tx["created_at"][:19])
     
     # ========================================================
     # SETTINGS
@@ -570,7 +668,6 @@ Rules:
         st.write(f"**Name:** {user['name']}")
         st.write(f"**Username:** {user['username']}")
         st.write(f"**Email:** {user['email']}")
-        st.write(f"**Plan:** {user['plan'].title()}")
         st.write(f"**Role:** {'👑 Owner' if is_owner else '👤 User'}")
         
         st.divider()
@@ -581,12 +678,7 @@ Rules:
         st.text_input("Cartesia API Key", type="password", key="k_cart")
         st.text_input("Twilio Account SID", type="password", key="k_tw")
         
-        st.divider()
-        st.subheader("💳 Payment Integration")
-        st.caption("Add Stripe key to enable credit purchases.")
-        st.text_input("Stripe Secret Key", type="password", key="k_stripe")
-        
-        if st.button("💾 Save All Keys"):
+        if st.button("💾 Save Keys"):
             st.success("Keys saved to session.")
 
 # ============================================================
@@ -595,4 +687,6 @@ Rules:
 if st.session_state.user_id is None:
     auth_page()
 else:
+    if "page" not in st.session_state:
+        st.session_state.page = "🏠 Dashboard"
     main_app()
