@@ -7,6 +7,9 @@ import requests
 import time
 from datetime import datetime
 
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 st.set_page_config(
     page_title="VoiceAI Platform",
     page_icon="🎙️",
@@ -17,7 +20,7 @@ st.set_page_config(
 DB_FILE = "voiceai.db"
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["your-email@gmail.com"]
+OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
 
 COST_PER_MINUTE = 0.05
 FREE_SIGNUP_CREDITS = 10.00
@@ -135,9 +138,8 @@ def is_owner_email(email):
 # FREE AI — Pollinations (no key, no blocking)
 # ============================================================
 def pollinations_chat(messages, temperature=0.7):
-    """Call Pollinations AI — completely free, no API key, no blocking."""
+    """Call Pollinations AI — completely free, no API key."""
     try:
-        # Build prompt from messages
         prompt = ""
         for m in messages:
             if m["role"] == "system":
@@ -148,27 +150,30 @@ def pollinations_chat(messages, temperature=0.7):
                 prompt += f"Assistant: {m['content']}\n"
         prompt += "Assistant:"
         
-        url = "https://text.pollinations.ai/openai"
-        payload = {
-            "model": "openai",
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": 1000
-        }
+        # Try OpenAI-compatible endpoint first
+        try:
+            url = "https://text.pollinations.ai/openai"
+            payload = {
+                "model": "openai",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 1000
+            }
+            r = requests.post(url, json=payload, timeout=60)
+            if r.status_code == 200:
+                data = r.json()
+                if "choices" in data and len(data["choices"]) > 0:
+                    return data["choices"][0]["message"]["content"]
+        except:
+            pass
         
-        r = requests.post(url, json=payload, timeout=60)
-        if r.status_code == 200:
-            data = r.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"]
-        
-        # Fallback: try the simple endpoint
+        # Fallback to simple endpoint
         url2 = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
         r2 = requests.get(url2, timeout=60)
         if r2.status_code == 200:
             return r2.text
         
-        return f"❌ AI service returned {r.status_code}. Try again."
+        return "❌ AI service unavailable. Please try again."
     except Exception as e:
         return f"❌ Connection error: {str(e)}"
 
@@ -432,6 +437,9 @@ Rules:
                 st.rerun()
             return
         
+        # Convert to dicts for safe access
+        agents = [dict(a) for a in agents]
+        
         agent_options = {f"{a['name']}": a for a in agents}
         default_idx = 0
         if "playground_agent" in st.session_state:
@@ -475,7 +483,14 @@ Rules:
                     messages = [{"role": "system", "content": selected_agent['system_prompt']}]
                     messages.extend(st.session_state.playground_messages[-10:])
                     
-                    response = pollinations_chat(messages, selected_agent.get('temperature', 0.7))
+                    agent_temp = 0.7
+                    try:
+                        if selected_agent.get('temperature') is not None:
+                            agent_temp = float(selected_agent['temperature'])
+                    except:
+                        pass
+                    
+                    response = pollinations_chat(messages, agent_temp)
                     st.write(response)
                     
                     st.session_state.playground_messages.append({"role": "assistant", "content": response})
