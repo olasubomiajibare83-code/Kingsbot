@@ -2,28 +2,20 @@ import streamlit as st
 import sqlite3
 import hashlib
 import json
-import os
 import requests
 import time
 from datetime import datetime
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
 st.set_page_config(
-    page_title="VoiceAI Platform",
-    page_icon="🎙️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="AI Agent Platform",
+    page_icon="🤖",
+    layout="wide"
 )
 
-DB_FILE = "voiceai.db"
+DB_FILE = "agents.db"
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
-
-COST_PER_MINUTE = 0.05
-FREE_SIGNUP_CREDITS = 10.00
+OWNER_EMAILS = ["your-email@gmail.com"]
 
 # ============================================================
 # DATABASE
@@ -31,97 +23,65 @@ FREE_SIGNUP_CREDITS = 10.00
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            name TEXT,
-            is_owner INTEGER DEFAULT 0,
-            credit_balance REAL DEFAULT 0,
-            total_spent REAL DEFAULT 0,
-            total_minutes REAL DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS agents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            system_prompt TEXT NOT NULL,
-            llm_model TEXT DEFAULT 'llama-3.3-70b',
-            voice_id TEXT DEFAULT 'Cartesia',
-            language TEXT DEFAULT 'en-US',
-            temperature REAL DEFAULT 0.7,
-            first_message TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS knowledge_bases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            content TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            title TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            type TEXT NOT NULL,
-            description TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-    
+    c.execute("""CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT,
+        is_owner INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS agents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        system_prompt TEXT NOT NULL,
+        created_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS chats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        agent_id INTEGER NOT NULL,
+        title TEXT,
+        created_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL)""")
     conn.commit()
     conn.close()
 
 def migrate_db():
+    """Add missing columns to old database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("PRAGMA table_info(agents)")
     cols = [row[1] for row in c.fetchall()]
-    for col, default in [("temperature", "0.7"), ("voice_id", "'Cartesia'"), ("language", "'en-US'"), ("first_message", "''")]:
-        if col not in cols:
-            try:
-                c.execute(f"ALTER TABLE agents ADD COLUMN {col} DEFAULT {default}")
-            except:
-                pass
+    if "description" not in cols:
+        try:
+            c.execute("ALTER TABLE agents ADD COLUMN description TEXT")
+        except:
+            pass
     conn.commit()
     conn.close()
 
+def fix_owners():
+    """Auto-promote owner emails."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        for email in OWNER_EMAILS:
+            c.execute("UPDATE users SET is_owner = 1 WHERE LOWER(email) = LOWER(?)", (email,))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
 init_db()
 migrate_db()
+fix_owners()
 
 def get_db():
     conn = sqlite3.connect(DB_FILE)
@@ -135,47 +95,41 @@ def is_owner_email(email):
     return email.lower() in [e.lower() for e in OWNER_EMAILS]
 
 # ============================================================
-# FREE AI — Pollinations (no key, no blocking)
+# FREE AI — Text Chat
 # ============================================================
-def pollinations_chat(messages, temperature=0.7):
-    """Call Pollinations AI — completely free, no API key."""
+def ai_chat(messages):
+    """Get AI response — free, no API key."""
+    prompt = ""
+    for m in messages:
+        if m["role"] == "system":
+            prompt += f"{m['content']}\n\n"
+        elif m["role"] == "user":
+            prompt += f"User: {m['content']}\n"
+        elif m["role"] == "assistant":
+            prompt += f"Assistant: {m['content']}\n"
+    prompt += "Assistant:"
+    
+    # Try Pollinations first
     try:
-        prompt = ""
-        for m in messages:
-            if m["role"] == "system":
-                prompt += f"{m['content']}\n\n"
-            elif m["role"] == "user":
-                prompt += f"User: {m['content']}\n"
-            elif m["role"] == "assistant":
-                prompt += f"Assistant: {m['content']}\n"
-        prompt += "Assistant:"
-        
-        # Try OpenAI-compatible endpoint first
-        try:
-            url = "https://text.pollinations.ai/openai"
-            payload = {
-                "model": "openai",
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": 1000
-            }
-            r = requests.post(url, json=payload, timeout=60)
-            if r.status_code == 200:
-                data = r.json()
-                if "choices" in data and len(data["choices"]) > 0:
-                    return data["choices"][0]["message"]["content"]
-        except:
-            pass
-        
-        # Fallback to simple endpoint
-        url2 = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
-        r2 = requests.get(url2, timeout=60)
-        if r2.status_code == 200:
-            return r2.text
-        
-        return "❌ AI service unavailable. Please try again."
-    except Exception as e:
-        return f"❌ Connection error: {str(e)}"
+        url = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
+        r = requests.get(url, timeout=45)
+        if r.status_code == 200 and r.text and len(r.text.strip()) > 3:
+            return r.text.strip()
+    except:
+        pass
+    
+    # Fallback: Hugging Face
+    try:
+        url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+        r = requests.post(url, json={"inputs": prompt, "parameters": {"max_new_tokens": 500}}, timeout=45)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and data:
+                return data[0].get("generated_text", "").replace(prompt, "").strip()
+    except:
+        pass
+    
+    return "⚠️ AI is busy. Please try again in a moment."
 
 # ============================================================
 # SESSION STATE
@@ -186,8 +140,6 @@ if "name" not in st.session_state:
     st.session_state.name = None
 if "is_owner" not in st.session_state:
     st.session_state.is_owner = False
-if "page" not in st.session_state:
-    st.session_state.page = "🏠 Dashboard"
 
 # ============================================================
 # AUTH PAGE
@@ -195,10 +147,8 @@ if "page" not in st.session_state:
 def auth_page():
     st.markdown("""
     <div style="text-align:center; padding:40px 0;">
-        <h1 style="font-size:48px; margin:0;">🎙️ VoiceAI Platform</h1>
-        <p style="opacity:0.7; font-size:18px; margin-top:10px;">
-            Build AI voice agents that sound human.
-        </p>
+        <h1 style="font-size:48px;">🤖 AI Agent Platform</h1>
+        <p style="opacity:0.7; font-size:18px;">Build and chat with your own AI agents.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -212,25 +162,27 @@ def auth_page():
                 p = st.text_input("Password", type="password")
                 if st.form_submit_button("Log In", use_container_width=True):
                     if not u or not p:
-                        st.error("Please fill all fields")
+                        st.error("Fill all fields")
                     else:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("""SELECT id, name, is_owner FROM users 
-                            WHERE (username = ? OR email = ?) AND password_hash = ?""", (u, u, hash_pw(p)))
+                        c.execute("SELECT id, name, is_owner, email FROM users WHERE (username = ? OR email = ?) AND password_hash = ?", (u, u, hash_pw(p)))
                         user = c.fetchone()
-                        conn.close()
+                        
                         if user:
+                            if is_owner_email(user["email"]):
+                                c.execute("UPDATE users SET is_owner = 1 WHERE id = ?", (user["id"],))
+                                conn.commit()
+                                st.session_state.is_owner = True
+                            else:
+                                st.session_state.is_owner = bool(user["is_owner"])
+                            conn.close()
                             st.session_state.user_id = user["id"]
                             st.session_state.name = user["name"] or u
-                            st.session_state.is_owner = bool(user["is_owner"])
                             st.rerun()
                         else:
-                            st.error("Invalid credentials. Try signing up first.")
-            
-            st.markdown("---")
-            st.caption("🔵 Google Sign-In requires OAuth setup")
-            st.button("Sign in with Google", disabled=True, use_container_width=True)
+                            conn.close()
+                            st.error("Invalid credentials. Sign up first.")
         
         with tab2:
             with st.form("signup"):
@@ -241,7 +193,7 @@ def auth_page():
                 p2 = st.text_input("Confirm Password", type="password")
                 if st.form_submit_button("Create Account", use_container_width=True):
                     if not u or not e or not p:
-                        st.error("Please fill all fields")
+                        st.error("Fill all fields")
                     elif p != p2:
                         st.error("Passwords don't match")
                     elif len(p) < 6:
@@ -249,19 +201,13 @@ def auth_page():
                     else:
                         try:
                             owner = 1 if is_owner_email(e) else 0
-                            credits = 999999.99 if owner else FREE_SIGNUP_CREDITS
                             conn = get_db()
                             c = conn.cursor()
-                            c.execute("""INSERT INTO users 
-                                (username, email, password_hash, name, is_owner, credit_balance, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                                (u, e, hash_pw(p), n, owner, credits, datetime.now().isoformat()))
+                            c.execute("INSERT INTO users (username, email, password_hash, name, is_owner, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                (u, e, hash_pw(p), n, owner, datetime.now().isoformat()))
                             conn.commit()
                             conn.close()
-                            if owner:
-                                st.success("👑 Owner account created with unlimited credits!")
-                            else:
-                                st.success(f"✅ Account created with ${FREE_SIGNUP_CREDITS:.2f} free credits!")
+                            st.success("👑 Owner account created!" if owner else "✅ Account created! Log in now.")
                         except sqlite3.IntegrityError:
                             st.error("Username or email already exists")
 
@@ -275,33 +221,35 @@ def main_app():
     c = conn.cursor()
     c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     user = c.fetchone()
-    conn.close()
     
     if not user:
+        conn.close()
         st.session_state.user_id = None
         st.rerun()
         return
     
+    # Auto-promote owner
+    if is_owner_email(user["email"]) and not user["is_owner"]:
+        c.execute("UPDATE users SET is_owner = 1 WHERE id = ?", (user_id,))
+        conn.commit()
+        c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+    
+    conn.close()
     is_owner = bool(user["is_owner"])
     
     with st.sidebar:
-        st.markdown("### 🎙️ VoiceAI")
+        st.markdown("### 🤖 AI Agent Platform")
         st.caption(f"👤 {user['name']}")
-        
         if is_owner:
-            st.success("👑 OWNER")
-            st.caption("♾️ Unlimited credits")
-        else:
-            st.metric("💰 Balance", f"${user['credit_balance']:.2f}")
+            st.success("👑 Owner — Unlimited")
         
         st.divider()
-        pages = ["🏠 Dashboard", "🤖 Agents", "💬 Playground", "📚 Knowledge Base", "📊 Analytics", "💳 Billing", "⚙️ Settings"]
-        current_idx = pages.index(st.session_state.page) if st.session_state.page in pages else 0
-        selected_page = st.radio("Navigation", pages, index=current_idx, label_visibility="collapsed")
-        st.session_state.page = selected_page
+        page = st.radio("Navigation", ["🏠 Dashboard", "🤖 Agents", "💬 Chat", "📚 Knowledge"], label_visibility="collapsed")
         st.divider()
+        
         if st.button("🚪 Log Out", use_container_width=True):
-            for k in ["user_id", "name", "is_owner", "playground_messages", "playground_agent", "page"]:
+            for k in ["user_id", "name", "is_owner", "chat_messages", "chat_agent_id", "chat_id"]:
                 if k in st.session_state:
                     del st.session_state[k]
             st.rerun()
@@ -309,61 +257,46 @@ def main_app():
     # ========================================================
     # DASHBOARD
     # ========================================================
-    if st.session_state.page == "🏠 Dashboard":
-        st.title(f"Welcome back, {user['name']} 👋")
+    if page == "🏠 Dashboard":
+        st.title(f"Welcome, {user['name']} 👋")
         
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) as x FROM agents WHERE user_id = ?", (user_id,))
         agent_count = c.fetchone()["x"]
-        c.execute("SELECT COUNT(*) as x FROM knowledge_bases WHERE user_id = ?", (user_id,))
-        kb_count = c.fetchone()["x"]
-        c.execute("SELECT COUNT(*) as x FROM conversations WHERE user_id = ?", (user_id,))
-        conv_count = c.fetchone()["x"]
+        c.execute("SELECT COUNT(*) as x FROM chats WHERE user_id = ?", (user_id,))
+        chat_count = c.fetchone()["x"]
         conn.close()
         
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2 = st.columns(2)
         c1.metric("🤖 Agents", agent_count)
-        c2.metric("📚 Knowledge Bases", kb_count)
-        c3.metric("💬 Conversations", conv_count)
-        c4.metric("💰 Credits", "♾️ Unlimited" if is_owner else f"${user['credit_balance']:.2f}")
+        c2.metric("💬 Chats", chat_count)
         
         st.divider()
-        st.subheader("🚀 Get Started")
-        c1, c2, c3 = st.columns(3)
+        st.subheader("🚀 Quick Start")
+        c1, c2 = st.columns(2)
         with c1:
-            st.info("**1. Create Agent**\n\nSet up your first voice agent")
+            st.info("**1. Create an Agent**\n\nGo to 🤖 Agents to build your first agent")
         with c2:
-            st.info("**2. Test Playground**\n\nChat with your agent")
-        with c3:
-            st.info("**3. Add Knowledge**\n\nGive your agent context")
+            st.info("**2. Start Chatting**\n\nGo to 💬 Chat to talk to your agent")
     
     # ========================================================
     # AGENTS
     # ========================================================
-    elif st.session_state.page == "🤖 Agents":
-        st.title("Voice Agents")
-        st.caption("Create and manage AI voice agents")
+    elif page == "🤖 Agents":
+        st.title("Your Agents")
         
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
-                agent_name = st.text_input("Agent Name", placeholder="e.g. Customer Support")
-                first_message = st.text_input("First Message", placeholder="Hello! How can I help you today?", value="Hello! How can I help you today?")
-                prompt = st.text_area("System Prompt", height=180, value="""You are a helpful voice assistant.
+                agent_name = st.text_input("Agent Name", placeholder="e.g. Coding Helper")
+                description = st.text_input("Description (optional)", placeholder="What does this agent do?")
+                prompt = st.text_area("System Prompt", height=180, value="""You are a helpful AI assistant.
 
 Rules:
-- Keep responses short (1-3 sentences)
-- Be polite and professional
+- Be clear and concise
 - Ask clarifying questions when needed
-- Never make up information""")
-                
-                c1, c2 = st.columns(2)
-                with c1:
-                    model = st.selectbox("LLM Model", ["llama-3.3-70b", "gpt-4o-mini", "claude-4.5-sonnet", "gemini-3-flash"])
-                    language = st.selectbox("Language", ["en-US", "en-GB", "es-ES", "fr-FR", "de-DE", "pt-BR", "hi-IN"])
-                with c2:
-                    voice = st.selectbox("Voice Provider", ["Cartesia", "ElevenLabs", "Minimax", "OpenAI"])
-                    temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
+- Never make up information
+- Be friendly and professional""")
                 
                 if st.form_submit_button("🚀 Create Agent", use_container_width=True):
                     if not agent_name:
@@ -372,10 +305,8 @@ Rules:
                         try:
                             conn = get_db()
                             c = conn.cursor()
-                            c.execute("""INSERT INTO agents 
-                                (user_id, name, system_prompt, llm_model, voice_id, language, temperature, first_message, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                (user_id, agent_name, prompt, model, voice, language, temperature, first_message, datetime.now().isoformat()))
+                            c.execute("INSERT INTO agents (user_id, name, description, system_prompt, created_at) VALUES (?, ?, ?, ?, ?)",
+                                (user_id, agent_name, description, prompt, datetime.now().isoformat()))
                             conn.commit()
                             conn.close()
                             st.success(f"✅ Agent '{agent_name}' created!")
@@ -399,12 +330,15 @@ Rules:
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([3, 1, 1])
                     with c1:
-                        st.subheader(f"🎙️ {a['name']}")
-                        st.caption(f"`{a['llm_model']}` • `{a['voice_id']}` • `{a['language']}`")
+                        st.subheader(f"🤖 {a['name']}")
+                        if a['description']:
+                            st.caption(a['description'])
                     with c2:
-                        if st.button("💬 Test", key=f"test_{a['id']}", use_container_width=True):
-                            st.session_state.playground_agent = a['id']
-                            st.session_state.page = "💬 Playground"
+                        if st.button("💬 Chat", key=f"chat_{a['id']}", use_container_width=True):
+                            st.session_state.chat_agent_id = a['id']
+                            st.session_state.page = "💬 Chat"
+                            st.session_state.chat_messages = []
+                            st.session_state.chat_id = None
                             st.rerun()
                     with c3:
                         if st.button("🗑️", key=f"del_{a['id']}", use_container_width=True):
@@ -418,11 +352,10 @@ Rules:
                         st.text(a['system_prompt'])
     
     # ========================================================
-    # PLAYGROUND
+    # CHAT
     # ========================================================
-    elif st.session_state.page == "💬 Playground":
-        st.title("💬 Agent Playground")
-        st.caption("Test your agent in real-time")
+    elif page == "💬 Chat":
+        st.title("Chat with Your Agent")
         
         conn = get_db()
         c = conn.cursor()
@@ -431,235 +364,92 @@ Rules:
         conn.close()
         
         if not agents:
-            st.warning("Create an agent first to test it!")
+            st.warning("Create an agent first!")
             if st.button("➕ Create Agent"):
-                st.session_state.page = "🤖 Agents"
                 st.rerun()
             return
         
-        # Convert to dicts for safe access
         agents = [dict(a) for a in agents]
-        
-        agent_options = {f"{a['name']}": a for a in agents}
-        default_idx = 0
-        if "playground_agent" in st.session_state:
+        options = {f"{a['name']}": a for a in agents}
+        default = 0
+        if "chat_agent_id" in st.session_state:
             for i, a in enumerate(agents):
-                if a['id'] == st.session_state.playground_agent:
-                    default_idx = i
+                if a['id'] == st.session_state.chat_agent_id:
+                    default = i
                     break
         
-        selected_name = st.selectbox("🤖 Select Agent to Test", list(agent_options.keys()), index=default_idx)
-        selected_agent = agent_options[selected_name]
+        selected_name = st.selectbox("Choose agent", list(options.keys()), index=default)
+        selected_agent = options[selected_name]
+        
+        if "chat_agent_id" not in st.session_state or st.session_state.chat_agent_id != selected_agent['id']:
+            st.session_state.chat_messages = []
+            st.session_state.chat_agent_id = selected_agent['id']
+            st.session_state.chat_id = None
+        
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
         
         with st.sidebar:
             st.divider()
-            st.subheader("⚙️ Test Controls")
-            if st.button("🗑️ Clear Conversation", use_container_width=True):
-                st.session_state.playground_messages = []
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state.chat_messages = []
                 st.rerun()
-            st.caption("**Agent Config**")
-            st.write(f"Model: `{selected_agent['llm_model']}`")
-            st.write(f"Voice: `{selected_agent['voice_id']}`")
-            st.write(f"Language: `{selected_agent['language']}`")
-            st.write(f"Temperature: `{selected_agent['temperature']}`")
         
-        if "playground_messages" not in st.session_state:
-            st.session_state.playground_messages = []
-        if "playground_agent" not in st.session_state or st.session_state.playground_agent != selected_agent['id']:
-            st.session_state.playground_messages = []
-            st.session_state.playground_agent = selected_agent['id']
-        
-        for msg in st.session_state.playground_messages:
+        # Display messages
+        for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
         
+        # Chat input
         if prompt := st.chat_input(f"Message {selected_agent['name']}..."):
-            st.session_state.playground_messages.append({"role": "user", "content": prompt})
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
             
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Agent is thinking..."):
+                with st.spinner("Thinking..."):
                     messages = [{"role": "system", "content": selected_agent['system_prompt']}]
-                    messages.extend(st.session_state.playground_messages[-10:])
+                    messages.extend(st.session_state.chat_messages[-10:])
                     
-                    agent_temp = 0.7
-                    try:
-                        if selected_agent.get('temperature') is not None:
-                            agent_temp = float(selected_agent['temperature'])
-                    except:
-                        pass
-                    
-                    response = pollinations_chat(messages, agent_temp)
+                    response = ai_chat(messages)
                     st.write(response)
                     
-                    st.session_state.playground_messages.append({"role": "assistant", "content": response})
+                    st.session_state.chat_messages.append({"role": "assistant", "content": response})
                     
+                    # Save to DB
                     try:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("""INSERT INTO conversations (agent_id, user_id, title, created_at)
-                            VALUES (?, ?, ?, ?)""", (selected_agent['id'], user_id, prompt[:50], datetime.now().isoformat()))
-                        conv_id = c.lastrowid
-                        for m in st.session_state.playground_messages[-2:]:
-                            c.execute("""INSERT INTO messages (conversation_id, role, content, created_at)
-                                VALUES (?, ?, ?, ?)""", (conv_id, m["role"], m["content"], datetime.now().isoformat()))
+                        if not st.session_state.get("chat_id"):
+                            c.execute("INSERT INTO chats (user_id, agent_id, title, created_at) VALUES (?, ?, ?, ?)",
+                                (user_id, selected_agent['id'], prompt[:40], datetime.now().isoformat()))
+                            st.session_state.chat_id = c.lastrowid
+                        c.execute("INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                            (st.session_state.chat_id, "user", prompt, datetime.now().isoformat()))
+                        c.execute("INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                            (st.session_state.chat_id, "assistant", response, datetime.now().isoformat()))
                         conn.commit()
                         conn.close()
                     except:
                         pass
     
     # ========================================================
-    # KNOWLEDGE BASE
+    # KNOWLEDGE
     # ========================================================
-    elif st.session_state.page == "📚 Knowledge Base":
+    elif page == "📚 Knowledge":
         st.title("Knowledge Base")
-        st.caption("Add context for your agents")
+        st.caption("Add reference info for yourself")
         
         with st.form("new_kb"):
-            kb_name = st.text_input("Name")
+            kb_name = st.text_input("Title")
             kb_content = st.text_area("Content", height=200)
             if st.form_submit_button("💾 Save", use_container_width=True):
                 if not kb_name:
-                    st.error("Please enter a name")
+                    st.error("Enter a title")
                 else:
-                    conn = get_db()
-                    c = conn.cursor()
-                    c.execute("""INSERT INTO knowledge_bases (user_id, name, content, created_at)
-                        VALUES (?, ?, ?, ?)""", (user_id, kb_name, kb_content, datetime.now().isoformat()))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"✅ '{kb_name}' saved!")
-                    st.rerun()
+                    st.success(f"✅ Saved '{kb_name}'!")
         
-        st.divider()
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT * FROM knowledge_bases WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-        kbs = c.fetchall()
-        conn.close()
-        
-        if not kbs:
-            st.info("No knowledge bases yet.")
-        else:
-            for kb in kbs:
-                with st.expander(f"📚 {kb['name']}"):
-                    st.caption(f"Added: {kb['created_at'][:19]}")
-                    st.text(kb['content'][:500] if kb['content'] else "")
-                    if st.button("🗑️ Delete", key=f"dk_{kb['id']}"):
-                        conn = get_db()
-                        c = conn.cursor()
-                        c.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb['id'],))
-                        conn.commit()
-                        conn.close()
-                        st.rerun()
-    
-    # ========================================================
-    # ANALYTICS
-    # ========================================================
-    elif st.session_state.page == "📊 Analytics":
-        st.title("Analytics")
-        
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) as x FROM conversations WHERE user_id = ?", (user_id,))
-        total = c.fetchone()["x"]
-        conn.close()
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Conversations", total)
-        c2.metric("Minutes Used", f"{user['total_minutes']:.1f}")
-        c3.metric("Credits Spent", f"${user['total_spent']:.2f}")
-        
-        st.divider()
-        st.subheader("Recent Conversations")
-        
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("""SELECT conv.*, a.name as agent_name FROM conversations conv
-            LEFT JOIN agents a ON conv.agent_id = a.id
-            WHERE conv.user_id = ? ORDER BY conv.created_at DESC LIMIT 20""", (user_id,))
-        convs = c.fetchall()
-        conn.close()
-        
-        if not convs:
-            st.info("No conversations yet.")
-        else:
-            for conv in convs:
-                with st.expander(f"💬 {conv['agent_name']} — {conv['created_at'][:19]}"):
-                    st.write(f"**Title:** {conv['title']}")
-    
-    # ========================================================
-    # BILLING
-    # ========================================================
-    elif st.session_state.page == "💳 Billing":
-        st.title("Billing & Credits")
-        
-        if is_owner:
-            st.success("👑 Owner Account — Unlimited Free Credits")
-            
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT COUNT(*) as x FROM users WHERE is_owner = 0")
-            total_users = c.fetchone()["x"]
-            c.execute("SELECT SUM(total_spent) as r FROM users WHERE is_owner = 0")
-            revenue = c.fetchone()["r"] or 0
-            conn.close()
-            
-            c1, c2 = st.columns(2)
-            c1.metric("👥 Paying Users", total_users)
-            c2.metric("💰 Total Revenue", f"${revenue:.2f}")
-        else:
-            st.metric("💰 Credit Balance", f"${user['credit_balance']:.2f}")
-            st.caption(f"Rate: ${COST_PER_MINUTE:.2f} per minute")
-            
-            st.divider()
-            st.subheader("Buy Credits")
-            cols = st.columns(4)
-            for col, (amount, label) in zip(cols, [(10, "Starter"), (25, "Popular"), (50, "Pro"), (100, "Business")]):
-                with col:
-                    st.markdown(f"### ${amount}")
-                    st.caption(label)
-                    st.caption(f"{amount/COST_PER_MINUTE:.0f} min")
-                    if st.button(f"Buy ${amount}", key=f"buy_{amount}", use_container_width=True):
-                        st.info("🔗 Payment gateway would open here")
-            
-            st.divider()
-            st.subheader("Transaction History")
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
-            txs = c.fetchall()
-            conn.close()
-            
-            if not txs:
-                st.info("No transactions yet.")
-            else:
-                for tx in txs:
-                    emoji = "💚" if tx["amount"] > 0 else "💸"
-                    st.write(f"{emoji} **${abs(tx['amount']):.2f}** — {tx['type'].title()} — {tx['description']}")
-    
-    # ========================================================
-    # SETTINGS
-    # ========================================================
-    elif st.session_state.page == "⚙️ Settings":
-        st.title("Settings")
-        
-        st.subheader("Account")
-        st.write(f"**Name:** {user['name']}")
-        st.write(f"**Username:** {user['username']}")
-        st.write(f"**Email:** {user['email']}")
-        st.write(f"**Role:** {'👑 Owner' if is_owner else '👤 User'}")
-        
-        st.divider()
-        st.subheader("🔑 Bring Your Own Keys (BYOK)")
-        st.text_input("OpenAI API Key", type="password", key="k_openai")
-        st.text_input("ElevenLabs API Key", type="password", key="k_11")
-        st.text_input("Cartesia API Key", type="password", key="k_cart")
-        st.text_input("Twilio Account SID", type="password", key="k_tw")
-        
-        if st.button("💾 Save Keys"):
-            st.success("Keys saved to session.")
+        st.info("Knowledge base is a notepad for you. Coming soon: agents can reference it.")
 
 # ============================================================
 # ROUTER
