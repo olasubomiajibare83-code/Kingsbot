@@ -4,6 +4,8 @@ import hashlib
 import json
 import requests
 import time
+import csv
+import io
 from datetime import datetime
 
 st.set_page_config(
@@ -14,7 +16,7 @@ st.set_page_config(
 
 DB_FILE = "agents.db"
 
-# ⚠️⚠️⚠️ CHANGE THIS TO YOUR EMAIL ⚠️⚠️⚠️
+# ⚠️ CHANGE THIS TO YOUR EMAIL
 OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
 
 # ============================================================
@@ -31,6 +33,7 @@ def init_db():
         password_hash TEXT NOT NULL,
         name TEXT,
         is_owner INTEGER DEFAULT 0,
+        theme TEXT DEFAULT 'dark',
         created_at TEXT NOT NULL)""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS agents (
@@ -41,6 +44,8 @@ def init_db():
         system_prompt TEXT NOT NULL,
         temperature REAL DEFAULT 0.7,
         category TEXT DEFAULT 'General',
+        tags TEXT,
+        is_public INTEGER DEFAULT 0,
         created_at TEXT NOT NULL)""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS agent_versions (
@@ -63,6 +68,7 @@ def init_db():
         user_id INTEGER NOT NULL,
         agent_id INTEGER NOT NULL,
         title TEXT,
+        is_favorite INTEGER DEFAULT 0,
         created_at TEXT NOT NULL)""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS messages (
@@ -70,6 +76,7 @@ def init_db():
         chat_id INTEGER NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        rating INTEGER,
         created_at TEXT NOT NULL)""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS test_cases (
@@ -101,40 +108,57 @@ def init_db():
         response_b TEXT,
         created_at TEXT NOT NULL)""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS prompts_library (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT,
+        created_at TEXT NOT NULL)""")
+
     conn.commit()
     conn.close()
-
-    # Seed templates if none exist
     seed_templates()
 
 def migrate_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    for table, cols_to_check in [
-        ("agents", [("description", "TEXT"), ("temperature", "0.7"), ("category", "'General'")]),
-    ]:
-        c.execute(f"PRAGMA table_info({table})")
-        existing = [row[1] for row in c.fetchall()]
-        for col, default in cols_to_check:
-            if col not in existing:
-                try:
-                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col} DEFAULT {default}")
-                except:
-                    pass
+    # Users table theme
+    c.execute("PRAGMA table_info(users)")
+    cols = [row[1] for row in c.fetchall()]
+    if "theme" not in cols:
+        try: c.execute("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'dark'")
+        except: pass
+    # Agents extra columns
+    c.execute("PRAGMA table_info(agents)")
+    cols = [row[1] for row in c.fetchall()]
+    for col, default in [("description", "TEXT"), ("temperature", "0.7"), ("category", "'General'"), ("tags", "TEXT"), ("is_public", "0")]:
+        if col not in cols:
+            try: c.execute(f"ALTER TABLE agents ADD COLUMN {col} DEFAULT {default}")
+            except: pass
+    # Chats favorite column
+    c.execute("PRAGMA table_info(chats)")
+    cols = [row[1] for row in c.fetchall()]
+    if "is_favorite" not in cols:
+        try: c.execute("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
+        except: pass
     conn.commit()
     conn.close()
 
 def seed_templates():
-    """Add default agent templates."""
     templates = [
-        ("Customer Support", "Friendly support agent for products", "Support", "You are a friendly customer support agent.\n\nRules:\n- Greet warmly\n- Listen carefully\n- Solve problems step-by-step\n- Escalate if needed\n- Keep responses short", "💬"),
-        ("Coding Helper", "Expert programmer assistant", "Coding", "You are an expert programmer.\n\nRules:\n- Provide complete working code\n- Explain key parts\n- Suggest best practices\n- Catch edge cases\n- Be concise", "💻"),
-        ("Math Tutor", "Step-by-step math teacher", "Education", "You are a patient math tutor.\n\nRules:\n- Show every step\n- Explain WHY, not just HOW\n- Give examples\n- Check understanding\n- Encourage practice", "📐"),
-        ("Sales Bot", "Convert leads into customers", "Sales", "You are a persuasive sales assistant.\n\nRules:\n- Identify needs\n- Highlight benefits\n- Handle objections\n- Create urgency\n- Ask for the sale", "💰"),
-        ("Interviewer", "Technical interview practice", "Career", "You are a technical interviewer.\n\nRules:\n- Ask one question at a time\n- Follow up on answers\n- Provide feedback\n- Rate 1-10 at end", "🎤"),
-        ("Therapist", "Supportive listener", "Health", "You are a supportive listener.\n\nRules:\n- Listen without judgment\n- Reflect feelings\n- Ask open questions\n- Never diagnose\n- Suggest professional help if serious", "💙"),
-        ("Language Teacher", "Practice any language", "Education", "You are a language teacher.\n\nRules:\n- Correct mistakes gently\n- Provide examples\n- Encourage practice\n- Use simple vocabulary\n- Adapt to level", "🌍"),
-        ("Creative Writer", "Help with writing projects", "Writing", "You are a creative writing coach.\n\nRules:\n- Suggest plot ideas\n- Improve dialogue\n- Fix pacing\n- Give specific feedback\n- Encourage creativity", "✍️"),
+        ("Customer Support", "Friendly support agent", "Support", "You are a friendly customer support agent. Greet warmly, listen carefully, solve problems step-by-step, and keep responses short.", "💬"),
+        ("Coding Helper", "Expert programmer", "Coding", "You are an expert programmer. Provide complete working code, explain key parts, suggest best practices, catch edge cases, be concise.", "💻"),
+        ("Math Tutor", "Step-by-step math teacher", "Education", "You are a patient math tutor. Show every step, explain WHY, give examples, check understanding, encourage practice.", "📐"),
+        ("Sales Bot", "Convert leads", "Sales", "You are a persuasive sales assistant. Identify needs, highlight benefits, handle objections, create urgency, ask for the sale.", "💰"),
+        ("Interviewer", "Technical interview", "Career", "You are a technical interviewer. Ask one question at a time, follow up, provide feedback, rate 1-10 at end.", "🎤"),
+        ("Therapist", "Supportive listener", "Health", "You are a supportive listener. Listen without judgment, reflect feelings, ask open questions, never diagnose, suggest professional help if serious.", "💙"),
+        ("Language Teacher", "Practice any language", "Education", "You are a language teacher. Correct gently, provide examples, encourage practice, use simple vocabulary, adapt to level.", "🌍"),
+        ("Creative Writer", "Writing coach", "Writing", "You are a creative writing coach. Suggest plot ideas, improve dialogue, fix pacing, give specific feedback, encourage creativity.", "✍️"),
+        ("Travel Guide", "Trip planning", "Travel", "You are a travel guide. Suggest destinations, itineraries, local tips, budget advice, cultural notes.", "✈️"),
+        ("Health Coach", "Wellness guidance", "Health", "You are a supportive wellness coach. Suggest healthy habits, exercise routines, nutrition tips. Always recommend consulting a doctor for medical concerns.", "🏃"),
+        ("Business Advisor", "Startup consultant", "Business", "You are a startup advisor. Help with business plans, marketing, pricing, growth strategy. Be practical and direct.", "📈"),
+        ("Resume Reviewer", "CV feedback", "Career", "You are a resume reviewer. Analyze strengths, suggest improvements, rewrite bullet points, highlight achievements.", "📄"),
     ]
 
     conn = sqlite3.connect(DB_FILE)
@@ -174,23 +198,16 @@ def is_owner_email(email):
     return email.lower() in [e.lower() for e in OWNER_EMAILS]
 
 # ============================================================
-# FREE AI — KeylessAI (no API key, no budget errors)
+# FREE AI — Multiple Free Providers, No API Key
 # ============================================================
 def ai_chat(messages, temperature=0.7):
-    """Get AI response via KeylessAI — free, no API key needed."""
-    # Provider 1: KeylessAI
+    """Try multiple free AI backends — no API key required."""
+    # Provider 1: KeylessAI (OpenAI-compatible proxy)
     try:
         r = requests.post(
             "https://keylessai.thryx.workers.dev/v1/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": "Bearer not-needed"
-            },
-            json={
-                "model": "gpt-4o-mini",
-                "messages": messages,
-                "temperature": temperature
-            },
+            headers={"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
+            json={"model": "gpt-4o-mini", "messages": messages, "temperature": temperature},
             timeout=60
         )
         if r.status_code == 200:
@@ -215,21 +232,12 @@ def ai_chat(messages, temperature=0.7):
     except:
         pass
 
-    # Provider 3: Hugging Face
+    # Provider 3: Pollinations GET (last resort)
     try:
-        prompt = ""
-        for m in messages:
-            prompt += f"{m['role']}: {m['content']}\n"
-        prompt += "Assistant:"
-        r = requests.post(
-            "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
-            json={"inputs": prompt, "parameters": {"max_new_tokens": 500}},
-            timeout=45
-        )
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and data:
-                return data[0].get("generated_text", "").replace(prompt, "").strip()
+        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages]) + "\nAssistant:"
+        r = requests.get(f"https://text.pollinations.ai/{requests.utils.quote(prompt)}", headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
+        if r.status_code == 200 and r.text and len(r.text.strip()) > 3:
+            return r.text.strip()
     except:
         pass
 
@@ -239,14 +247,12 @@ def ai_chat(messages, temperature=0.7):
 # HELPERS
 # ============================================================
 def build_system_prompt(agent, user_id):
-    """Attach knowledge base facts to agent's prompt."""
     base = agent["system_prompt"]
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT title, content FROM knowledge WHERE user_id = ? AND (agent_id = ? OR agent_id IS NULL)", (user_id, agent["id"]))
     kbs = c.fetchall()
     conn.close()
-
     if kbs:
         base += "\n\n--- KNOWLEDGE BASE ---\n"
         for kb in kbs:
@@ -265,10 +271,9 @@ def save_agent_version(agent_id, prompt):
     conn.close()
 
 def analyze_chat(messages):
-    """Post-chat analysis: sentiment, summary, topics."""
     convo = "\n".join([f"{m['role']}: {m['content']}" for m in messages if m["role"] != "system"])
     prompt = f"""Analyze this conversation. Return ONLY valid JSON:
-{{"sentiment": "positive|neutral|negative", "summary": "one sentence", "topics": ["topic1", "topic2"]}}
+{{"sentiment": "positive|neutral|negative", "summary": "one sentence", "topics": ["t1", "t2"]}}
 
 Conversation:
 {convo[:2000]}"""
@@ -278,6 +283,21 @@ Conversation:
         return json.loads(clean)
     except:
         return {"sentiment": "unknown", "summary": result[:200], "topics": []}
+
+def export_chats_csv(user_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""SELECT ch.id, ch.title, a.name as agent, ch.created_at FROM chats ch
+        LEFT JOIN agents a ON ch.agent_id = a.id
+        WHERE ch.user_id = ?""", (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Chat ID", "Title", "Agent", "Created"])
+    for r in rows:
+        writer.writerow([r["id"], r["title"], r["agent"], r["created_at"]])
+    return buf.getvalue()
 
 # ============================================================
 # SESSION STATE
@@ -395,6 +415,9 @@ def main_app():
             "⚖️ Compare Agents",
             "📊 Analytics",
             "🎨 Templates",
+            "📝 Prompts Library",
+            "⭐ Favorites",
+            "💾 Export Data",
             "⚙️ Settings",
         ], label_visibility="collapsed")
         st.divider()
@@ -427,16 +450,32 @@ def main_app():
         c4.metric("🧪 Tests", tc)
 
         st.divider()
-        st.subheader("🚀 What You Can Do")
-        c1, c2 = st.columns(2)
+        st.subheader("🚀 Quick Actions")
+        c1, c2, c3 = st.columns(3)
         with c1:
-            st.info("**Create Agents** — Custom personalities with prompts")
-            st.info("**Add Knowledge** — Facts agents reference")
-            st.info("**Test Cases** — Grade agent responses")
+            if st.button("➕ Create Agent", use_container_width=True):
+                st.info("Go to 🤖 Agents in the sidebar")
         with c2:
-            st.info("**Compare** — A/B test two agents")
-            st.info("**Analytics** — Sentiment + summaries")
-            st.info("**Templates** — Start from presets")
+            if st.button("💬 Start Chat", use_container_width=True):
+                st.info("Go to 💬 Chat in the sidebar")
+        with c3:
+            if st.button("🎨 Use Template", use_container_width=True):
+                st.info("Go to 🎨 Templates in the sidebar")
+
+        st.divider()
+        st.subheader("📊 Recent Activity")
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""SELECT ch.*, a.name as agent_name FROM chats ch
+            LEFT JOIN agents a ON ch.agent_id = a.id
+            WHERE ch.user_id = ? ORDER BY ch.created_at DESC LIMIT 5""", (user_id,))
+        recent = c.fetchall()
+        conn.close()
+        if recent:
+            for ch in recent:
+                st.write(f"💬 **{ch['title']}** — with *{ch['agent_name']}* — {ch['created_at'][:19]}")
+        else:
+            st.caption("No activity yet.")
 
     # ========================================================
     # AGENTS
@@ -444,11 +483,19 @@ def main_app():
     elif page == "🤖 Agents":
         st.title("Your Agents")
 
+        # Search + filter
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            search = st.text_input("🔍 Search agents", placeholder="Type to filter...")
+        with c2:
+            category_filter = st.selectbox("Category", ["All", "General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business"])
+
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
                 agent_name = st.text_input("Agent Name")
                 description = st.text_input("Description (optional)")
-                category = st.selectbox("Category", ["General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career"])
+                category = st.selectbox("Category", ["General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business"])
+                tags = st.text_input("Tags (comma separated)", placeholder="e.g. helpful, fast")
                 prompt = st.text_area("System Prompt", height=180, value="""You are a helpful AI assistant.
 
 Rules:
@@ -456,6 +503,7 @@ Rules:
 - Ask clarifying questions when needed
 - Never make up information""")
                 temp = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
+                is_public = st.checkbox("Make public (others can see)")
 
                 if st.form_submit_button("🚀 Create Agent", use_container_width=True):
                     if not agent_name:
@@ -463,8 +511,8 @@ Rules:
                     else:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (user_id, agent_name, description, prompt, temp, category, datetime.now().isoformat()))
+                        c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, tags, is_public, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (user_id, agent_name, description, prompt, temp, category, tags, int(is_public), datetime.now().isoformat()))
                         aid = c.lastrowid
                         conn.commit()
                         conn.close()
@@ -476,19 +524,29 @@ Rules:
         st.divider()
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT * FROM agents WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        query = "SELECT * FROM agents WHERE user_id = ?"
+        params = [user_id]
+        if search:
+            query += " AND (name LIKE ? OR description LIKE ? OR tags LIKE ?)"
+            like = f"%{search}%"
+            params.extend([like, like, like])
+        if category_filter != "All":
+            query += " AND category = ?"
+            params.append(category_filter)
+        query += " ORDER BY created_at DESC"
+        c.execute(query, params)
         agents = c.fetchall()
         conn.close()
 
         if not agents:
-            st.info("No agents yet. Create one above, or browse Templates!")
+            st.info("No agents match. Create one above, or browse Templates!")
         else:
             for a in agents:
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([3, 1, 1])
                     with c1:
                         st.subheader(f"🤖 {a['name']}")
-                        st.caption(f"📁 {a['category']} • 🌡️ {a['temperature']}")
+                        st.caption(f"📁 {a['category']} • 🌡️ {a['temperature']}" + (f" • 🏷️ {a['tags']}" if a['tags'] else ""))
                         if a["description"]:
                             st.caption(a["description"])
                     with c2:
@@ -508,18 +566,30 @@ Rules:
                             conn.close()
                             st.rerun()
 
-                    with st.expander("✏️ Edit / View Versions"):
+                    with st.expander("✏️ Edit / Clone / Versions"):
                         new_prompt = st.text_area("Update Prompt", value=a["system_prompt"], height=180, key=f"edit_{a['id']}")
                         new_temp = st.slider("Temperature", 0.0, 2.0, float(a["temperature"] or 0.7), 0.1, key=f"temp_{a['id']}")
-                        if st.button("💾 Save Version", key=f"save_{a['id']}"):
-                            conn = get_db()
-                            c = conn.cursor()
-                            c.execute("UPDATE agents SET system_prompt = ?, temperature = ? WHERE id = ?", (new_prompt, new_temp, a["id"]))
-                            conn.commit()
-                            conn.close()
-                            save_agent_version(a["id"], new_prompt)
-                            st.success("✅ Saved!")
-                            st.rerun()
+                        bc1, bc2 = st.columns(2)
+                        with bc1:
+                            if st.button("💾 Save Version", key=f"save_{a['id']}"):
+                                conn = get_db()
+                                c = conn.cursor()
+                                c.execute("UPDATE agents SET system_prompt = ?, temperature = ? WHERE id = ?", (new_prompt, new_temp, a["id"]))
+                                conn.commit()
+                                conn.close()
+                                save_agent_version(a["id"], new_prompt)
+                                st.success("✅ Saved!")
+                                st.rerun()
+                        with bc2:
+                            if st.button("📋 Clone Agent", key=f"clone_{a['id']}"):
+                                conn = get_db()
+                                c = conn.cursor()
+                                c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (user_id, a["name"] + " (copy)", a["description"], a["system_prompt"], a["temperature"], a["category"], a["tags"], datetime.now().isoformat()))
+                                conn.commit()
+                                conn.close()
+                                st.success("✅ Cloned!")
+                                st.rerun()
 
                         conn = get_db()
                         c = conn.cursor()
@@ -573,8 +643,9 @@ Rules:
                 st.session_state.chat_messages = []
                 st.session_state.chat_id = None
                 st.rerun()
+            st.caption(f"💬 Messages: {len(st.session_state.chat_messages)}")
 
-        for msg in st.session_state.chat_messages:
+        for i, msg in enumerate(st.session_state.chat_messages):
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
@@ -667,7 +738,7 @@ Rules:
     # ========================================================
     elif page == "🧪 Test Cases":
         st.title("Simulation Testing")
-        st.caption("Save test questions and run them all against an agent.")
+        st.caption("Save questions and run them all against an agent.")
 
         conn = get_db()
         c = conn.cursor()
@@ -799,7 +870,6 @@ Rules:
                 except:
                     pass
 
-        # Past comparisons
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT * FROM comparisons WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
@@ -821,6 +891,24 @@ Rules:
 
         conn = get_db()
         c = conn.cursor()
+        c.execute("SELECT COUNT(*) as x FROM chats WHERE user_id = ?", (user_id,))
+        total_chats = c.fetchone()["x"]
+        c.execute("SELECT COUNT(*) as x FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE user_id = ?)", (user_id,))
+        total_msgs = c.fetchone()["x"]
+        c.execute("SELECT COUNT(*) as x FROM agents WHERE user_id = ?", (user_id,))
+        total_agents = c.fetchone()["x"]
+        conn.close()
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Chats", total_chats)
+        c2.metric("Messages", total_msgs)
+        c3.metric("Agents", total_agents)
+
+        st.divider()
+        st.subheader("💬 Recent Conversations")
+
+        conn = get_db()
+        c = conn.cursor()
         c.execute("""SELECT ch.*, a.name as agent_name FROM chats ch
             LEFT JOIN agents a ON ch.agent_id = a.id
             WHERE ch.user_id = ? ORDER BY ch.created_at DESC LIMIT 20""", (user_id,))
@@ -838,7 +926,7 @@ Rules:
                     msgs = c.fetchall()
                     conn.close()
 
-                    if st.button("📈 Analyze", key=f"an_{ch['id']}"):
+                    if st.button("📈 Analyze Sentiment", key=f"an_{ch['id']}"):
                         with st.spinner("Analyzing..."):
                             analysis = analyze_chat([dict(m) for m in msgs])
                             st.json(analysis)
@@ -876,11 +964,142 @@ Rules:
                         conn.commit()
                         conn.close()
                         save_agent_version(aid, t["system_prompt"])
-                        st.success(f"✅ Agent '{t['name']}' created from template!")
+                        st.success(f"✅ Agent '{t['name']}' created!")
                         time.sleep(0.5)
                         st.rerun()
                 with st.expander("Preview Prompt"):
                     st.text(t["system_prompt"])
+
+    # ========================================================
+    # PROMPTS LIBRARY
+    # ========================================================
+    elif page == "📝 Prompts Library":
+        st.title("Prompts Library")
+        st.caption("Save reusable prompts for anything.")
+
+        with st.form("new_prompt"):
+            title = st.text_input("Title")
+            content = st.text_area("Prompt", height=150)
+            tags = st.text_input("Tags (comma separated)")
+            if st.form_submit_button("💾 Save Prompt", use_container_width=True):
+                if not title or not content:
+                    st.error("Title and content required")
+                else:
+                    conn = get_db()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO prompts_library (user_id, title, content, tags, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (user_id, title, content, tags, datetime.now().isoformat()))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Saved!")
+                    st.rerun()
+
+        st.divider()
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM prompts_library WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        prompts = c.fetchall()
+        conn.close()
+
+        if not prompts:
+            st.info("No saved prompts yet.")
+        else:
+            for p in prompts:
+                with st.expander(f"📝 {p['title']}" + (f" — 🏷️ {p['tags']}" if p['tags'] else "")):
+                    st.code(p["content"], language="text")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.download_button("📥 Download", p["content"], f"{p['title']}.txt", key=f"dl_{p['id']}")
+                    with c2:
+                        if st.button("🗑️ Delete", key=f"dp_{p['id']}"):
+                            conn = get_db()
+                            c = conn.cursor()
+                            c.execute("DELETE FROM prompts_library WHERE id = ?", (p["id"],))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
+
+    # ========================================================
+    # FAVORITES
+    # ========================================================
+    elif page == "⭐ Favorites":
+        st.title("Favorite Chats")
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""SELECT ch.*, a.name as agent_name FROM chats ch
+            LEFT JOIN agents a ON ch.agent_id = a.id
+            WHERE ch.user_id = ? AND ch.is_favorite = 1
+            ORDER BY ch.created_at DESC""", (user_id,))
+        favs = c.fetchall()
+
+        c.execute("""SELECT ch.*, a.name as agent_name FROM chats ch
+            LEFT JOIN agents a ON ch.agent_id = a.id
+            WHERE ch.user_id = ? ORDER BY ch.created_at DESC LIMIT 20""", (user_id,))
+        all_chats = c.fetchall()
+        conn.close()
+
+        if favs:
+            st.subheader("⭐ Your Favorites")
+            for ch in favs:
+                st.write(f"💬 **{ch['title']}** — {ch['agent_name']}")
+
+        st.divider()
+        st.subheader("📌 Mark Favorites")
+        for ch in all_chats:
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                st.write(f"💬 **{ch['title']}** — {ch['agent_name']} — {ch['created_at'][:19]}")
+            with c2:
+                star = "⭐" if ch["is_favorite"] else "☆"
+                if st.button(star, key=f"fav_{ch['id']}"):
+                    conn = get_db()
+                    c = conn.cursor()
+                    new_val = 0 if ch["is_favorite"] else 1
+                    c.execute("UPDATE chats SET is_favorite = ? WHERE id = ?", (new_val, ch["id"]))
+                    conn.commit()
+                    conn.close()
+                    st.rerun()
+
+    # ========================================================
+    # EXPORT DATA
+    # ========================================================
+    elif page == "💾 Export Data":
+        st.title("Export Your Data")
+        st.caption("Download your chats, agents, and knowledge as CSV.")
+
+        st.subheader("📥 Chats")
+        csv_data = export_chats_csv(user_id)
+        st.download_button("Download Chats CSV", csv_data, "chats.csv", "text/csv")
+
+        st.divider()
+        st.subheader("📥 Agents")
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT name, description, system_prompt, temperature, category, created_at FROM agents WHERE user_id = ?", (user_id,))
+        agents = c.fetchall()
+        conn.close()
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Name", "Description", "System Prompt", "Temperature", "Category", "Created"])
+        for a in agents:
+            w.writerow([a["name"], a["description"], a["system_prompt"], a["temperature"], a["category"], a["created_at"]])
+        st.download_button("Download Agents CSV", buf.getvalue(), "agents.csv", "text/csv")
+
+        st.divider()
+        st.subheader("📥 Full Backup (JSON)")
+        backup = {
+            "user": {"name": user["name"], "email": user["email"]},
+            "agents": [dict(a) for a in agents],
+            "exported_at": datetime.now().isoformat()
+        }
+        st.download_button(
+            "Download Backup JSON",
+            json.dumps(backup, indent=2, default=str),
+            "backup.json",
+            "application/json"
+        )
 
     # ========================================================
     # SETTINGS
@@ -894,10 +1113,20 @@ Rules:
         st.write(f"**Role:** {'👑 Owner' if is_owner else '👤 User'}")
 
         st.divider()
-        st.subheader("🔑 API Keys (BYOK)")
-        st.caption("Optional. Add your own keys to avoid shared rate limits.")
+        st.subheader("🎨 Appearance")
+        theme = st.selectbox("Theme", ["Dark", "Light"], index=0 if (user["theme"] or "dark") == "dark" else 1)
+        if theme.lower() != (user["theme"] or "dark"):
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("UPDATE users SET theme = ? WHERE id = ?", (theme.lower(), user_id))
+            conn.commit()
+            conn.close()
+            st.rerun()
+
+        st.divider()
+        st.subheader("🔑 API Keys (Optional)")
+        st.caption("Only needed if free providers are down.")
         st.text_input("OpenAI API Key", type="password", key="k_openai")
-        st.text_input("Anthropic API Key", type="password", key="k_anthropic")
         if st.button("💾 Save Keys"):
             st.success("Keys saved to session.")
 
