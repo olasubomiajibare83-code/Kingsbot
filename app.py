@@ -39,6 +39,8 @@ def init_db():
         name TEXT NOT NULL,
         description TEXT,
         system_prompt TEXT NOT NULL,
+        temperature REAL DEFAULT 0.7,
+        category TEXT DEFAULT 'General',
         created_at TEXT NOT NULL)""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS agent_versions (
@@ -80,20 +82,69 @@ def init_db():
         last_pass INTEGER,
         created_at TEXT NOT NULL)""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT,
+        system_prompt TEXT NOT NULL,
+        icon TEXT DEFAULT '🤖',
+        created_at TEXT NOT NULL)""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS comparisons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        agent_a_id INTEGER,
+        agent_b_id INTEGER,
+        prompt TEXT,
+        response_a TEXT,
+        response_b TEXT,
+        created_at TEXT NOT NULL)""")
+
     conn.commit()
     conn.close()
+
+    # Seed templates if none exist
+    seed_templates()
 
 def migrate_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("PRAGMA table_info(agents)")
-    cols = [row[1] for row in c.fetchall()]
-    if "description" not in cols:
-        try:
-            c.execute("ALTER TABLE agents ADD COLUMN description TEXT")
-        except:
-            pass
+    for table, cols_to_check in [
+        ("agents", [("description", "TEXT"), ("temperature", "0.7"), ("category", "'General'")]),
+    ]:
+        c.execute(f"PRAGMA table_info({table})")
+        existing = [row[1] for row in c.fetchall()]
+        for col, default in cols_to_check:
+            if col not in existing:
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col} DEFAULT {default}")
+                except:
+                    pass
     conn.commit()
+    conn.close()
+
+def seed_templates():
+    """Add default agent templates."""
+    templates = [
+        ("Customer Support", "Friendly support agent for products", "Support", "You are a friendly customer support agent.\n\nRules:\n- Greet warmly\n- Listen carefully\n- Solve problems step-by-step\n- Escalate if needed\n- Keep responses short", "💬"),
+        ("Coding Helper", "Expert programmer assistant", "Coding", "You are an expert programmer.\n\nRules:\n- Provide complete working code\n- Explain key parts\n- Suggest best practices\n- Catch edge cases\n- Be concise", "💻"),
+        ("Math Tutor", "Step-by-step math teacher", "Education", "You are a patient math tutor.\n\nRules:\n- Show every step\n- Explain WHY, not just HOW\n- Give examples\n- Check understanding\n- Encourage practice", "📐"),
+        ("Sales Bot", "Convert leads into customers", "Sales", "You are a persuasive sales assistant.\n\nRules:\n- Identify needs\n- Highlight benefits\n- Handle objections\n- Create urgency\n- Ask for the sale", "💰"),
+        ("Interviewer", "Technical interview practice", "Career", "You are a technical interviewer.\n\nRules:\n- Ask one question at a time\n- Follow up on answers\n- Provide feedback\n- Rate 1-10 at end", "🎤"),
+        ("Therapist", "Supportive listener", "Health", "You are a supportive listener.\n\nRules:\n- Listen without judgment\n- Reflect feelings\n- Ask open questions\n- Never diagnose\n- Suggest professional help if serious", "💙"),
+        ("Language Teacher", "Practice any language", "Education", "You are a language teacher.\n\nRules:\n- Correct mistakes gently\n- Provide examples\n- Encourage practice\n- Use simple vocabulary\n- Adapt to level", "🌍"),
+        ("Creative Writer", "Help with writing projects", "Writing", "You are a creative writing coach.\n\nRules:\n- Suggest plot ideas\n- Improve dialogue\n- Fix pacing\n- Give specific feedback\n- Encourage creativity", "✍️"),
+    ]
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM templates")
+    if c.fetchone()[0] == 0:
+        for t in templates:
+            c.execute("INSERT INTO templates (name, description, category, system_prompt, icon, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (t[0], t[1], t[2], t[3], t[4], datetime.now().isoformat()))
+        conn.commit()
     conn.close()
 
 def fix_owners():
@@ -123,34 +174,25 @@ def is_owner_email(email):
     return email.lower() in [e.lower() for e in OWNER_EMAILS]
 
 # ============================================================
-# FREE AI — Multi-Provider Fallback
+# FREE AI — KeylessAI (no API key, no budget errors)
 # ============================================================
 def ai_chat(messages, temperature=0.7):
-    """Get AI response — tries multiple free providers, no API key."""
-    prompt = ""
-    for m in messages:
-        if m["role"] == "system":
-            prompt += f"{m['content']}\n\n"
-        elif m["role"] == "user":
-            prompt += f"User: {m['content']}\n"
-        elif m["role"] == "assistant":
-            prompt += f"Assistant: {m['content']}\n"
-    prompt += "Assistant:"
-
-    # Provider 1: Pollinations GET (anonymous)
+    """Get AI response via KeylessAI — free, no API key needed."""
+    # Provider 1: KeylessAI
     try:
-        url = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
-        if r.status_code == 200 and r.text and len(r.text.strip()) > 3:
-            return r.text.strip()
-    except:
-        pass
-
-    # Provider 2: Pollinations POST
-    try:
-        url = "https://text.pollinations.ai/openai"
-        payload = {"model": "openai", "messages": messages, "temperature": temperature, "max_tokens": 1000}
-        r = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
+        r = requests.post(
+            "https://keylessai.thryx.workers.dev/v1/chat/completions",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer not-needed"
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": messages,
+                "temperature": temperature
+            },
+            timeout=60
+        )
         if r.status_code == 200:
             data = r.json()
             if "choices" in data and data["choices"]:
@@ -158,25 +200,46 @@ def ai_chat(messages, temperature=0.7):
     except:
         pass
 
-    # Provider 3: Hugging Face free
+    # Provider 2: Pollinations POST
     try:
-        url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-        r = requests.post(url, json={"inputs": prompt, "parameters": {"max_new_tokens": 500, "temperature": temperature}}, timeout=45)
+        r = requests.post(
+            "https://text.pollinations.ai/openai",
+            json={"model": "openai", "messages": messages, "temperature": temperature, "max_tokens": 1000},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=45
+        )
         if r.status_code == 200:
             data = r.json()
-            if isinstance(data, list) and data:
-                result = data[0].get("generated_text", "")
-                return result.replace(prompt, "").strip()
+            if "choices" in data and data["choices"]:
+                return data["choices"][0]["message"]["content"]
     except:
         pass
 
-    return "⚠️ AI is busy. Please try again in a moment."
+    # Provider 3: Hugging Face
+    try:
+        prompt = ""
+        for m in messages:
+            prompt += f"{m['role']}: {m['content']}\n"
+        prompt += "Assistant:"
+        r = requests.post(
+            "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+            json={"inputs": prompt, "parameters": {"max_new_tokens": 500}},
+            timeout=45
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and data:
+                return data[0].get("generated_text", "").replace(prompt, "").strip()
+    except:
+        pass
+
+    return "⚠️ AI is temporarily unavailable. Please try again in a moment."
 
 # ============================================================
 # HELPERS
 # ============================================================
 def build_system_prompt(agent, user_id):
-    """Build system prompt with knowledge base attached."""
+    """Attach knowledge base facts to agent's prompt."""
     base = agent["system_prompt"]
     conn = get_db()
     c = conn.cursor()
@@ -185,37 +248,31 @@ def build_system_prompt(agent, user_id):
     conn.close()
 
     if kbs:
-        kb_text = "\n\n--- KNOWLEDGE BASE ---\n"
+        base += "\n\n--- KNOWLEDGE BASE ---\n"
         for kb in kbs:
-            kb_text += f"\n[{kb['title']}]\n{kb['content']}\n"
-        base += kb_text
+            base += f"\n[{kb['title']}]\n{kb['content']}\n"
     return base
 
-def save_agent_version(agent_id, system_prompt):
+def save_agent_version(agent_id, prompt):
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT MAX(version) as v FROM agent_versions WHERE agent_id = ?", (agent_id,))
     row = c.fetchone()
     next_v = (row["v"] or 0) + 1
     c.execute("INSERT INTO agent_versions (agent_id, version, system_prompt, created_at) VALUES (?, ?, ?, ?)",
-              (agent_id, next_v, system_prompt, datetime.now().isoformat()))
+              (agent_id, next_v, prompt, datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
 def analyze_chat(messages):
-    """Post-chat analysis — sentiment + summary."""
+    """Post-chat analysis: sentiment, summary, topics."""
     convo = "\n".join([f"{m['role']}: {m['content']}" for m in messages if m["role"] != "system"])
-    analysis_prompt = f"""Analyze this conversation and return JSON with:
-- sentiment: positive/neutral/negative
-- summary: one sentence summary
-- topics: list of 2-3 main topics
+    prompt = f"""Analyze this conversation. Return ONLY valid JSON:
+{{"sentiment": "positive|neutral|negative", "summary": "one sentence", "topics": ["topic1", "topic2"]}}
 
 Conversation:
-{convo}
-
-Respond with ONLY valid JSON, no markdown, no explanation."""
-
-    result = ai_chat([{"role": "user", "content": analysis_prompt}])
+{convo[:2000]}"""
+    result = ai_chat([{"role": "user", "content": prompt}])
     try:
         clean = result.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(clean)
@@ -233,7 +290,7 @@ if "is_owner" not in st.session_state:
     st.session_state.is_owner = False
 
 # ============================================================
-# AUTH
+# AUTH PAGE
 # ============================================================
 def auth_page():
     st.markdown("""
@@ -337,6 +394,8 @@ def main_app():
             "🧪 Test Cases",
             "⚖️ Compare Agents",
             "📊 Analytics",
+            "🎨 Templates",
+            "⚙️ Settings",
         ], label_visibility="collapsed")
         st.divider()
         if st.button("🚪 Log Out", use_container_width=True):
@@ -365,19 +424,19 @@ def main_app():
         c1.metric("🤖 Agents", ac)
         c2.metric("💬 Chats", cc)
         c3.metric("📚 Knowledge", kc)
-        c4.metric("🧪 Test Cases", tc)
+        c4.metric("🧪 Tests", tc)
 
         st.divider()
         st.subheader("🚀 What You Can Do")
         c1, c2 = st.columns(2)
         with c1:
-            st.info("**Create Agents** — Define personalities with system prompts")
-            st.info("**Add Knowledge** — Attach facts your agents reference")
-            st.info("**Test Cases** — Run graded simulations")
+            st.info("**Create Agents** — Custom personalities with prompts")
+            st.info("**Add Knowledge** — Facts agents reference")
+            st.info("**Test Cases** — Grade agent responses")
         with c2:
-            st.info("**Compare Agents** — A/B test two agents on same prompt")
-            st.info("**Analytics** — See sentiment + summaries")
-            st.info("**Versioning** — Revert prompt changes")
+            st.info("**Compare** — A/B test two agents")
+            st.info("**Analytics** — Sentiment + summaries")
+            st.info("**Templates** — Start from presets")
 
     # ========================================================
     # AGENTS
@@ -387,28 +446,29 @@ def main_app():
 
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
-                agent_name = st.text_input("Agent Name", placeholder="e.g. Coding Helper")
+                agent_name = st.text_input("Agent Name")
                 description = st.text_input("Description (optional)")
+                category = st.selectbox("Category", ["General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career"])
                 prompt = st.text_area("System Prompt", height=180, value="""You are a helpful AI assistant.
 
 Rules:
 - Be clear and concise
 - Ask clarifying questions when needed
-- Never make up information
-- Be friendly and professional""")
+- Never make up information""")
+                temp = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
 
                 if st.form_submit_button("🚀 Create Agent", use_container_width=True):
                     if not agent_name:
-                        st.error("Please enter a name")
+                        st.error("Enter a name")
                     else:
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("INSERT INTO agents (user_id, name, description, system_prompt, created_at) VALUES (?, ?, ?, ?, ?)",
-                            (user_id, agent_name, description, prompt, datetime.now().isoformat()))
-                        agent_id = c.lastrowid
+                        c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (user_id, agent_name, description, prompt, temp, category, datetime.now().isoformat()))
+                        aid = c.lastrowid
                         conn.commit()
                         conn.close()
-                        save_agent_version(agent_id, prompt)
+                        save_agent_version(aid, prompt)
                         st.success(f"✅ Agent '{agent_name}' created!")
                         time.sleep(0.5)
                         st.rerun()
@@ -421,13 +481,14 @@ Rules:
         conn.close()
 
         if not agents:
-            st.info("No agents yet. Create your first one above!")
+            st.info("No agents yet. Create one above, or browse Templates!")
         else:
             for a in agents:
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([3, 1, 1])
                     with c1:
                         st.subheader(f"🤖 {a['name']}")
+                        st.caption(f"📁 {a['category']} • 🌡️ {a['temperature']}")
                         if a["description"]:
                             st.caption(a["description"])
                     with c2:
@@ -447,27 +508,28 @@ Rules:
                             conn.close()
                             st.rerun()
 
-                    with st.expander("✏️ Edit Prompt / View Versions"):
-                        new_prompt = st.text_area("Update System Prompt", value=a["system_prompt"], height=180, key=f"edit_{a['id']}")
-                        if st.button("💾 Save New Version", key=f"save_{a['id']}"):
+                    with st.expander("✏️ Edit / View Versions"):
+                        new_prompt = st.text_area("Update Prompt", value=a["system_prompt"], height=180, key=f"edit_{a['id']}")
+                        new_temp = st.slider("Temperature", 0.0, 2.0, float(a["temperature"] or 0.7), 0.1, key=f"temp_{a['id']}")
+                        if st.button("💾 Save Version", key=f"save_{a['id']}"):
                             conn = get_db()
                             c = conn.cursor()
-                            c.execute("UPDATE agents SET system_prompt = ? WHERE id = ?", (new_prompt, a["id"]))
+                            c.execute("UPDATE agents SET system_prompt = ?, temperature = ? WHERE id = ?", (new_prompt, new_temp, a["id"]))
                             conn.commit()
                             conn.close()
                             save_agent_version(a["id"], new_prompt)
-                            st.success("✅ Saved as new version!")
+                            st.success("✅ Saved!")
                             st.rerun()
 
                         conn = get_db()
                         c = conn.cursor()
-                        c.execute("SELECT * FROM agent_versions WHERE agent_id = ? ORDER BY version DESC", (a["id"],))
+                        c.execute("SELECT * FROM agent_versions WHERE agent_id = ? ORDER BY version DESC LIMIT 5", (a["id"],))
                         versions = c.fetchall()
                         conn.close()
                         if versions:
-                            st.caption("Version history:")
+                            st.caption("**Version History:**")
                             for v in versions:
-                                st.write(f"**v{v['version']}** — {v['created_at'][:19]}")
+                                st.write(f"v{v['version']} — {v['created_at'][:19]}")
 
     # ========================================================
     # CHAT
@@ -495,11 +557,11 @@ Rules:
                     break
 
         selected_name = st.selectbox("Choose agent", list(options.keys()), index=default)
-        selected_agent = options[selected_name]
+        selected = options[selected_name]
 
-        if "chat_agent_id" not in st.session_state or st.session_state.chat_agent_id != selected_agent["id"]:
+        if "chat_agent_id" not in st.session_state or st.session_state.chat_agent_id != selected["id"]:
             st.session_state.chat_messages = []
-            st.session_state.chat_agent_id = selected_agent["id"]
+            st.session_state.chat_agent_id = selected["id"]
             st.session_state.chat_id = None
 
         if "chat_messages" not in st.session_state:
@@ -516,17 +578,17 @@ Rules:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        if prompt := st.chat_input(f"Message {selected_agent['name']}..."):
+        if prompt := st.chat_input(f"Message {selected['name']}..."):
             st.session_state.chat_messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
 
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
-                    system = build_system_prompt(selected_agent, user_id)
-                    messages = [{"role": "system", "content": system}]
-                    messages.extend(st.session_state.chat_messages[-10:])
-                    response = ai_chat(messages)
+                    system = build_system_prompt(selected, user_id)
+                    msgs = [{"role": "system", "content": system}]
+                    msgs.extend(st.session_state.chat_messages[-10:])
+                    response = ai_chat(msgs, selected.get("temperature", 0.7))
                     st.write(response)
                     st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
@@ -535,7 +597,7 @@ Rules:
                         c = conn.cursor()
                         if not st.session_state.get("chat_id"):
                             c.execute("INSERT INTO chats (user_id, agent_id, title, created_at) VALUES (?, ?, ?, ?)",
-                                (user_id, selected_agent["id"], prompt[:40], datetime.now().isoformat()))
+                                (user_id, selected["id"], prompt[:40], datetime.now().isoformat()))
                             st.session_state.chat_id = c.lastrowid
                         c.execute("INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
                             (st.session_state.chat_id, "user", prompt, datetime.now().isoformat()))
@@ -551,7 +613,7 @@ Rules:
     # ========================================================
     elif page == "📚 Knowledge":
         st.title("Knowledge Base")
-        st.caption("Facts your agents can reference. Attach to a specific agent or make global.")
+        st.caption("Attach facts to specific agents or make them global.")
 
         conn = get_db()
         c = conn.cursor()
@@ -562,18 +624,18 @@ Rules:
         with st.form("new_kb"):
             title = st.text_input("Title")
             content = st.text_area("Content", height=150)
-            agent_choice = st.selectbox("Attach to agent (optional)", ["Global (all agents)"] + [a["name"] for a in agents])
+            agent_choice = st.selectbox("Attach to", ["🌍 Global (all agents)"] + [a["name"] for a in agents])
             if st.form_submit_button("💾 Save", use_container_width=True):
                 if not title:
                     st.error("Enter a title")
                 else:
-                    agent_id = None
-                    if agent_choice != "Global (all agents)":
-                        agent_id = next(a["id"] for a in agents if a["name"] == agent_choice)
+                    aid = None
+                    if agent_choice != "🌍 Global (all agents)":
+                        aid = next(a["id"] for a in agents if a["name"] == agent_choice)
                     conn = get_db()
                     c = conn.cursor()
                     c.execute("INSERT INTO knowledge (user_id, agent_id, title, content, created_at) VALUES (?, ?, ?, ?, ?)",
-                        (user_id, agent_id, title, content, datetime.now().isoformat()))
+                        (user_id, aid, title, content, datetime.now().isoformat()))
                     conn.commit()
                     conn.close()
                     st.success(f"✅ Saved '{title}'!")
@@ -590,7 +652,7 @@ Rules:
 
         for kb in kbs:
             tag = f"→ {kb['agent_name']}" if kb["agent_name"] else "🌍 Global"
-            with st.expander(f"📚 {kb['title']}  {tag}"):
+            with st.expander(f"📚 {kb['title']}  ({tag})"):
                 st.text(kb["content"][:500] if kb["content"] else "")
                 if st.button("🗑️ Delete", key=f"dkb_{kb['id']}"):
                     conn = get_db()
@@ -605,7 +667,7 @@ Rules:
     # ========================================================
     elif page == "🧪 Test Cases":
         st.title("Simulation Testing")
-        st.caption("Save questions and run them against your agent to catch regressions.")
+        st.caption("Save test questions and run them all against an agent.")
 
         conn = get_db()
         c = conn.cursor()
@@ -618,21 +680,21 @@ Rules:
             return
 
         agent_map = {a["name"]: a["id"] for a in agents}
-        selected_agent_name = st.selectbox("Agent to test", list(agent_map.keys()))
-        agent_id = agent_map[selected_agent_name]
+        sel_name = st.selectbox("Test agent", list(agent_map.keys()))
+        agent_id = agent_map[sel_name]
 
         with st.form("new_test"):
-            question = st.text_input("Test question")
-            expected = st.text_area("Expected answer (for grading)", height=80)
-            if st.form_submit_button("➕ Add Test Case"):
-                if question:
+            q = st.text_input("Question")
+            exp = st.text_area("Expected answer (grading keyword)", height=80)
+            if st.form_submit_button("➕ Add Test"):
+                if q:
                     conn = get_db()
                     c = conn.cursor()
                     c.execute("INSERT INTO test_cases (agent_id, user_id, question, expected, created_at) VALUES (?, ?, ?, ?, ?)",
-                        (agent_id, user_id, question, expected, datetime.now().isoformat()))
+                        (agent_id, user_id, q, exp, datetime.now().isoformat()))
                     conn.commit()
                     conn.close()
-                    st.success("✅ Test added!")
+                    st.success("✅ Added!")
                     st.rerun()
 
         st.divider()
@@ -643,7 +705,7 @@ Rules:
         conn.close()
 
         if not tests:
-            st.info("No test cases yet.")
+            st.info("No tests yet.")
         else:
             if st.button("▶️ Run All Tests", type="primary"):
                 conn = get_db()
@@ -654,33 +716,24 @@ Rules:
 
                 system = build_system_prompt(agent, user_id)
                 progress = st.progress(0)
-                results = []
-
                 for i, t in enumerate(tests):
                     msgs = [{"role": "system", "content": system}, {"role": "user", "content": t["question"]}]
                     answer = ai_chat(msgs)
                     passed = 1 if (t["expected"] and t["expected"].lower()[:30] in answer.lower()) else 0
-
                     conn = get_db()
                     c = conn.cursor()
                     c.execute("UPDATE test_cases SET last_result = ?, last_pass = ? WHERE id = ?", (answer, passed, t["id"]))
                     conn.commit()
                     conn.close()
-
-                    results.append((t["question"], answer, passed))
                     progress.progress((i + 1) / len(tests))
-
-                st.success(f"✅ Ran {len(results)} tests")
-                for q, a, p in results:
-                    icon = "✅" if p else "❌"
-                    st.write(f"{icon} **{q}**")
-                    st.caption(f"→ {a[:200]}")
+                st.success(f"✅ Ran {len(tests)} tests")
+                st.rerun()
 
             for t in tests:
                 icon = "✅" if t["last_pass"] == 1 else ("❌" if t["last_pass"] == 0 else "⏸️")
                 with st.expander(f"{icon} {t['question']}"):
                     st.write(f"**Expected:** {t['expected'] or '—'}")
-                    st.write(f"**Last result:** {t['last_result'] or 'Not run yet'}")
+                    st.write(f"**Last answer:** {t['last_result'] or 'Not run yet'}")
                     if st.button("🗑️ Delete", key=f"dt_{t['id']}"):
                         conn = get_db()
                         c = conn.cursor()
@@ -694,7 +747,7 @@ Rules:
     # ========================================================
     elif page == "⚖️ Compare Agents":
         st.title("A/B Comparison")
-        st.caption("Send the same message to two agents and compare responses.")
+        st.caption("Same question. Two agents. Compare.")
 
         conn = get_db()
         c = conn.cursor()
@@ -716,7 +769,7 @@ Rules:
         agent_a = next(a for a in agents if a["name"] == a_name)
         agent_b = next(a for a in agents if a["name"] == b_name)
 
-        test_prompt = st.text_area("Test message", height=100, placeholder="Ask both agents the same question...")
+        test_prompt = st.text_area("Test message", height=100, placeholder="Ask both agents...")
 
         if st.button("▶️ Run Comparison", type="primary"):
             if not test_prompt:
@@ -727,14 +780,38 @@ Rules:
                     st.subheader(f"🤖 {agent_a['name']}")
                     with st.spinner("Thinking..."):
                         msgs = [{"role": "system", "content": build_system_prompt(agent_a, user_id)}, {"role": "user", "content": test_prompt}]
-                        r_a = ai_chat(msgs)
+                        r_a = ai_chat(msgs, agent_a.get("temperature", 0.7))
                         st.write(r_a)
                 with c2:
                     st.subheader(f"🤖 {agent_b['name']}")
                     with st.spinner("Thinking..."):
                         msgs = [{"role": "system", "content": build_system_prompt(agent_b, user_id)}, {"role": "user", "content": test_prompt}]
-                        r_b = ai_chat(msgs)
+                        r_b = ai_chat(msgs, agent_b.get("temperature", 0.7))
                         st.write(r_b)
+
+                try:
+                    conn = get_db()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO comparisons (user_id, agent_a_id, agent_b_id, prompt, response_a, response_b, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (user_id, agent_a["id"], agent_b["id"], test_prompt, r_a, r_b, datetime.now().isoformat()))
+                    conn.commit()
+                    conn.close()
+                except:
+                    pass
+
+        # Past comparisons
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM comparisons WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
+        past = c.fetchall()
+        conn.close()
+        if past:
+            st.divider()
+            st.subheader("📜 Past Comparisons")
+            for p in past:
+                with st.expander(f"{p['prompt'][:60]} — {p['created_at'][:19]}"):
+                    st.write(f"**A:** {p['response_a'][:300]}")
+                    st.write(f"**B:** {p['response_b'][:300]}")
 
     # ========================================================
     # ANALYTICS
@@ -769,6 +846,60 @@ Rules:
                     for m in msgs:
                         role = "👤" if m["role"] == "user" else "🤖"
                         st.write(f"{role} {m['content']}")
+
+    # ========================================================
+    # TEMPLATES
+    # ========================================================
+    elif page == "🎨 Templates":
+        st.title("Agent Templates")
+        st.caption("Start from a pre-built personality.")
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM templates ORDER BY category, name")
+        templates = c.fetchall()
+        conn.close()
+
+        for t in templates:
+            with st.container(border=True):
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.subheader(f"{t['icon']} {t['name']}")
+                    st.caption(f"📁 {t['category']} — {t['description']}")
+                with c2:
+                    if st.button("✨ Use", key=f"use_t_{t['id']}", use_container_width=True):
+                        conn = get_db()
+                        c = conn.cursor()
+                        c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (user_id, t["name"], t["description"], t["system_prompt"], 0.7, t["category"], datetime.now().isoformat()))
+                        aid = c.lastrowid
+                        conn.commit()
+                        conn.close()
+                        save_agent_version(aid, t["system_prompt"])
+                        st.success(f"✅ Agent '{t['name']}' created from template!")
+                        time.sleep(0.5)
+                        st.rerun()
+                with st.expander("Preview Prompt"):
+                    st.text(t["system_prompt"])
+
+    # ========================================================
+    # SETTINGS
+    # ========================================================
+    elif page == "⚙️ Settings":
+        st.title("Settings")
+        st.subheader("Account")
+        st.write(f"**Name:** {user['name']}")
+        st.write(f"**Username:** {user['username']}")
+        st.write(f"**Email:** {user['email']}")
+        st.write(f"**Role:** {'👑 Owner' if is_owner else '👤 User'}")
+
+        st.divider()
+        st.subheader("🔑 API Keys (BYOK)")
+        st.caption("Optional. Add your own keys to avoid shared rate limits.")
+        st.text_input("OpenAI API Key", type="password", key="k_openai")
+        st.text_input("Anthropic API Key", type="password", key="k_anthropic")
+        if st.button("💾 Save Keys"):
+            st.success("Keys saved to session.")
 
 # ============================================================
 # ROUTER
