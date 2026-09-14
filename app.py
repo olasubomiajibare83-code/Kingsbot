@@ -15,7 +15,7 @@ st.set_page_config(
 DB_FILE = "agents.db"
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["your-email@gmail.com"]
+OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
 
 # ============================================================
 # DATABASE
