@@ -6,6 +6,7 @@ import requests
 import time
 import csv
 import io
+import random
 from datetime import datetime
 
 st.set_page_config(
@@ -17,7 +18,7 @@ st.set_page_config(
 DB_FILE = "agents.db"
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
+OWNER_EMAILS = ["your-email@gmail.com"]
 
 # ============================================================
 # DATABASE
@@ -116,6 +117,13 @@ def init_db():
         tags TEXT,
         created_at TEXT NOT NULL)""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT,
+        created_at TEXT NOT NULL)""")
+
     conn.commit()
     conn.close()
     seed_templates()
@@ -123,31 +131,31 @@ def init_db():
 def migrate_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Users table theme
     c.execute("PRAGMA table_info(users)")
     cols = [row[1] for row in c.fetchall()]
     if "theme" not in cols:
         try: c.execute("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'dark'")
         except: pass
-    # Agents extra columns
+
     c.execute("PRAGMA table_info(agents)")
     cols = [row[1] for row in c.fetchall()]
     for col, default in [("description", "TEXT"), ("temperature", "0.7"), ("category", "'General'"), ("tags", "TEXT"), ("is_public", "0")]:
         if col not in cols:
             try: c.execute(f"ALTER TABLE agents ADD COLUMN {col} DEFAULT {default}")
             except: pass
-    # Chats favorite column
+
     c.execute("PRAGMA table_info(chats)")
     cols = [row[1] for row in c.fetchall()]
     if "is_favorite" not in cols:
         try: c.execute("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
         except: pass
+
     conn.commit()
     conn.close()
 
 def seed_templates():
     templates = [
-        ("Customer Support", "Friendly support agent", "Support", "You are a friendly customer support agent. Greet warmly, listen carefully, solve problems step-by-step, and keep responses short.", "💬"),
+        ("Customer Support", "Friendly support agent", "Support", "You are a friendly customer support agent. Greet warmly, listen carefully, solve problems step-by-step, keep responses short.", "💬"),
         ("Coding Helper", "Expert programmer", "Coding", "You are an expert programmer. Provide complete working code, explain key parts, suggest best practices, catch edge cases, be concise.", "💻"),
         ("Math Tutor", "Step-by-step math teacher", "Education", "You are a patient math tutor. Show every step, explain WHY, give examples, check understanding, encourage practice.", "📐"),
         ("Sales Bot", "Convert leads", "Sales", "You are a persuasive sales assistant. Identify needs, highlight benefits, handle objections, create urgency, ask for the sale.", "💰"),
@@ -159,6 +167,10 @@ def seed_templates():
         ("Health Coach", "Wellness guidance", "Health", "You are a supportive wellness coach. Suggest healthy habits, exercise routines, nutrition tips. Always recommend consulting a doctor for medical concerns.", "🏃"),
         ("Business Advisor", "Startup consultant", "Business", "You are a startup advisor. Help with business plans, marketing, pricing, growth strategy. Be practical and direct.", "📈"),
         ("Resume Reviewer", "CV feedback", "Career", "You are a resume reviewer. Analyze strengths, suggest improvements, rewrite bullet points, highlight achievements.", "📄"),
+        ("Study Buddy", "Quiz and flashcards", "Education", "You are a study buddy. Quiz me on any topic, give flashcards, track my progress, celebrate wins.", "📚"),
+        ("Debug Assistant", "Fix code errors", "Coding", "You are a debug assistant. Analyze error messages, find root causes, suggest fixes, explain what went wrong.", "🐛"),
+        ("Poet", "Write poetry", "Writing", "You are a poet. Write poems in any style — haiku, sonnet, free verse. Make them vivid and emotional.", "🎭"),
+        ("Comedian", "Tell jokes", "Entertainment", "You are a comedian. Tell clean jokes, puns, and funny stories. Keep it light and positive.", "😂"),
     ]
 
     conn = sqlite3.connect(DB_FILE)
@@ -198,11 +210,12 @@ def is_owner_email(email):
     return email.lower() in [e.lower() for e in OWNER_EMAILS]
 
 # ============================================================
-# FREE AI — Multiple Free Providers, No API Key
+# FREE AI — 4-Provider Fallback (No API Key Needed)
 # ============================================================
 def ai_chat(messages, temperature=0.7):
     """Try multiple free AI backends — no API key required."""
-    # Provider 1: KeylessAI (OpenAI-compatible proxy)
+
+    # Provider 1: KeylessAI (filters Pollinations budget errors)
     try:
         r = requests.post(
             "https://keylessai.thryx.workers.dev/v1/chat/completions",
@@ -213,11 +226,47 @@ def ai_chat(messages, temperature=0.7):
         if r.status_code == 200:
             data = r.json()
             if "choices" in data and data["choices"]:
-                return data["choices"][0]["message"]["content"]
+                content = data["choices"][0]["message"]["content"]
+                if content and "budget" not in content.lower() and len(content) > 3:
+                    return content
     except:
         pass
 
-    # Provider 2: Pollinations POST
+    # Provider 2: OpenZoo (any key works)
+    try:
+        r = requests.post(
+            "https://api.openzoo.fun/v1/chat/completions",
+            headers={"Content-Type": "application/json", "Authorization": "Bearer sk-openzoo"},
+            json={"model": "z-ai/glm-5.3-flash", "messages": messages, "temperature": temperature},
+            timeout=60
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if "choices" in data and data["choices"]:
+                content = data["choices"][0]["message"]["content"]
+                if content and len(content) > 3:
+                    return content
+    except:
+        pass
+
+    # Provider 3: LLM7.io (anonymous, 30 RPM)
+    try:
+        r = requests.post(
+            "https://api.llm7.io/v1/chat/completions",
+            headers={"Content-Type": "application/json", "Authorization": "Bearer unused"},
+            json={"model": "gpt-4o-mini", "messages": messages, "temperature": temperature},
+            timeout=60
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if "choices" in data and data["choices"]:
+                content = data["choices"][0]["message"]["content"]
+                if content and len(content) > 3:
+                    return content
+    except:
+        pass
+
+    # Provider 4: Pollinations POST
     try:
         r = requests.post(
             "https://text.pollinations.ai/openai",
@@ -228,20 +277,13 @@ def ai_chat(messages, temperature=0.7):
         if r.status_code == 200:
             data = r.json()
             if "choices" in data and data["choices"]:
-                return data["choices"][0]["message"]["content"]
+                content = data["choices"][0]["message"]["content"]
+                if content and len(content) > 3:
+                    return content
     except:
         pass
 
-    # Provider 3: Pollinations GET (last resort)
-    try:
-        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages]) + "\nAssistant:"
-        r = requests.get(f"https://text.pollinations.ai/{requests.utils.quote(prompt)}", headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
-        if r.status_code == 200 and r.text and len(r.text.strip()) > 3:
-            return r.text.strip()
-    except:
-        pass
-
-    return "⚠️ AI is temporarily unavailable. Please try again in a moment."
+    return "⚠️ All AI providers are busy. Please try again in a moment."
 
 # ============================================================
 # HELPERS
@@ -416,6 +458,7 @@ def main_app():
             "📊 Analytics",
             "🎨 Templates",
             "📝 Prompts Library",
+            "🗒️ Notes",
             "⭐ Favorites",
             "💾 Export Data",
             "⚙️ Settings",
@@ -463,19 +506,16 @@ def main_app():
                 st.info("Go to 🎨 Templates in the sidebar")
 
         st.divider()
-        st.subheader("📊 Recent Activity")
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("""SELECT ch.*, a.name as agent_name FROM chats ch
-            LEFT JOIN agents a ON ch.agent_id = a.id
-            WHERE ch.user_id = ? ORDER BY ch.created_at DESC LIMIT 5""", (user_id,))
-        recent = c.fetchall()
-        conn.close()
-        if recent:
-            for ch in recent:
-                st.write(f"💬 **{ch['title']}** — with *{ch['agent_name']}* — {ch['created_at'][:19]}")
-        else:
-            st.caption("No activity yet.")
+        st.subheader("💡 Random Tip")
+        tips = [
+            "Use knowledge bases to give agents context.",
+            "Version prompts before making big changes.",
+            "Test cases catch agent regressions.",
+            "A/B compare to pick the best agent.",
+            "Export data anytime for backup.",
+            "Star favorite chats for quick access.",
+        ]
+        st.info(random.choice(tips))
 
     # ========================================================
     # AGENTS
@@ -483,19 +523,18 @@ def main_app():
     elif page == "🤖 Agents":
         st.title("Your Agents")
 
-        # Search + filter
         c1, c2 = st.columns([3, 1])
         with c1:
             search = st.text_input("🔍 Search agents", placeholder="Type to filter...")
         with c2:
-            category_filter = st.selectbox("Category", ["All", "General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business"])
+            category_filter = st.selectbox("Category", ["All", "General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business", "Entertainment"])
 
         with st.expander("➕ Create New Agent", expanded=False):
             with st.form("new_agent"):
                 agent_name = st.text_input("Agent Name")
                 description = st.text_input("Description (optional)")
-                category = st.selectbox("Category", ["General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business"])
-                tags = st.text_input("Tags (comma separated)", placeholder="e.g. helpful, fast")
+                category = st.selectbox("Category", ["General", "Support", "Coding", "Education", "Sales", "Writing", "Health", "Career", "Travel", "Business", "Entertainment"])
+                tags = st.text_input("Tags (comma separated)")
                 prompt = st.text_area("System Prompt", height=180, value="""You are a helpful AI assistant.
 
 Rules:
@@ -503,7 +542,7 @@ Rules:
 - Ask clarifying questions when needed
 - Never make up information""")
                 temp = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
-                is_public = st.checkbox("Make public (others can see)")
+                is_public = st.checkbox("Make public")
 
                 if st.form_submit_button("🚀 Create Agent", use_container_width=True):
                     if not agent_name:
@@ -581,7 +620,7 @@ Rules:
                                 st.success("✅ Saved!")
                                 st.rerun()
                         with bc2:
-                            if st.button("📋 Clone Agent", key=f"clone_{a['id']}"):
+                            if st.button("📋 Clone", key=f"clone_{a['id']}"):
                                 conn = get_db()
                                 c = conn.cursor()
                                 c.execute("INSERT INTO agents (user_id, name, description, system_prompt, temperature, category, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1020,6 +1059,50 @@ Rules:
                             st.rerun()
 
     # ========================================================
+    # NOTES
+    # ========================================================
+    elif page == "🗒️ Notes":
+        st.title("Quick Notes")
+        st.caption("Scratchpad for ideas.")
+
+        with st.form("new_note"):
+            title = st.text_input("Title")
+            content = st.text_area("Note", height=150)
+            if st.form_submit_button("💾 Save Note", use_container_width=True):
+                if not title:
+                    st.error("Enter a title")
+                else:
+                    conn = get_db()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO notes (user_id, title, content, created_at) VALUES (?, ?, ?, ?)",
+                        (user_id, title, content, datetime.now().isoformat()))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Saved!")
+                    st.rerun()
+
+        st.divider()
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        notes = c.fetchall()
+        conn.close()
+
+        if not notes:
+            st.info("No notes yet.")
+        else:
+            for n in notes:
+                with st.expander(f"🗒️ {n['title']} — {n['created_at'][:19]}"):
+                    st.write(n["content"])
+                    if st.button("🗑️ Delete", key=f"dn_{n['id']}"):
+                        conn = get_db()
+                        c = conn.cursor()
+                        c.execute("DELETE FROM notes WHERE id = ?", (n["id"],))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
+
+    # ========================================================
     # FAVORITES
     # ========================================================
     elif page == "⭐ Favorites":
@@ -1066,7 +1149,7 @@ Rules:
     # ========================================================
     elif page == "💾 Export Data":
         st.title("Export Your Data")
-        st.caption("Download your chats, agents, and knowledge as CSV.")
+        st.caption("Download your chats, agents, and knowledge.")
 
         st.subheader("📥 Chats")
         csv_data = export_chats_csv(user_id)
@@ -1127,6 +1210,7 @@ Rules:
         st.subheader("🔑 API Keys (Optional)")
         st.caption("Only needed if free providers are down.")
         st.text_input("OpenAI API Key", type="password", key="k_openai")
+        st.text_input("Groq API Key", type="password", key="k_groq")
         if st.button("💾 Save Keys"):
             st.success("Keys saved to session.")
 
