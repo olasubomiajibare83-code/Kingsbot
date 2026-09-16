@@ -56,6 +56,22 @@ avg_daily_net = st.sidebar.number_input(
     step=10.0,
     help="Rough day-to-day income minus routine expenses, excluding the big known bills/invoices you'll list below. "
          "Use a negative number if your business normally burns cash day-to-day.",
+)
+days_ahead = st.sidebar.slider("Project how many days ahead?", 14, 180, 60)
+
+st.sidebar.header("2. Optional: AI summary")
+api_key = st.sidebar.text_input("Anthropic API key (optional)", type="password",
+                                 help="If provided, Claude will write a plain-English summary of your risk.")
+
+# ---------------------------------------------------------
+# Main — known bills & invoices
+# ---------------------------------------------------------
+
+st.title("💸 Cash Flow Risk Predictor")
+st.caption("Find out the exact week you'll run short — before it happens.")
+
+st.subheader("Upcoming bills & expected income")
+st.write("Add every known upcoming payment (bills, payroll, rent) as **negative** amounts, "
          "and expected incoming payments (invoices, sales) as **positive** amounts.")
 
 default_rows = pd.DataFrame({
@@ -90,6 +106,7 @@ if st.button("Run projection", type="primary"):
 
     below_zero = balance[balance < 0]
     first_shortfall = below_zero.index[0] if len(below_zero) > 0 else None
+    min_balance = balance.min()
     min_date = balance.idxmin()
 
     col1, col2, col3 = st.columns(3)
@@ -122,6 +139,8 @@ if st.button("Run projection", type="primary"):
         warning_msg += "Consider moving up any pending invoices, delaying non-critical expenses, or lining up a short-term buffer before that date."
         st.error(warning_msg)
     else:
+        success_msg = "✅ Based on current inputs, your balance stays positive through the next " + str(days_ahead) + " days. "
+        success_msg += "Lowest point is $" + f"{min_balance:,.0f}" + " on " + min_date.strftime('%b %d, %Y') + "."
         st.success(success_msg)
 
     # AI summary (optional)
