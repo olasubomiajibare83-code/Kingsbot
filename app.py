@@ -124,14 +124,8 @@ if st.button("Run projection", type="primary"):
     fig.add_trace(go.Scatter(x=balance.index, y=balance.values, mode="lines", name="Projected balance",
                               line=dict(color="#2563eb", width=3)))
     fig.add_hline(y=0, line_dash="dash", line_color="red")
-        st.error(
-            f"⚠️ At current pace, you'll run short on **{first_shortfall.strftime('%B %d, %Y')}** "
-            f"({days_until} days from now), dropping to about **${balance[first_shortfall]:,.0f}**. "
-            f"Consider moving up any pending invoices, delaying non-critical expenses, "
-            f"or lining up a short-term buffer before that date."
-        )
-    else:
-        st.success(f"✅ Based on current inputs, your balance stays positive through the next {days_ahead} days. "
+    if first_shortfall is not None:
+        fig.add_vline(x=first_shortfall, line_dash="dot", line_color="red")
                    f"Lowest point is ${min_balance:,.0f} on {min_date.strftime('%b %d, %Y')}.")
 
     # AI summary (optional)
