@@ -19,7 +19,7 @@ st.set_page_config(
 DB_FILE = "business.db"
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL — this account gets unlimited access across the app
-OWNER_EMAILS = ["your-email@gmail.com"]
+OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
 
 PLANS = {
     "free": {"name": "Free Trial", "price": 0, "actions": 20, "features": ["20 AI actions/month", "Up to 3 team members", "Basic features"]},
