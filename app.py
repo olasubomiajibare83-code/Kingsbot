@@ -21,10 +21,11 @@ DB_FILE = "nexus.db"
 UPLOAD_DIR = "echo_vault"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ⚠️ CHANGE THIS TO YOUR EMAIL
 OWNER_EMAILS = ["your-email@gmail.com"]
 
 # ============================================================
-# STYLING — BEAUTIFUL ANIMATED BACKGROUND
+# STYLING
 # ============================================================
 st.markdown("""
 <style>
@@ -32,7 +33,6 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Animated gradient background */
     .stApp {
         background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
         background-size: 200% 200%;
@@ -43,8 +43,6 @@ st.markdown("""
         50% { background-position: 100% 50%; }
         100% { background-position: 0% 50%; }
     }
-    
-    /* Floating glow orbs */
     .stApp::before {
         content: "";
         position: fixed;
@@ -62,13 +60,10 @@ st.markdown("""
         50% { transform: translate(3%,2%) rotate(180deg); }
         100% { transform: translate(0,0) rotate(360deg); }
     }
-    
     .main, [data-testid="stAppViewContainer"] > .main {
         position: relative;
         z-index: 1;
     }
-    
-    /* Header */
     .nexus-header {
         text-align: center;
         padding: 24px 0 14px 0;
@@ -92,8 +87,6 @@ st.markdown("""
         font-size: 14px;
         margin-top: 6px;
     }
-    
-    /* Login hero */
     .login-hero {
         text-align: center;
         padding: 60px 0 30px 0;
@@ -113,8 +106,6 @@ st.markdown("""
         font-size: 16px;
         margin-top: 8px;
     }
-    
-    /* Module tiles — glassmorphism */
     .module-tile {
         background: linear-gradient(135deg, rgba(102,126,234,0.18), rgba(240,147,251,0.12));
         border: 1px solid rgba(240,147,251,0.3);
@@ -133,15 +124,6 @@ st.markdown("""
         position: relative;
         overflow: hidden;
     }
-    .module-tile::before {
-        content: "";
-        position: absolute;
-        top: 0; left: -100%;
-        width: 100%; height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
-        transition: left 0.7s ease;
-    }
-    .module-tile:hover::before { left: 100%; }
     .module-tile:hover {
         transform: translateY(-6px) scale(1.02);
         border-color: rgba(240,147,251,0.7);
@@ -156,8 +138,6 @@ st.markdown("""
         font-family: Georgia, serif;
     }
     .module-desc { font-size: 11px; color: rgba(255,255,255,0.5); }
-    
-    /* Brain cards */
     .brain-card {
         background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(240,147,251,0.10));
         border: 1px solid rgba(240,147,251,0.25);
@@ -171,15 +151,12 @@ st.markdown("""
     .brain-card .story { font-size: 15px; line-height: 1.5; margin: 8px 0; color: rgba(255,255,255,0.9); }
     .brain-card .pattern { font-size: 13px; color: rgba(255,255,255,0.55); font-style: italic; }
     .brain-card .meta { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 8px; }
-    
-    /* ECHO */
     .echo-memory {
         background: rgba(102,126,234,0.12);
         border-left: 3px solid #667eea;
         padding: 14px 18px;
         border-radius: 8px;
         margin: 10px 0;
-        backdrop-filter: blur(6px);
     }
     .echo-says {
         background: rgba(240,147,251,0.12);
@@ -187,7 +164,6 @@ st.markdown("""
         padding: 14px 18px;
         border-radius: 8px;
         margin: 10px 0;
-        backdrop-filter: blur(6px);
     }
     .difference-item {
         background: rgba(255,217,61,0.08);
@@ -213,8 +189,6 @@ st.markdown("""
         margin: 6px 0;
         font-size: 14px;
     }
-    
-    /* Buttons */
     .stButton > button {
         border-radius: 14px;
         border: 1px solid rgba(240,147,251,0.35);
@@ -239,7 +213,6 @@ st.markdown("""
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -248,13 +221,11 @@ def init_db():
         name TEXT,
         is_owner INTEGER DEFAULT 0,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS places (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         name TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -266,71 +237,49 @@ def init_db():
         user_note TEXT,
         mood TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS place_brains (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         place_id INTEGER UNIQUE NOT NULL,
-        story TEXT,
-        pattern TEXT,
-        mood TEXT,
-        first_seen TEXT,
-        last_seen TEXT,
+        story TEXT, pattern TEXT, mood TEXT,
+        first_seen TEXT, last_seen TEXT,
         total_visits INTEGER DEFAULT 0,
         updated_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         title TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         chat_id INTEGER NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        title TEXT,
-        content TEXT,
-        tags TEXT,
+        title TEXT, content TEXT, tags TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS journal (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        title TEXT,
-        content TEXT,
-        mood TEXT,
+        title TEXT, content TEXT, mood TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS lessons (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        title TEXT,
-        topic TEXT,
-        steps TEXT,
+        title TEXT, topic TEXT, steps TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS repairs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        device TEXT,
-        problem TEXT,
-        steps TEXT,
+        device TEXT, problem TEXT, steps TEXT,
         created_at TEXT NOT NULL)""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS health_guides (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        symptoms TEXT,
-        age_group TEXT,
-        guide TEXT,
+        symptoms TEXT, age_group TEXT, guide TEXT,
         created_at TEXT NOT NULL)""")
-
     conn.commit()
     conn.close()
 
@@ -369,30 +318,48 @@ def save_photo_safely(user_id, photo_bytes):
     return filepath, photo_hash
 
 # ============================================================
-# AI HELPERS
+# 🧠 THE BRAIN — Pollinations (NO API KEY NEEDED)
 # ============================================================
 def ai_chat(messages, temperature=0.7):
-    for url, headers, payload in [
-        ("https://keylessai.thryx.workers.dev/v1/chat/completions",
-         {"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
-         {"model": "gpt-4o-mini", "messages": messages, "temperature": temperature}),
-        ("https://api.openzoo.fun/v1/chat/completions",
-         {"Content-Type": "application/json", "Authorization": "Bearer sk-openzoo"},
-         {"model": "z-ai/glm-5.3-flash", "messages": messages, "temperature": temperature}),
-        ("https://api.llm7.io/v1/chat/completions",
-         {"Content-Type": "application/json", "Authorization": "Bearer unused"},
-         {"model": "gpt-4o-mini", "messages": messages, "temperature": temperature}),
-    ]:
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=45)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("choices") and len(data["choices"]) > 0:
-                    content = data["choices"][0]["message"]["content"]
-                    if content and len(content.strip()) > 2:
-                        return content.strip()
-        except: pass
-    return "⚠️ AI is busy. Try again."
+    """Real AI brain via Pollinations — no API key, no signup."""
+    # Build the prompt from messages
+    prompt = ""
+    for m in messages:
+        if m["role"] == "system":
+            prompt += f"{m['content']}\n\n"
+        elif m["role"] == "user":
+            prompt += f"User: {m['content']}\n"
+        elif m["role"] == "assistant":
+            prompt += f"Assistant: {m['content']}\n"
+    prompt += "Assistant:"
+    
+    try:
+        r = requests.get(
+            f"https://text.pollinations.ai/{requests.utils.quote(prompt)}",
+            timeout=60
+        )
+        if r.status_code == 200 and len(r.text.strip()) > 3:
+            return r.text.strip()
+    except: pass
+    
+    # Second try — POST endpoint (OpenAI-compatible, still free)
+    try:
+        r = requests.post(
+            "https://text.pollinations.ai/openai",
+            json={
+                "model": "openai",
+                "messages": messages,
+                "temperature": temperature
+            },
+            timeout=60
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("choices") and data["choices"][0]["message"]["content"]:
+                return data["choices"][0]["message"]["content"].strip()
+    except: pass
+    
+    return "⚠️ The AI is resting. Please send your message again in a few seconds."
 
 def _img_b64(path):
     with open(path, "rb") as f:
@@ -402,16 +369,15 @@ def ai_describe_photo(photo_path):
     try:
         img = _img_b64(photo_path)
         r = requests.post(
-            "https://keylessai.thryx.workers.dev/v1/chat/completions",
-            headers={"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
+            "https://text.pollinations.ai/openai",
             json={
-                "model": "gpt-4o-mini",
+                "model": "openai",
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": "Describe this place in one warm, poetic sentence under 25 words. Focus on buildings, nature, light, atmosphere."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
                 ]}],
                 "temperature": 0.7
-            }, timeout=60
+            }, timeout=90
         )
         if r.status_code == 200:
             data = r.json()
@@ -425,10 +391,9 @@ def ai_extract_objects(photo_path):
     try:
         img = _img_b64(photo_path)
         r = requests.post(
-            "https://keylessai.thryx.workers.dev/v1/chat/completions",
-            headers={"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
+            "https://text.pollinations.ai/openai",
             json={
-                "model": "gpt-4o-mini",
+                "model": "openai",
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": """Look at this photo with extreme attention to detail. 
 
@@ -436,34 +401,33 @@ List EVERYTHING you can see — even the tiniest things:
 - Buildings, doors, windows, walls
 - Plants, trees, leaves, flowers
 - People, animals, insects, birds
-- Objects on the ground
-- Signs, text, numbers, words
-- Vehicles, wheels, colors
-- Sky, clouds, lighting direction
-- Texture (rough, smooth, cracked, clean)
-- Damage, wear, marks, dirt, cracks
-- Small details: a single nail, a wire, a small crack, a leaf, a string, paper
+- Objects on the ground, signs, text
+- Colors, texture, damage, wear, cracks, marks
+- Small details: a single nail, a wire, a leaf, paper
 
-Return ONLY a JSON array of short, specific descriptions. Example:
-["cracked blue wall", "small red wire on ground", "3 green leaves top left", "wet stone ground", "rusty metal gate"]
+Return ONLY a JSON array of short descriptions. Example:
+["cracked blue wall", "small red wire on ground", "3 green leaves", "wet stone ground"]
 
-Be obsessive. List 15-30 items. Only JSON, no other text."""},
+Be obsessive. List 15-25 items. Only JSON, no other text."""},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
                 ]}],
                 "temperature": 0.3
-            }, timeout=60
+            }, timeout=90
         )
         if r.status_code == 200:
             data = r.json()
             if data.get("choices"):
                 txt = data["choices"][0]["message"]["content"].strip()
                 txt = txt.replace("```json", "").replace("```", "").strip()
-                return json.loads(txt)
+                # Find the JSON array in the text
+                start = txt.find("[")
+                end = txt.rfind("]")
+                if start != -1 and end != -1:
+                    return json.loads(txt[start:end+1])
     except: pass
     return []
 
 def ai_what_did_i_miss(old_objects, old_description, new_objects, new_description, place_name):
-    """Notice EVERY change — even the tiniest things."""
     prompt = f"""You are ECHO — an AI with extraordinary attention to detail. Comparing two visits to "{place_name}".
 
 PREVIOUS visit:
@@ -474,27 +438,30 @@ TODAY'S visit:
 - Description: {new_description}
 - Everything seen today: {json.dumps(new_objects)}
 
-Your task: notice EVERY change, even the tiniest ones.
+Notice EVERY change, even the tiniest.
 
 Return ONLY valid JSON:
 {{
-  "gone": ["every thing that was there before but is missing now — even tiny things"],
-  "new": ["every new thing today — even tiny things"],
-  "changed": ["every thing that changed — colors, shapes, sizes, positions, damage"],
-  "same": ["things still there, unchanged"],
-  "tiny_details": ["small observations worth noting — tiny signs, marks, subtle shifts"],
-  "weather_feel": "One sentence about the atmosphere, light, mood of today",
-  "story": "A warm 2-3 sentence narrative of what changed, like a friend remembering with you"
+  "gone": ["things missing now"],
+  "new": ["new things today"],
+  "changed": ["things that changed"],
+  "same": ["things unchanged"],
+  "tiny_details": ["small observations"],
+  "weather_feel": "One sentence about atmosphere",
+  "story": "A warm 2-3 sentence narrative of what changed"
 }}
 
 Be obsessive. Only JSON."""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.6)
     try:
         clean = result.strip().replace("```json", "").replace("```", "").strip()
-        return json.loads(clean)
-    except:
-        return {"gone": [], "new": [], "changed": [], "same": [], "tiny_details": [],
-                "weather_feel": "A day like any other.", "story": "The place has a story."}
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end+1])
+    except: pass
+    return {"gone": [], "new": [], "changed": [], "same": [], "tiny_details": [],
+            "weather_feel": "A day like any other.", "story": "The place has a story."}
 
 def ai_place_brain(place_name, all_descriptions, all_dates, all_moods):
     visits_text = ""
@@ -503,19 +470,23 @@ def ai_place_brain(place_name, all_descriptions, all_dates, all_moods):
     prompt = f"""You are ECHO — an AI that remembers places like a human.
 Place: "{place_name}"
 
-Visit history:
+Visits:
 {visits_text}
 
 Return ONLY valid JSON:
-{{"story": "2-3 sentence living story of this place. Warm, personal.", "pattern": "One-sentence observation about the visiting pattern.", "mood": "One word capturing the overall feeling"}}
+{{"story": "2-3 sentence living story of this place", "pattern": "One-sentence visiting pattern", "mood": "One word"}}
 
-Be specific. Do not invent."""
+Be specific. Only JSON."""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.75)
     try:
-        return json.loads(result.strip().replace("```json", "").replace("```", "").strip())
-    except:
-        return {"story": f"A place you've visited {len(all_descriptions)} time(s).",
-                "pattern": "You've returned here more than once.", "mood": "familiar"}
+        clean = result.strip().replace("```json", "").replace("```", "").strip()
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end+1])
+    except: pass
+    return {"story": f"A place you've visited {len(all_descriptions)} time(s).",
+            "pattern": "You've returned here more than once.", "mood": "familiar"}
 
 def ai_echo_speaks(place_name, current_visit_desc, previous_visits):
     if not previous_visits:
@@ -529,7 +500,6 @@ Say ONE warm sentence like meeting a new friend. Under 20 words."""
 Place: {place_name}
 Previous ({last['created_at'][:10]}): {last['ai_description']}
 Today: {current_visit_desc}
-Total visits: {len(previous_visits) + 1}
 Say ONE warm sentence welcoming them back. Under 25 words."""
     return ai_chat([{"role": "user", "content": prompt}], temperature=0.8)
 
@@ -537,17 +507,16 @@ def ai_compare_photos(p1, p2, name):
     try:
         img1 = _img_b64(p1); img2 = _img_b64(p2)
         r = requests.post(
-            "https://keylessai.thryx.workers.dev/v1/chat/completions",
-            headers={"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
+            "https://text.pollinations.ai/openai",
             json={
-                "model": "gpt-4o-mini",
+                "model": "openai",
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": f"Two photos of '{name}'. Write a 2-3 sentence 'What Changed' paragraph."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img1}"}},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2}"}}
                 ]}],
                 "temperature": 0.7
-            }, timeout=60
+            }, timeout=90
         )
         if r.status_code == 200:
             data = r.json()
@@ -560,10 +529,15 @@ def ai_build_lesson(topic):
     prompt = f"""You are ATLAS, expert teacher. Build a step-by-step lesson on: "{topic}"
 Return ONLY valid JSON:
 {{"title":"","intro":"","steps":[{{"number":1,"title":"","instruction":"","check":"","tip":""}}],"outro":""}}
-5-7 steps, tiny pieces, everyday language."""
+5-7 steps, tiny pieces, everyday language. Only JSON."""
     r = ai_chat([{"role": "user", "content": prompt}], temperature=0.6)
-    try: return json.loads(r.strip().replace("```json", "").replace("```", "").strip())
-    except: return None
+    try:
+        clean = r.strip().replace("```json", "").replace("```", "").strip()
+        start = clean.find("{"); end = clean.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end+1])
+    except: pass
+    return None
 
 def ai_build_repair(device, problem):
     prompt = f"""You are ATLAS, repair technician. Build a repair guide.
@@ -571,43 +545,47 @@ Device: {device}
 Problem: {problem}
 Return ONLY valid JSON:
 {{"title":"","safety":"","steps":[{{"number":1,"title":"","instruction":"","check":"","warning":""}}],"outro":""}}
-5-8 steps, real, everyday language."""
+5-8 steps. Only JSON."""
     r = ai_chat([{"role": "user", "content": prompt}], temperature=0.5)
-    try: return json.loads(r.strip().replace("```json", "").replace("```", "").strip())
-    except: return None
+    try:
+        clean = r.strip().replace("```json", "").replace("```", "").strip()
+        start = clean.find("{"); end = clean.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end+1])
+    except: pass
+    return None
 
 def ai_health_guide(symptoms, age_group):
-    """Health guidance — like a patient family doctor."""
-    prompt = f"""You are ATLAS, a careful and kind health guide. NOT a doctor, but gives real, safe guidance.
+    prompt = f"""You are ATLAS, a careful and kind health guide. NOT a doctor but gives real, safe guidance.
 
-Patient symptoms: {symptoms}
+Symptoms: {symptoms}
 Age group: {age_group}
 
 Return ONLY valid JSON:
 {{
   "title": "Health guidance title",
   "seriousness": "Mild / Moderate / Serious / Emergency",
-  "possible_causes": ["cause1", "cause2", "cause3"],
-  "home_care": ["step 1", "step 2", "step 3"],
-  "medicines": [
-    {{"name": "Common medicine name", "dose": "typical dose", "note": "when/how to take"}}
-  ],
-  "warning_signs": ["sign that means go to hospital now"],
+  "possible_causes": ["cause1", "cause2"],
+  "home_care": ["step1", "step2"],
+  "medicines": [{{"name": "Common medicine", "dose": "typical dose", "note": "when/how"}}],
+  "warning_signs": ["sign to go to hospital"],
   "when_to_see_doctor": "one sentence",
   "safety": "Important safety warning",
   "outro": "Warm closing line"
 }}
 
 RULES:
-- Only suggest common, safe, over-the-counter medicines
-- Never suggest prescription-only drugs without saying "ask a doctor"
-- If symptoms are serious (chest pain, trouble breathing, severe bleeding, high fever in baby), set seriousness to "Emergency"
-- Everyday language. Warm. Only JSON."""
+- Only suggest safe, common OTC medicines
+- If symptoms are serious, set seriousness to "Emergency"
+- Everyday language. Only JSON."""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.4)
     try:
-        return json.loads(result.strip().replace("```json", "").replace("```", "").strip())
-    except:
-        return None
+        clean = result.strip().replace("```json", "").replace("```", "").strip()
+        start = clean.find("{"); end = clean.rfind("}")
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end+1])
+    except: pass
+    return None
 
 def ai_suggest_tags(content):
     try:
@@ -616,32 +594,20 @@ def ai_suggest_tags(content):
     except: return ""
 
 def get_nexus_context(user_id):
-    """Rich context from ALL modules — the NEXUS brain."""
     conn = get_db(); c = conn.cursor()
     parts = []
-    
     c.execute("SELECT name FROM users WHERE id = ?", (user_id,))
     u = c.fetchone()
     if u: parts.append(f"User's name: {u['name']}")
-    
     c.execute("SELECT name FROM places WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
     places = [p["name"] for p in c.fetchall()]
     if places: parts.append(f"Places visited: {', '.join(places)}")
-    
     c.execute("SELECT title FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", (user_id,))
     notes = [n["title"] for n in c.fetchall() if n["title"]]
     if notes: parts.append(f"Recent notes: {', '.join(notes)}")
-    
     c.execute("SELECT mood FROM journal WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", (user_id,))
     moods = [j["mood"] for j in c.fetchall() if j["mood"]]
-    if moods: parts.append(f"Recent journal moods: {', '.join(moods)}")
-    
-    c.execute("SELECT device, problem FROM repairs WHERE user_id = ? ORDER BY created_at DESC LIMIT 3", (user_id,))
-    repairs = c.fetchall()
-    if repairs:
-        items = [f"{r['device']} ({r['problem'][:40]})" for r in repairs]
-        parts.append(f"Repaired: {', '.join(items)}")
-    
+    if moods: parts.append(f"Recent moods: {', '.join(moods)}")
     conn.close()
     return "\n".join(parts)
 
@@ -712,7 +678,7 @@ def auth_page():
                             c.execute("INSERT INTO users (username, email, password_hash, name, is_owner, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                                 (u, e, hash_pw(p), n, owner, datetime.now().isoformat()))
                             conn.commit(); conn.close()
-                            st.success("✅ Account created!")
+                            st.success("✅ Account created! Now log in.")
                         except sqlite3.IntegrityError:
                             st.error("Username or email taken.")
 
@@ -807,9 +773,7 @@ def echo_view():
                          json.dumps(objects), note, feeling, datetime.now().isoformat()))
                     miss_result = None
                     if previous_visits and previous_objects:
-                        miss_result = ai_what_did_i_miss(
-                            previous_objects, previous_description,
-                            objects, description, place_name)
+                        miss_result = ai_what_did_i_miss(previous_objects, previous_description, objects, description, place_name)
                     c.execute("SELECT ai_description, created_at, mood FROM memories WHERE place_id = ? ORDER BY created_at ASC", (place_id,))
                     all_mems = c.fetchall()
                     descs = [m["ai_description"] or "" for m in all_mems]
@@ -824,8 +788,7 @@ def echo_view():
                             (brain_data["story"], brain_data["pattern"], brain_data["mood"],
                              datetime.now().isoformat(), len(all_mems), datetime.now().isoformat(), place_id))
                     else:
-                        c.execute("""INSERT INTO place_brains 
-                            (place_id, story, pattern, mood, first_seen, last_seen, total_visits, updated_at)
+                        c.execute("""INSERT INTO place_brains (place_id, story, pattern, mood, first_seen, last_seen, total_visits, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                             (place_id, brain_data["story"], brain_data["pattern"], brain_data["mood"],
                              datetime.now().isoformat(), datetime.now().isoformat(), len(all_mems), datetime.now().isoformat()))
@@ -870,7 +833,7 @@ def echo_view():
                     for c_ in miss["changed"]:
                         st.markdown(f'<div class="difference-item">🔄 {c_}</div>', unsafe_allow_html=True)
                 if miss.get("tiny_details"):
-                    st.markdown("**🔎 Tiny details ECHO noticed:**")
+                    st.markdown("**🔎 Tiny details:**")
                     for t in miss["tiny_details"]:
                         st.markdown(f'<div class="difference-item">🔍 {t}</div>', unsafe_allow_html=True)
                 if miss.get("same"):
@@ -926,7 +889,6 @@ def echo_view():
     
     with tab_brains:
         st.subheader("🧠 ECHO's Mind")
-        st.caption("How ECHO understands your places.")
         conn = get_db(); c = conn.cursor()
         c.execute("""SELECT pb.*, p.name as place_name FROM place_brains pb
             JOIN places p ON pb.place_id = p.id
@@ -1009,7 +971,6 @@ def place_detail_view():
         st.session_state.view = "echo"
         st.rerun()
     st.divider()
-    st.subheader("🕰️ Timeline")
     for i, m in enumerate(mems):
         with st.container(border=True):
             st.markdown(f"**Visit {len(mems) - i}** — {m['created_at'][:16]} • felt *{m['mood'] or '—'}*")
@@ -1091,12 +1052,7 @@ You are not a generic assistant. You know this person.
 YOUR MEMORY OF THIS PERSON:
 {nexus_ctx}
 
-HOW YOU SPEAK:
-- Warm, personal, like a friend who remembers
-- Reference their places, notes, journals naturally when relevant
-- Never say "as an AI" or "I don't have memory"
-- Ask gentle follow-up questions
-- Keep responses clear and kind"""
+Speak warmly, personally, like a friend who remembers. Reference their places, notes, journals when relevant. Never say "as an AI". Be kind and clear."""
                 api = [{"role": "system", "content": system_prompt}]
                 for h in hist[-20:]: api.append({"role": h["role"], "content": h["content"]})
                 reply = ai_chat(api); st.write(reply)
@@ -1182,18 +1138,16 @@ def repair_view():
     user_id = st.session_state.user_id
     st.markdown('<div class="nexus-header"><h1>🔧 ATLAS</h1><p>Fix devices. Understand health. Step by step.</p></div>', unsafe_allow_html=True)
     back_button("home"); st.divider()
-    
     mode = st.radio("What do you need?", ["🔧 Fix a Device", "💊 Health Guidance", "📖 My History"], horizontal=True, label_visibility="collapsed")
     st.divider()
-    
     if mode == "🔧 Fix a Device":
         with st.form("new_repair"):
             device = st.text_input("Device", placeholder="e.g. iPhone 12, Samsung TV")
-            problem = st.text_area("What's wrong?", height=100, placeholder="e.g. My phone speaker stopped working")
+            problem = st.text_area("What's wrong?", height=100)
             if st.form_submit_button("🔧 Build Repair Guide", type="primary", use_container_width=True):
                 if not device or not problem: st.error("Enter both")
                 else:
-                    with st.spinner("ATLAS is analyzing the device..."):
+                    with st.spinner("ATLAS is analyzing..."):
                         guide = ai_build_repair(device, problem)
                     if guide:
                         conn = get_db(); c = conn.cursor()
@@ -1219,7 +1173,7 @@ def repair_view():
                 if s.get("check"): st.markdown(f"**✅ {s['check']}**")
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    if st.button("✅ Done — Next", type="primary", use_container_width=True):
+                    if st.button("✅ Next", type="primary", use_container_width=True):
                         st.session_state.repair_step += 1; st.rerun()
                 with c2:
                     if st.button("🤔 Don't Understand", use_container_width=True):
@@ -1234,13 +1188,11 @@ def repair_view():
                 st.write(R.get("outro","Good job."))
                 if st.button("🔄 New Repair"):
                     st.session_state.current_repair = None; st.session_state.repair_step = 0; st.rerun()
-    
     elif mode == "💊 Health Guidance":
         st.caption("⚠️ ATLAS gives guidance, not a diagnosis. Always see a doctor for serious concerns.")
         with st.form("new_health"):
             age_group = st.selectbox("Age group", ["Baby (0-2)", "Child (3-12)", "Teen (13-19)", "Adult (20-59)", "Elderly (60+)"])
-            symptoms = st.text_area("What are the symptoms?", height=150,
-                placeholder="e.g. headache for 2 days, mild fever, feeling tired")
+            symptoms = st.text_area("What are the symptoms?", height=150)
             if st.form_submit_button("💊 Get Guidance", type="primary", use_container_width=True):
                 if not symptoms: st.error("Describe the symptoms")
                 else:
@@ -1261,14 +1213,14 @@ def repair_view():
             icons = colors.get(seriousness, "🟡")
             st.markdown(f"## {icons} {guide.get('title','Health Guidance')}")
             st.markdown(f"**Seriousness:** {icons} **{seriousness}**")
-            if guide.get("safety"): st.error(f"⚠️ **Important:** {guide['safety']}")
+            if guide.get("safety"): st.error(f"⚠️ {guide['safety']}")
             st.subheader("🔍 Possible causes")
             for cause in guide.get("possible_causes", []):
                 st.markdown(f'<div class="difference-item">• {cause}</div>', unsafe_allow_html=True)
             st.subheader("🏠 Home care")
             for step in guide.get("home_care", []):
                 st.markdown(f'<div class="same-item">• {step}</div>', unsafe_allow_html=True)
-            st.subheader("💊 Medicines (if appropriate)")
+            st.subheader("💊 Medicines")
             for med in guide.get("medicines", []):
                 if isinstance(med, dict):
                     st.markdown(f"""
@@ -1278,7 +1230,7 @@ def repair_view():
                         <span style="font-size:12px;opacity:0.7;">{med.get('note','')}</span>
                     </div>
                     """, unsafe_allow_html=True)
-            st.subheader("🚨 Warning signs — go to hospital if:")
+            st.subheader("🚨 Warning signs")
             for sign in guide.get("warning_signs", []):
                 st.markdown(f'<div class="missing-item">🚨 {sign}</div>', unsafe_allow_html=True)
             if guide.get("when_to_see_doctor"):
@@ -1287,14 +1239,12 @@ def repair_view():
                 st.markdown(f'<div class="echo-says">💙 <em>{guide["outro"]}</em></div>', unsafe_allow_html=True)
             if st.button("🔄 New Guidance"):
                 st.session_state.health_guide = None; st.rerun()
-    
     else:
         conn = get_db(); c = conn.cursor()
         c.execute("SELECT * FROM repairs WHERE user_id = ? ORDER BY created_at DESC LIMIT 20", (user_id,))
         repairs = c.fetchall()
         c.execute("SELECT * FROM health_guides WHERE user_id = ? ORDER BY created_at DESC LIMIT 20", (user_id,))
-        health = c.fetchall()
-        conn.close()
+        health = c.fetchall(); conn.close()
         st.subheader("🔧 Repairs")
         for r in repairs:
             with st.expander(f"🔧 {r['device']} — {r['created_at'][:10]}"):
@@ -1314,7 +1264,6 @@ def repair_view():
                     try:
                         g = json.loads(h["guide"])
                         st.write(f"**Seriousness:** {g.get('seriousness','')}")
-                        st.write(f"**Possible causes:** {', '.join(g.get('possible_causes',[]))}")
                     except: pass
 
 # ============================================================
