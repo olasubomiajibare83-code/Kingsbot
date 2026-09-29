@@ -5,7 +5,9 @@ import json
 import requests
 import base64
 import os
-from datetime import datetime
+import random
+import time
+from datetime import datetime, timedelta
 
 # ============================================================
 # PAGE CONFIG
@@ -21,180 +23,377 @@ DB_FILE = "nexus.db"
 UPLOAD_DIR = "echo_vault"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
+OWNER_EMAILS = ["your-email@gmail.com"]
 
 # ============================================================
-# STYLING
+# MAD BACKGROUND + STYLING
 # ============================================================
 st.markdown("""
 <style>
+    /* Hide defaults */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Animated gradient */
     .stApp {
-        background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
-        background-size: 200% 200%;
-        animation: gradientShift 20s ease infinite;
+        background: linear-gradient(-45deg, #0a0a18, #1a1a3e, #2a1a4e, #0f1a3e);
+        background-size: 400% 400%;
+        animation: gradientFlow 25s ease infinite;
     }
-    @keyframes gradientShift {
+    @keyframes gradientFlow {
         0% { background-position: 0% 50%; }
         50% { background-position: 100% 50%; }
         100% { background-position: 0% 50%; }
     }
+    
+    /* Floating orbs layer */
     .stApp::before {
         content: "";
         position: fixed;
-        top: -50%; left: -50%;
-        width: 200%; height: 200%;
-        background: radial-gradient(circle at 20% 30%, rgba(102,126,234,0.15) 0%, transparent 40%),
-                    radial-gradient(circle at 80% 70%, rgba(240,147,251,0.12) 0%, transparent 40%),
-                    radial-gradient(circle at 50% 90%, rgba(255,217,61,0.08) 0%, transparent 40%);
-        animation: floatGlow 30s ease infinite;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: 
+            radial-gradient(circle at 15% 20%, rgba(102,126,234,0.18) 0%, transparent 35%),
+            radial-gradient(circle at 85% 30%, rgba(240,147,251,0.15) 0%, transparent 35%),
+            radial-gradient(circle at 50% 80%, rgba(255,217,61,0.10) 0%, transparent 40%),
+            radial-gradient(circle at 70% 90%, rgba(77,208,225,0.12) 0%, transparent 35%);
+        animation: orbFloat 35s ease-in-out infinite alternate;
         pointer-events: none;
         z-index: 0;
     }
-    @keyframes floatGlow {
-        0% { transform: translate(0,0) rotate(0deg); }
-        50% { transform: translate(3%,2%) rotate(180deg); }
-        100% { transform: translate(0,0) rotate(360deg); }
+    @keyframes orbFloat {
+        0% { transform: scale(1) translate(0, 0); }
+        100% { transform: scale(1.15) translate(-2%, 2%); }
     }
+    
+    /* Particle stars layer */
+    .stApp::after {
+        content: "";
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background-image: 
+            radial-gradient(1px 1px at 20% 30%, white, transparent),
+            radial-gradient(1px 1px at 60% 70%, white, transparent),
+            radial-gradient(2px 2px at 50% 50%, rgba(255,255,255,0.6), transparent),
+            radial-gradient(1px 1px at 80% 10%, white, transparent),
+            radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.5), transparent),
+            radial-gradient(1px 1px at 33% 80%, white, transparent),
+            radial-gradient(1px 1px at 10% 90%, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1px 1px at 70% 40%, white, transparent);
+        background-size: 550px 550px, 350px 350px, 250px 250px, 400px 400px, 300px 300px, 450px 450px, 500px 500px, 380px 380px;
+        background-repeat: repeat;
+        animation: starsTwinkle 8s ease-in-out infinite alternate;
+        opacity: 0.35;
+        pointer-events: none;
+        z-index: 0;
+    }
+    @keyframes starsTwinkle {
+        0% { opacity: 0.2; }
+        100% { opacity: 0.5; }
+    }
+    
     .main, [data-testid="stAppViewContainer"] > .main {
         position: relative;
-        z-index: 1;
+        z-index: 2;
     }
+    
+    /* Glowing headers */
     .nexus-header {
         text-align: center;
-        padding: 24px 0 14px 0;
+        padding: 30px 0 18px 0;
         position: relative;
-        z-index: 1;
+        z-index: 2;
     }
     .nexus-header h1 {
-        font-family: Georgia, serif;
-        font-size: 46px;
+        font-family: 'Georgia', serif;
+        font-size: 52px;
         font-weight: 700;
-        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d);
-        background-size: 200% 200%;
-        animation: gradientShift 8s ease infinite;
+        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d, #4dd0e1, #667eea);
+        background-size: 400% 400%;
+        animation: gradientFlow 8s ease infinite;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
-        filter: drop-shadow(0 0 20px rgba(240,147,251,0.3));
+        filter: drop-shadow(0 0 25px rgba(240,147,251,0.5)) drop-shadow(0 0 50px rgba(102,126,234,0.3));
+        letter-spacing: 2px;
     }
-    .nexus-header p { color: rgba(255,255,255,0.5); font-size: 14px; margin-top: 6px; }
-    .login-hero { text-align: center; padding: 60px 0 30px 0; }
-    .login-hero h1 {
-        font-family: Georgia, serif;
-        font-size: 56px;
-        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d);
-        background-size: 200% 200%;
-        animation: gradientShift 8s ease infinite;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0;
+    .nexus-header p {
+        color: rgba(255,255,255,0.6);
+        font-size: 15px;
+        margin-top: 8px;
+        letter-spacing: 1px;
     }
-    .login-hero p { color: rgba(255,255,255,0.6); font-size: 16px; margin-top: 8px; }
-    .module-tile {
-        background: linear-gradient(135deg, rgba(102,126,234,0.18), rgba(240,147,251,0.12));
-        border: 1px solid rgba(240,147,251,0.3);
-        border-radius: 22px;
-        padding: 28px 20px;
+    
+    /* Login hero */
+    .login-hero {
         text-align: center;
-        min-height: 160px;
+        padding: 70px 0 40px 0;
+        position: relative;
+        z-index: 2;
+    }
+    .login-hero h1 {
+        font-family: 'Georgia', serif;
+        font-size: 72px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d, #4dd0e1, #667eea);
+        background-size: 400% 400%;
+        animation: gradientFlow 8s ease infinite;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0;
+        filter: drop-shadow(0 0 30px rgba(240,147,251,0.6));
+    }
+    .login-hero p {
+        color: rgba(255,255,255,0.7);
+        font-size: 17px;
+        margin-top: 12px;
+    }
+    
+    /* Mad module tiles */
+    .module-tile {
+        background: linear-gradient(135deg, rgba(102,126,234,0.22), rgba(240,147,251,0.15), rgba(77,208,225,0.12));
+        border: 1px solid rgba(240,147,251,0.35);
+        border-radius: 24px;
+        padding: 32px 22px;
+        text-align: center;
+        min-height: 180px;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        transition: all 0.35s ease;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 
+            0 10px 40px rgba(0,0,0,0.4),
+            inset 0 1px 0 rgba(255,255,255,0.08);
         position: relative;
         overflow: hidden;
     }
+    .module-tile::before {
+        content: "";
+        position: absolute;
+        top: -50%; left: -50%;
+        width: 200%; height: 200%;
+        background: conic-gradient(from 0deg, transparent, rgba(240,147,251,0.15), transparent);
+        animation: tileSpin 6s linear infinite;
+        opacity: 0;
+        transition: opacity 0.4s;
+    }
+    .module-tile:hover::before { opacity: 1; }
+    @keyframes tileSpin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
     .module-tile:hover {
-        transform: translateY(-6px) scale(1.02);
-        border-color: rgba(240,147,251,0.7);
-        box-shadow: 0 16px 40px rgba(240,147,251,0.2);
+        transform: translateY(-10px) scale(1.03);
+        border-color: rgba(240,147,251,0.9);
+        box-shadow: 
+            0 20px 60px rgba(240,147,251,0.35),
+            0 0 40px rgba(102,126,234,0.4),
+            inset 0 1px 0 rgba(255,255,255,0.15);
     }
-    .module-icon { font-size: 42px; margin-bottom: 10px; }
-    .module-title { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; font-family: Georgia, serif; }
-    .module-desc { font-size: 11px; color: rgba(255,255,255,0.5); }
-    .brain-card {
-        background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(240,147,251,0.10));
-        border: 1px solid rgba(240,147,251,0.25);
-        border-radius: 16px;
-        padding: 20px;
-        margin: 12px 0;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+    .module-icon {
+        font-size: 52px;
+        margin-bottom: 14px;
+        filter: drop-shadow(0 0 15px rgba(240,147,251,0.4));
     }
-    .brain-card .mood { font-size: 22px; margin-bottom: 6px; }
-    .brain-card .story { font-size: 15px; line-height: 1.5; margin: 8px 0; color: rgba(255,255,255,0.9); }
-    .brain-card .pattern { font-size: 13px; color: rgba(255,255,255,0.55); font-style: italic; }
-    .brain-card .meta { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 8px; }
-    .echo-memory {
-        background: rgba(102,126,234,0.12);
-        border-left: 3px solid #667eea;
-        padding: 14px 18px;
-        border-radius: 8px;
-        margin: 10px 0;
+    .module-title {
+        font-size: 19px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 6px;
+        font-family: 'Georgia', serif;
+        letter-spacing: 1px;
     }
-    .echo-says {
-        background: rgba(240,147,251,0.12);
-        border-left: 3px solid #f093fb;
-        padding: 14px 18px;
-        border-radius: 8px;
-        margin: 10px 0;
-    }
-    .difference-item {
-        background: rgba(255,217,61,0.08);
-        border-left: 3px solid #ffd93d;
-        padding: 10px 14px;
-        border-radius: 6px;
-        margin: 6px 0;
-        font-size: 14px;
-    }
-    .missing-item {
-        background: rgba(255,107,107,0.08);
-        border-left: 3px solid #ff6b6b;
-        padding: 10px 14px;
-        border-radius: 6px;
-        margin: 6px 0;
-        font-size: 14px;
-    }
-    .same-item {
-        background: rgba(107,203,119,0.08);
-        border-left: 3px solid #6bcb77;
-        padding: 10px 14px;
-        border-radius: 6px;
-        margin: 6px 0;
-        font-size: 14px;
-    }
-    .think-box {
-        background: rgba(240,147,251,0.08);
-        border-left: 3px solid #f093fb;
-        padding: 8px 14px;
-        border-radius: 6px;
-        margin: 8px 0;
+    .module-desc {
         font-size: 12px;
+        color: rgba(255,255,255,0.6);
+    }
+    
+    /* Live panel */
+    .live-panel {
+        background: linear-gradient(135deg, rgba(102,126,234,0.12), rgba(240,147,251,0.08));
+        border: 1px solid rgba(240,147,251,0.2);
+        border-radius: 18px;
+        padding: 20px;
+        backdrop-filter: blur(12px);
+        margin: 12px 0;
+    }
+    .live-panel .time {
+        font-size: 32px;
+        font-family: 'Georgia', serif;
+        background: linear-gradient(135deg, #667eea, #f093fb);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700;
+    }
+    .live-panel .label {
+        font-size: 12px;
+        color: rgba(255,255,255,0.5);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+    
+    /* Brain cards — mad glow */
+    .brain-card {
+        background: linear-gradient(135deg, rgba(102,126,234,0.18), rgba(240,147,251,0.12));
+        border: 1px solid rgba(240,147,251,0.3);
+        border-radius: 18px;
+        padding: 22px;
+        margin: 14px 0;
+        backdrop-filter: blur(14px);
+        box-shadow: 
+            0 8px 30px rgba(0,0,0,0.3),
+            inset 0 1px 0 rgba(255,255,255,0.06);
+        position: relative;
+        overflow: hidden;
+    }
+    .brain-card::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0;
+        width: 4px; height: 100%;
+        background: linear-gradient(180deg, #667eea, #f093fb, #ffd93d);
+        animation: gradientFlow 4s ease infinite;
+    }
+    .brain-card .mood {
+        font-size: 24px;
+        margin-bottom: 8px;
+        filter: drop-shadow(0 0 10px rgba(240,147,251,0.5));
+    }
+    .brain-card .story {
+        font-size: 15px;
+        line-height: 1.6;
+        margin: 10px 0;
+        color: rgba(255,255,255,0.92);
+    }
+    .brain-card .pattern {
+        font-size: 13px;
         color: rgba(255,255,255,0.6);
         font-style: italic;
     }
+    .brain-card .meta {
+        font-size: 11px;
+        color: rgba(255,255,255,0.45);
+        margin-top: 10px;
+        letter-spacing: 1px;
+    }
+    
+    /* ECHO memory blocks */
+    .echo-memory {
+        background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(77,208,225,0.1));
+        border-left: 4px solid #667eea;
+        padding: 16px 20px;
+        border-radius: 10px;
+        margin: 12px 0;
+        box-shadow: 0 4px 20px rgba(102,126,234,0.15);
+    }
+    .echo-says {
+        background: linear-gradient(135deg, rgba(240,147,251,0.15), rgba(255,217,61,0.08));
+        border-left: 4px solid #f093fb;
+        padding: 16px 20px;
+        border-radius: 10px;
+        margin: 12px 0;
+        box-shadow: 0 4px 20px rgba(240,147,251,0.15);
+    }
+    .difference-item {
+        background: rgba(255,217,61,0.1);
+        border-left: 3px solid #ffd93d;
+        padding: 11px 15px;
+        border-radius: 6px;
+        margin: 7px 0;
+        font-size: 14px;
+    }
+    .missing-item {
+        background: rgba(255,107,107,0.1);
+        border-left: 3px solid #ff6b6b;
+        padding: 11px 15px;
+        border-radius: 6px;
+        margin: 7px 0;
+        font-size: 14px;
+    }
+    .same-item {
+        background: rgba(107,203,119,0.1);
+        border-left: 3px solid #6bcb77;
+        padding: 11px 15px;
+        border-radius: 6px;
+        margin: 7px 0;
+        font-size: 14px;
+    }
+    
+    /* Stat cards */
+    .stat-card {
+        background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(240,147,251,0.1));
+        border: 1px solid rgba(240,147,251,0.25);
+        border-radius: 14px;
+        padding: 16px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s;
+    }
+    .stat-card:hover {
+        border-color: rgba(240,147,251,0.6);
+        transform: translateY(-3px);
+    }
+    .stat-number {
+        font-size: 32px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea, #f093fb);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-family: 'Georgia', serif;
+    }
+    .stat-label {
+        font-size: 11px;
+        color: rgba(255,255,255,0.5);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-top: 4px;
+    }
+    
+    /* Buttons — glowing */
     .stButton > button {
         border-radius: 14px;
-        border: 1px solid rgba(240,147,251,0.35);
-        background: linear-gradient(135deg, rgba(102,126,234,0.25), rgba(240,147,251,0.15));
+        border: 1px solid rgba(240,147,251,0.4);
+        background: linear-gradient(135deg, rgba(102,126,234,0.3), rgba(240,147,251,0.2));
         color: white;
         font-weight: 600;
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         backdrop-filter: blur(8px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
     .stButton > button:hover {
-        border-color: rgba(240,147,251,0.9);
-        background: linear-gradient(135deg, rgba(102,126,234,0.5), rgba(240,147,251,0.35));
-        box-shadow: 0 0 20px rgba(240,147,251,0.4);
-        transform: translateY(-2px);
+        border-color: rgba(240,147,251,1);
+        background: linear-gradient(135deg, rgba(102,126,234,0.6), rgba(240,147,251,0.45));
+        box-shadow: 
+            0 0 25px rgba(240,147,251,0.6),
+            0 0 50px rgba(102,126,234,0.3);
+        transform: translateY(-3px);
+    }
+    
+    /* Thinking box */
+    .think-box {
+        background: linear-gradient(135deg, rgba(240,147,251,0.1), rgba(77,208,225,0.08));
+        border-left: 3px solid #f093fb;
+        padding: 10px 16px;
+        border-radius: 8px;
+        margin: 10px 0;
+        font-size: 13px;
+        color: rgba(255,255,255,0.7);
+        font-style: italic;
+    }
+    
+    /* Streak flame */
+    .flame {
+        display: inline-block;
+        animation: flamePulse 1.5s ease-in-out infinite;
+    }
+    @keyframes flamePulse {
+        0%, 100% { transform: scale(1); filter: brightness(1); }
+        50% { transform: scale(1.15); filter: brightness(1.3); }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -212,6 +411,9 @@ def init_db():
         password_hash TEXT NOT NULL,
         name TEXT,
         is_owner INTEGER DEFAULT 0,
+        xp INTEGER DEFAULT 0,
+        streak INTEGER DEFAULT 0,
+        last_active TEXT,
         created_at TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS places (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -306,6 +508,46 @@ def fix_owners():
 fix_owners()
 
 # ============================================================
+# XP & STREAK SYSTEM
+# ============================================================
+def award_xp(user_id, amount, reason=""):
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE users SET xp = xp + ? WHERE id = ?", (amount, user_id))
+    c.execute("SELECT xp FROM users WHERE id = ?", (user_id,))
+    row = c.fetchone()
+    new_xp = row["xp"] if row else 0
+    conn.commit(); conn.close()
+    return new_xp
+
+def update_streak(user_id):
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT streak, last_active FROM users WHERE id = ?", (user_id,))
+    u = c.fetchone()
+    today = datetime.now().date().isoformat()
+    if not u:
+        conn.close(); return 0
+    last = u["last_active"]
+    streak = u["streak"] or 0
+    if last == today:
+        conn.close(); return streak
+    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+    if last == yesterday:
+        streak += 1
+    else:
+        streak = 1
+    c.execute("UPDATE users SET streak = ?, last_active = ? WHERE id = ?", (streak, today, user_id))
+    conn.commit(); conn.close()
+    return streak
+
+def get_time_greeting():
+    h = datetime.now().hour
+    if h < 5: return "Still awake? 🌙"
+    if h < 12: return "Good morning ☀️"
+    if h < 17: return "Good afternoon 🌤️"
+    if h < 21: return "Good evening 🌆"
+    return "Good night 🌙"
+
+# ============================================================
 # SAFE PHOTO STORAGE
 # ============================================================
 def save_photo_safely(user_id, photo_bytes):
@@ -320,11 +562,9 @@ def save_photo_safely(user_id, photo_bytes):
     return filepath, photo_hash
 
 # ============================================================
-# 🧠 THE BRAIN — Latest Pollinations (GPT-OSS 20B with reasoning)
+# 🧠 THE BRAIN — Pollinations GPT-OSS 20B (Reasoning)
 # ============================================================
 def ai_chat(messages, temperature=0.7):
-    """Latest Pollinations brain — GPT-OSS 20B with real reasoning."""
-    # Primary: POST endpoint with openai-fast (20B reasoning model)
     try:
         r = requests.post(
             "https://text.pollinations.ai/openai",
@@ -343,28 +583,17 @@ def ai_chat(messages, temperature=0.7):
                 if len(content) > 2:
                     return content
     except: pass
-    
-    # Fallback 1: model name "openai"
     try:
         r = requests.post(
             "https://text.pollinations.ai/openai",
-            json={
-                "model": "openai",
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": 1000
-            },
+            json={"model": "openai", "messages": messages, "temperature": temperature},
             timeout=90
         )
         if r.status_code == 200:
             data = r.json()
             if data.get("choices") and data["choices"][0]["message"]["content"]:
-                content = data["choices"][0]["message"]["content"].strip()
-                if len(content) > 2:
-                    return content
+                return data["choices"][0]["message"]["content"].strip()
     except: pass
-    
-    # Fallback 2: GET endpoint (no model specification)
     try:
         prompt = ""
         for m in messages:
@@ -375,15 +604,10 @@ def ai_chat(messages, temperature=0.7):
             elif m["role"] == "assistant":
                 prompt += f"Assistant: {m['content']}\n"
         prompt += "Assistant:"
-        
-        r = requests.get(
-            f"https://text.pollinations.ai/{requests.utils.quote(prompt)}",
-            timeout=90
-        )
+        r = requests.get(f"https://text.pollinations.ai/{requests.utils.quote(prompt)}", timeout=90)
         if r.status_code == 200 and len(r.text.strip()) > 3:
             return r.text.strip()
     except: pass
-    
     return "⚠️ The AI is resting. Please send your message again in a few seconds."
 
 def _img_b64(path):
@@ -398,7 +622,7 @@ def ai_describe_photo(photo_path):
             json={
                 "model": "openai",
                 "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": "Describe this place in one warm, poetic sentence under 25 words. Focus on buildings, nature, light, atmosphere. If the photo is unclear, say 'The image is unclear' instead of guessing."},
+                    {"type": "text", "text": "Describe this place in one warm, poetic sentence under 25 words. If unclear, say 'The image is unclear' instead of guessing."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
                 ]}],
                 "temperature": 0.7
@@ -419,12 +643,9 @@ def ai_extract_objects(photo_path):
             json={
                 "model": "openai",
                 "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": """Look at this photo carefully. List EVERYTHING you can see — buildings, plants, people, animals, objects, signs, colors, textures, cracks, wires, marks.
-
-Return ONLY a JSON array of short descriptions. Example: ["cracked blue wall", "small red wire", "3 green leaves"]
-
-If the photo is unclear, return []. 
-List 10-25 items. Only JSON, no other text."""},
+                    {"type": "text", "text": """List everything visible in this photo — buildings, plants, people, objects, signs, colors, cracks, marks, wires.
+Return ONLY a JSON array of short descriptions. If unclear, return [].
+Example: ["cracked blue wall", "small red wire", "3 green leaves"]. 10-25 items. Only JSON."""},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
                 ]}],
                 "temperature": 0.3
@@ -435,35 +656,26 @@ List 10-25 items. Only JSON, no other text."""},
             if data.get("choices"):
                 txt = data["choices"][0]["message"]["content"].strip()
                 txt = txt.replace("```json", "").replace("```", "").strip()
-                start = txt.find("["); end = txt.rfind("]")
-                if start != -1 and end != -1:
-                    return json.loads(txt[start:end+1])
+                s = txt.find("["); e = txt.rfind("]")
+                if s != -1 and e != -1:
+                    return json.loads(txt[s:e+1])
     except: pass
     return []
 
 def ai_what_did_i_miss(old_objects, old_description, new_objects, new_description, place_name):
     prompt = f"""You are ECHO — comparing two visits to "{place_name}".
-
-PREVIOUS:
-- Description: {old_description}
-- Seen before: {json.dumps(old_objects)}
-
-TODAY:
-- Description: {new_description}
-- Seen today: {json.dumps(new_objects)}
-
-Notice EVERY change, even the tiniest.
+PREVIOUS: {old_description} | Objects: {json.dumps(old_objects)}
+TODAY: {new_description} | Objects: {json.dumps(new_objects)}
 
 Return ONLY valid JSON:
 {{"gone": ["missing now"], "new": ["new today"], "changed": ["what changed"], "same": ["unchanged"], "tiny_details": ["small observations"], "weather_feel": "One sentence about atmosphere", "story": "Warm 2-3 sentence narrative"}}
-
-Be specific. Only JSON."""
+Only JSON."""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.6)
     try:
         clean = result.strip().replace("```json", "").replace("```", "").strip()
-        start = clean.find("{"); end = clean.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(clean[start:end+1])
+        s = clean.find("{"); e = clean.rfind("}")
+        if s != -1 and e != -1:
+            return json.loads(clean[s:e+1])
     except: pass
     return {"gone": [], "new": [], "changed": [], "same": [], "tiny_details": [],
             "weather_feel": "A day like any other.", "story": "The place has a story."}
@@ -472,33 +684,28 @@ def ai_place_brain(place_name, all_descriptions, all_dates, all_moods):
     visits_text = ""
     for i, (d, dt, mood) in enumerate(zip(all_descriptions, all_dates, all_moods)):
         visits_text += f"Visit {i+1} ({dt[:10]}, felt {mood}): {d}\n"
-    prompt = f"""You are ECHO — remembering "{place_name}".
-
-Visits:
-{visits_text}
-
-Return ONLY valid JSON:
-{{"story": "2-3 sentence living story", "pattern": "One-sentence pattern", "mood": "One word"}}
-Only JSON."""
+    prompt = f"""ECHO remembering "{place_name}".
+Visits: {visits_text}
+Return ONLY JSON: {{"story": "2-3 sentence living story", "pattern": "One-sentence pattern", "mood": "One word"}}"""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.75)
     try:
         clean = result.strip().replace("```json", "").replace("```", "").strip()
-        start = clean.find("{"); end = clean.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(clean[start:end+1])
+        s = clean.find("{"); e = clean.rfind("}")
+        if s != -1 and e != -1:
+            return json.loads(clean[s:e+1])
     except: pass
     return {"story": f"A place you've visited {len(all_descriptions)} time(s).",
             "pattern": "You've returned here more than once.", "mood": "familiar"}
 
 def ai_echo_speaks(place_name, current_visit_desc, previous_visits):
     if not previous_visits:
-        prompt = f"""You are ECHO, meeting a new place.
+        prompt = f"""ECHO meeting a new place.
 Place: {place_name}
 First impression: {current_visit_desc}
-Say ONE warm sentence like meeting a new friend. Under 20 words."""
+Say ONE warm sentence. Under 20 words."""
     else:
         last = previous_visits[-1]
-        prompt = f"""You are ECHO, welcoming the user back.
+        prompt = f"""ECHO welcoming the user back.
 Place: {place_name}
 Previous ({last['created_at'][:10]}): {last['ai_description']}
 Today: {current_visit_desc}
@@ -528,91 +735,83 @@ def ai_compare_photos(p1, p2, name):
     return "The place has changed over time."
 
 def ai_build_lesson(topic):
-    prompt = f"""You are ATLAS, expert teacher. Build a step-by-step lesson on: "{topic}"
-Return ONLY valid JSON:
-{{"title":"","intro":"","steps":[{{"number":1,"title":"","instruction":"","check":"","tip":""}}],"outro":""}}
-5-7 steps, tiny pieces, everyday language. Only JSON."""
+    prompt = f"""ATLAS teacher. Lesson on: "{topic}"
+Return ONLY JSON: {{"title":"","intro":"","steps":[{{"number":1,"title":"","instruction":"","check":"","tip":""}}],"outro":""}}
+5-7 steps. Only JSON."""
     r = ai_chat([{"role": "user", "content": prompt}], temperature=0.6)
     try:
         clean = r.strip().replace("```json", "").replace("```", "").strip()
-        start = clean.find("{"); end = clean.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(clean[start:end+1])
+        s = clean.find("{"); e = clean.rfind("}")
+        if s != -1 and e != -1:
+            return json.loads(clean[s:e+1])
     except: pass
     return None
 
 def ai_build_repair(device, problem, known_brand="", known_model=""):
     device_full = f"{known_brand} {known_model}".strip() or device
-    prompt = f"""You are ATLAS, a real repair technician.
-
+    prompt = f"""ATLAS repair technician.
 Device: {device_full}
 Problem: {problem}
-
-Give a REAL, specific, working repair guide. Not generic advice.
-
-Return ONLY valid JSON:
-{{
-  "title": "Repair title",
-  "safety": "Safety warning if any",
-  "tools_needed": ["tool1", "tool2"],
-  "likely_cause": "Most likely cause",
-  "steps": [
-    {{"number": 1, "title": "Step title", "instruction": "Specific instruction for THIS device", "check": "How to confirm this worked", "warning": "Warning if any"}}
-  ],
-  "outro": "Warm closing line"
-}}
-
+Give a REAL specific repair guide.
+Return ONLY JSON: {{"title":"","safety":"","tools_needed":[],"likely_cause":"","steps":[{{"number":1,"title":"","instruction":"","check":"","warning":""}}],"outro":""}}
 5-8 real steps. Only JSON."""
     r = ai_chat([{"role": "user", "content": prompt}], temperature=0.5)
     try:
         clean = r.strip().replace("```json", "").replace("```", "").strip()
-        start = clean.find("{"); end = clean.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(clean[start:end+1])
+        s = clean.find("{"); e = clean.rfind("}")
+        if s != -1 and e != -1:
+            return json.loads(clean[s:e+1])
     except: pass
     return None
 
 def ai_health_guide(symptoms, age_group, allergies="", medications=""):
-    prompt = f"""You are ATLAS, a careful and kind health guide. NOT a doctor.
-
-Patient info:
-- Symptoms: {symptoms}
-- Age group: {age_group}
-- Allergies: {allergies or 'None known'}
-- Current medications: {medications or 'None'}
-
-Return ONLY valid JSON:
-{{
-  "title": "Health guidance title",
-  "seriousness": "Mild / Moderate / Serious / Emergency",
-  "possible_causes": ["cause1", "cause2"],
-  "home_care": ["step1", "step2"],
-  "medicines": [{{"name": "Common OTC medicine", "dose": "typical dose", "note": "when/how + allergy warning"}}],
-  "warning_signs": ["sign to go to hospital"],
-  "when_to_see_doctor": "one sentence",
-  "safety": "Important safety warning",
-  "outro": "Warm closing line"
-}}
-
-RULES:
-- Check allergies carefully — NEVER suggest a medicine that conflicts
-- Only safe OTC medicines
-- If serious, set seriousness to "Emergency"
-- Only JSON."""
+    prompt = f"""ATLAS health guide. NOT a doctor.
+Symptoms: {symptoms}
+Age: {age_group}
+Allergies: {allergies or 'None'}
+Medications: {medications or 'None'}
+Return ONLY JSON:
+{{"title":"","seriousness":"Mild/Moderate/Serious/Emergency","possible_causes":[],"home_care":[],"medicines":[{{"name":"","dose":"","note":""}}],"warning_signs":[],"when_to_see_doctor":"","safety":"","outro":""}}
+Only safe OTC medicines. Check allergies. Only JSON."""
     result = ai_chat([{"role": "user", "content": prompt}], temperature=0.4)
     try:
         clean = result.strip().replace("```json", "").replace("```", "").strip()
-        start = clean.find("{"); end = clean.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(clean[start:end+1])
+        s = clean.find("{"); e = clean.rfind("}")
+        if s != -1 and e != -1:
+            return json.loads(clean[s:e+1])
     except: pass
     return None
 
 def ai_suggest_tags(content):
     try:
-        r = ai_chat([{"role": "user", "content": f"3 short comma-separated tags for this note:\n{content[:400]}"}])
+        r = ai_chat([{"role": "user", "content": f"3 short comma-separated tags:\n{content[:400]}"}])
         return r.replace("\n", " ").strip()[:100]
     except: return ""
+
+def ai_daily_quote():
+    try:
+        r = ai_chat([{"role": "user", "content": "Give ONE short inspiring sentence (max 15 words) for today. No quotes, no author."}])
+        return r.strip().strip('"')[:120]
+    except: return "Every small step builds a bigger tomorrow."
+
+def ai_note_connections(user_id, new_note_content):
+    """Find connections between notes — mad feature."""
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT title, content FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
+    old_notes = c.fetchall()
+    conn.close()
+    if not old_notes:
+        return ""
+    old_text = "\n".join([f"- {n['title']}" for n in old_notes])
+    prompt = f"""Look for connections between a new note and old notes.
+
+NEW: {new_note_content[:300]}
+
+OLD notes: 
+{old_text}
+
+If any old note is related, say ONE short sentence: "This connects to: [title] because...". If none, say "No connections yet." Under 30 words."""
+    return ai_chat([{"role": "user", "content": prompt}], temperature=0.5)
 
 def get_nexus_context(user_id):
     conn = get_db(); c = conn.cursor()
@@ -631,7 +830,7 @@ def get_nexus_context(user_id):
     if moods: parts.append(f"Recent moods: {', '.join(moods)}")
     c.execute("SELECT device FROM user_devices WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", (user_id,))
     devices = [d["device"] for d in c.fetchall() if d["device"]]
-    if devices: parts.append(f"Devices they own: {', '.join(devices)}")
+    if devices: parts.append(f"Devices: {', '.join(devices)}")
     conn.close()
     return "\n".join(parts)
 
@@ -644,6 +843,7 @@ defaults = {
     "current_chat_id": None, "current_lesson": None,
     "current_step": 0, "current_repair": None, "repair_step": 0,
     "last_snap_result": None, "health_guide": None, "pick_device": "",
+    "xp_earned": 0,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -657,6 +857,7 @@ def auth_page():
     <div class="login-hero">
         <h1>🧠 NEXUS</h1>
         <p>One app. Many rooms. Powered by GPT-OSS 20B.</p>
+        <p style="font-size:13px;opacity:0.5;margin-top:16px;">Where AI becomes a companion.</p>
     </div>
     """, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.2, 1])
@@ -678,6 +879,7 @@ def auth_page():
                             st.session_state.user_id = user["id"]
                             st.session_state.name = user["name"] or u
                             st.session_state.is_owner = bool(user["is_owner"])
+                            update_streak(user["id"])
                             st.rerun()
                         else:
                             st.error("Invalid login.")
@@ -699,10 +901,10 @@ def auth_page():
                         try:
                             owner = 1 if is_owner_email(e) else 0
                             conn = get_db(); c = conn.cursor()
-                            c.execute("INSERT INTO users (username, email, password_hash, name, is_owner, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                                (u, e, hash_pw(p), n, owner, datetime.now().isoformat()))
+                            c.execute("INSERT INTO users (username, email, password_hash, name, is_owner, xp, streak, last_active, created_at) VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)",
+                                (u, e, hash_pw(p), n, owner, datetime.now().date().isoformat(), datetime.now().isoformat()))
                             conn.commit(); conn.close()
-                            st.success("✅ Account created! Now log in.")
+                            st.success("✅ Welcome to NEXUS! Now log in.")
                         except sqlite3.IntegrityError:
                             st.error("Username or email taken.")
 
@@ -710,9 +912,64 @@ def auth_page():
 # HOME
 # ============================================================
 def home_view():
-    st.markdown(f'<div class="nexus-header"><h1>🧠 NEXUS</h1><p>Welcome back, {st.session_state.name}</p></div>', unsafe_allow_html=True)
-    st.caption("🧠 Powered by GPT-OSS 20B — a real reasoning model")
+    user_id = st.session_state.user_id
+    
+    # Get user stats
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT xp, streak FROM users WHERE id = ?", (user_id,))
+    stats = c.fetchone()
+    c.execute("SELECT COUNT(*) as x FROM agents" if False else "SELECT COUNT(*) as x FROM places WHERE user_id = ?", (user_id,))
+    place_count = c.fetchone()["x"]
+    c.execute("SELECT COUNT(*) as x FROM notes WHERE user_id = ?", (user_id,))
+    note_count = c.fetchone()["x"]
+    c.execute("SELECT COUNT(*) as x FROM journal WHERE user_id = ?", (user_id,))
+    journal_count = c.fetchone()["x"]
+    conn.close()
+    
+    xp = stats["xp"] if stats else 0
+    streak = stats["streak"] if stats else 0
+    
+    st.markdown(f'<div class="nexus-header"><h1>🧠 NEXUS</h1><p>{get_time_greeting()}, {st.session_state.name}</p></div>', unsafe_allow_html=True)
+    
+    # Live stats
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f'<div class="stat-card"><div class="stat-number">{xp}</div><div class="stat-label">XP</div></div>', unsafe_allow_html=True)
+    with c2:
+        flame = "🔥" if streak > 1 else "✨"
+        st.markdown(f'<div class="stat-card"><div class="stat-number"><span class="flame">{flame}</span> {streak}</div><div class="stat-label">Day Streak</div></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(f'<div class="stat-card"><div class="stat-number">{place_count}</div><div class="stat-label">Places</div></div>', unsafe_allow_html=True)
+    with c4:
+        st.markdown(f'<div class="stat-card"><div class="stat-number">{note_count + journal_count}</div><div class="stat-label">Thoughts</div></div>', unsafe_allow_html=True)
+    
     st.write("")
+    
+    # Live panel — clock + quote
+    now = datetime.now()
+    col_a, col_b = st.columns([1, 2])
+    with col_a:
+        st.markdown(f"""
+        <div class="live-panel">
+            <div class="label">Now</div>
+            <div class="time">{now.strftime('%I:%M %p')}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px;">{now.strftime('%A, %B %d')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_b:
+        if "daily_quote" not in st.session_state:
+            with st.spinner(""):
+                st.session_state.daily_quote = ai_daily_quote()
+        st.markdown(f"""
+        <div class="live-panel">
+            <div class="label">NEXUS whispers</div>
+            <div style="font-size:16px;font-style:italic;color:rgba(255,255,255,0.85);margin-top:10px;line-height:1.6;">{st.session_state.daily_quote}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.write("")
+    st.markdown("### 🚀 Your Rooms")
+    
     modules = [
         ("echo", "📸", "ECHO", "Remember places"),
         ("chat", "💬", "AI CHAT", "Talk to NEXUS"),
@@ -745,16 +1002,14 @@ def echo_view():
     tab_snap, tab_places, tab_brains, tab_compare = st.tabs(["📸 Snap a Place", "🗺️ My Places", "🧠 ECHO's Mind", "🔮 Compare"])
     
     with tab_snap:
-        st.subheader("Snap the place")
-        st.caption("Use your camera, or upload a photo from your gallery.")
         camera_photo = st.camera_input("📸 Take a photo")
         with st.expander("Or upload a photo"):
-            uploaded = st.file_uploader("Choose a file", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+            uploaded = st.file_uploader("Choose", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
         st.divider()
         place_name = st.text_input("Where is this place?", placeholder="e.g. My street, Lagos")
-        feeling = st.selectbox("How does this place feel today?",
+        feeling = st.selectbox("How does this place feel?",
             ["Peaceful", "Busy", "Warm", "Lonely", "Joyful", "Heavy", "Bright", "Quiet", "Alive", "Still"])
-        note = st.text_area("Describe what you see (this helps ECHO a lot)", height=80, placeholder="e.g. Blue gate, mango tree on the left, new shop sign")
+        note = st.text_area("Describe what you see (helps ECHO)", height=80)
         if st.button("💾 Save to ECHO", type="primary", use_container_width=True):
             photo_bytes = None
             if camera_photo is not None: photo_bytes = camera_photo.getvalue()
@@ -766,14 +1021,11 @@ def echo_view():
                     filepath, photo_hash = save_photo_safely(user_id, photo_bytes)
                     description = ai_describe_photo(filepath)
                     objects = ai_extract_objects(filepath)
-                    
-                    # If AI couldn't see, use the user's note as the main description
                     if len(objects) == 0 and note:
                         description = note
                         objects = [n.strip() for n in note.split(",") if n.strip()]
                     elif note:
                         description = f"{description} — you noted: {note}"
-                    
                     conn = get_db(); c = conn.cursor()
                     c.execute("SELECT * FROM places WHERE user_id = ? AND name = ?", (user_id, place_name))
                     existing = c.fetchone()
@@ -822,6 +1074,7 @@ def echo_view():
                              datetime.now().isoformat(), datetime.now().isoformat(), len(all_mems), datetime.now().isoformat()))
                     conn.commit(); conn.close()
                     greeting = ai_echo_speaks(place_name, description, previous_visits)
+                    award_xp(user_id, 15, "place saved")
                     st.session_state.last_snap_result = {
                         "greeting": greeting, "description": description,
                         "objects": objects, "miss": miss_result, "brain": brain_data,
@@ -832,6 +1085,7 @@ def echo_view():
         result = st.session_state.last_snap_result
         if result:
             st.divider()
+            st.success("✅ +15 XP earned!")
             st.subheader("🧠 What ECHO saw")
             c1, c2 = st.columns([1, 2])
             with c1:
@@ -892,7 +1146,7 @@ def echo_view():
         c.execute("SELECT * FROM places WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
         places = c.fetchall(); conn.close()
         if not places:
-            st.info("No places yet. Go snap one.")
+            st.info("No places yet.")
         for p in places:
             conn = get_db(); c = conn.cursor()
             c.execute("SELECT COUNT(*) as cnt FROM memories WHERE place_id = ?", (p["id"],))
@@ -924,17 +1178,16 @@ def echo_view():
         brains = c.fetchall(); conn.close()
         if not brains:
             st.info("ECHO hasn't met your places yet.")
-        else:
-            for b in brains:
-                st.markdown(f"""
-                <div class="brain-card">
-                    <strong>📍 {b['place_name']}</strong>
-                    <div class="mood">💭 {b['mood']}</div>
-                    <div class="story">{b['story']}</div>
-                    <div class="pattern">🔄 {b['pattern']}</div>
-                    <div class="meta">First seen: {b['first_seen'][:10]} • Last: {b['last_seen'][:10]} • {b['total_visits']} visit(s)</div>
-                </div>
-                """, unsafe_allow_html=True)
+        for b in brains:
+            st.markdown(f"""
+            <div class="brain-card">
+                <strong>📍 {b['place_name']}</strong>
+                <div class="mood">💭 {b['mood']}</div>
+                <div class="story">{b['story']}</div>
+                <div class="pattern">🔄 {b['pattern']}</div>
+                <div class="meta">First: {b['first_seen'][:10]} • Last: {b['last_seen'][:10]} • {b['total_visits']} visit(s)</div>
+            </div>
+            """, unsafe_allow_html=True)
     
     with tab_compare:
         conn = get_db(); c = conn.cursor()
@@ -950,7 +1203,7 @@ def echo_view():
             c.execute("SELECT * FROM memories WHERE place_id = ? ORDER BY created_at ASC", (sel_id,))
             mems = c.fetchall(); conn.close()
             if len(mems) < 2:
-                st.warning("Need at least 2 visits to compare.")
+                st.warning("Need at least 2 visits.")
             else:
                 mem_opts = {f"Visit {i+1} — {m['created_at'][:16]}": m for i, m in enumerate(mems)}
                 c1, c2 = st.columns(2)
@@ -1065,21 +1318,24 @@ def chat_view():
         conn.commit(); conn.close()
         with st.chat_message("user"): st.write(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("NEXUS is thinking..."):
+            think_placeholder = st.empty()
+            think_placeholder.markdown('<div class="think-box">🧠 NEXUS is thinking...</div>', unsafe_allow_html=True)
+            with st.spinner(""):
                 conn = get_db(); c = conn.cursor()
                 c.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
                 hist = c.fetchall(); conn.close()
                 system_prompt = f"""You are NEXUS — one warm, patient, intelligent being.
 
-You are not a generic assistant. You know this person.
-
 YOUR MEMORY OF THIS PERSON:
 {nexus_ctx}
 
-Speak warmly, personally, like a friend who remembers. Reference their places, notes, journals when relevant. Never say "as an AI". Be kind and clear."""
+Speak warmly, personally. Reference their places, notes, journals naturally. Never say "as an AI". Be kind and clear."""
                 api = [{"role": "system", "content": system_prompt}]
                 for h in hist[-20:]: api.append({"role": h["role"], "content": h["content"]})
-                reply = ai_chat(api); st.write(reply)
+                reply = ai_chat(api)
+                think_placeholder.empty()
+                st.write(reply)
+        award_xp(user_id, 2, "chat message")
         conn = get_db(); c = conn.cursor()
         c.execute("INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
             (chat_id, "assistant", reply, datetime.now().isoformat()))
@@ -1107,7 +1363,9 @@ def tutor_view():
                             (user_id, lesson.get("title", topic), topic, json.dumps(lesson), datetime.now().isoformat()))
                         st.session_state.current_lesson = {"id": c.lastrowid, **lesson}
                         st.session_state.current_step = 0
-                        conn.commit(); conn.close(); st.rerun()
+                        conn.commit(); conn.close()
+                        award_xp(user_id, 10, "lesson created")
+                        st.rerun()
                     else: st.error("Try again.")
         if st.session_state.current_lesson:
             L = st.session_state.current_lesson
@@ -1126,7 +1384,9 @@ def tutor_view():
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     if st.button("✅ Next", type="primary", use_container_width=True):
-                        st.session_state.current_step += 1; st.rerun()
+                        st.session_state.current_step += 1
+                        award_xp(user_id, 5, "lesson step")
+                        st.rerun()
                 with c2:
                     if st.button("🤔 Don't Understand", use_container_width=True):
                         with st.spinner("..."):
@@ -1136,7 +1396,8 @@ def tutor_view():
                     if st.button("⏸️ Pause", use_container_width=True):
                         st.session_state.current_lesson = None; st.session_state.current_step = 0; st.rerun()
             else:
-                st.success("🎉 Complete!")
+                st.success("🎉 Lesson complete! +50 XP")
+                award_xp(user_id, 50, "lesson completed")
                 st.write(L.get("outro","Well done."))
                 if st.button("🔄 New Lesson"):
                     st.session_state.current_lesson = None; st.session_state.current_step = 0; st.rerun()
@@ -1156,7 +1417,7 @@ def tutor_view():
                 except: st.text("Unavailable")
 
 # ============================================================
-# ATLAS — Smart Device Repair + Health
+# ATLAS
 # ============================================================
 def repair_view():
     user_id = st.session_state.user_id
@@ -1170,8 +1431,6 @@ def repair_view():
         c.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
         known_devices = c.fetchall()
         conn.close()
-        
-        st.subheader("What's broken?")
         if known_devices:
             st.caption("📱 Your devices (tap to select):")
             dev_cols = st.columns(min(4, len(known_devices)))
@@ -1180,24 +1439,21 @@ def repair_view():
                     label = f"{d['brand']} {d['model']}".strip() or d["device"]
                     if st.button(label, key=f"pick_dev_{d['id']}", use_container_width=True):
                         st.session_state.pick_device = label
-        
         device = st.text_input("Device", value=st.session_state.get("pick_device", ""), placeholder="e.g. Samsung TV, iPhone 12")
-        problem = st.text_area("What exactly is wrong?", height=100, placeholder="e.g. Screen is black but I hear sound")
-        
-        with st.expander("➕ Add details (optional — makes ATLAS smarter)"):
+        problem = st.text_area("What exactly is wrong?", height=100)
+        with st.expander("➕ Add details (makes ATLAS smarter)"):
             brand = st.text_input("Brand", placeholder="e.g. Samsung")
             model = st.text_input("Model", placeholder="e.g. UA43T5300")
-        
         if st.button("🔧 Build Smart Repair Guide", type="primary", use_container_width=True):
             if not device or not problem:
-                st.error("Please fill device and problem")
+                st.error("Fill device and problem")
             else:
                 if brand or model:
                     conn = get_db(); c = conn.cursor()
                     c.execute("INSERT INTO user_devices (user_id, device, brand, model, created_at) VALUES (?, ?, ?, ?, ?)",
                         (user_id, device, brand, model, datetime.now().isoformat()))
                     conn.commit(); conn.close()
-                with st.spinner("ATLAS is thinking about your specific device..."):
+                with st.spinner("ATLAS is thinking about your device..."):
                     guide = ai_build_repair(device, problem, brand, model)
                 if guide:
                     conn = get_db(); c = conn.cursor()
@@ -1206,15 +1462,15 @@ def repair_view():
                     st.session_state.current_repair = {"id": c.lastrowid, **guide, "device_name": device}
                     st.session_state.repair_step = 0
                     st.session_state.pick_device = ""
-                    conn.commit(); conn.close(); st.rerun()
-                else:
-                    st.error("ATLAS couldn't build that guide. Try again.")
-        
+                    conn.commit(); conn.close()
+                    award_xp(user_id, 20, "repair guide")
+                    st.rerun()
+                else: st.error("Try again.")
         if st.session_state.current_repair:
             R = st.session_state.current_repair
             st.divider()
             st.markdown(f"## 🔧 {R.get('title','Repair Guide')}")
-            st.caption(f"For: **{R.get('device_name','your device')}**")
+            st.caption(f"For: **{R.get('device_name','your device')}** • +20 XP")
             if R.get("likely_cause"): st.info(f"🎯 **Most likely cause:** {R['likely_cause']}")
             if R.get("safety"): st.error(f"⚠️ **Safety:** {R['safety']}")
             if R.get("tools_needed"): st.markdown(f"🧰 **Tools you need:** {' • '.join(R['tools_needed'])}")
@@ -1234,13 +1490,14 @@ def repair_view():
                 with c2:
                     if st.button("🤔 Stuck", use_container_width=True):
                         with st.spinner("..."):
-                            reply = ai_chat([{"role":"system","content":f"You are ATLAS, patient repair tech. Rephrase this step for a {R.get('device_name','device')}. Under 70 words."},{"role":"user","content":s.get("instruction","")}])
+                            reply = ai_chat([{"role":"system","content":f"You are ATLAS. Rephrase for a {R.get('device_name','device')}. Under 70 words."},{"role":"user","content":s.get("instruction","")}])
                         st.warning(f"🧠 {reply}")
                 with c3:
                     if st.button("⏸️ Pause", use_container_width=True):
                         st.session_state.current_repair = None; st.session_state.repair_step = 0; st.rerun()
             else:
-                st.success("🎉 Repair complete!")
+                st.success("🎉 Repair complete! +30 XP")
+                award_xp(user_id, 30, "repair completed")
                 st.write(R.get("outro","Great work."))
                 if st.button("🔄 New Repair"):
                     st.session_state.current_repair = None; st.session_state.repair_step = 0; st.rerun()
@@ -1251,7 +1508,6 @@ def repair_view():
         c.execute("SELECT * FROM user_health WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
         last_health = c.fetchone()
         conn.close()
-        
         c1, c2 = st.columns(2)
         with c1:
             age_options = ["Baby (0-2)", "Child (3-12)", "Teen (13-19)", "Adult (20-59)", "Elderly (60+)"]
@@ -1261,19 +1517,16 @@ def repair_view():
             age_group = st.selectbox("Age group", age_options, index=default_age)
         with c2:
             allergies = st.text_input("Allergies (optional)", value=last_health["allergies"] if last_health and last_health["allergies"] else "", placeholder="e.g. penicillin")
-        
-        medications = st.text_input("Current medications (optional)", value=last_health["medications"] if last_health and last_health["medications"] else "", placeholder="e.g. paracetamol")
-        symptoms = st.text_area("What are the symptoms?", height=120, placeholder="e.g. headache for 2 days, mild fever")
-        
+        medications = st.text_input("Current medications (optional)", value=last_health["medications"] if last_health and last_health["medications"] else "")
+        symptoms = st.text_area("What are the symptoms?", height=120)
         if st.button("💊 Get Smart Guidance", type="primary", use_container_width=True):
-            if not symptoms:
-                st.error("Describe the symptoms")
+            if not symptoms: st.error("Describe the symptoms")
             else:
                 conn = get_db(); c = conn.cursor()
                 c.execute("INSERT INTO user_health (user_id, age_group, allergies, medications, created_at) VALUES (?, ?, ?, ?, ?)",
                     (user_id, age_group, allergies, medications, datetime.now().isoformat()))
                 conn.commit(); conn.close()
-                with st.spinner("ATLAS is thinking carefully about your symptoms..."):
+                with st.spinner("ATLAS is thinking carefully..."):
                     guide = ai_health_guide(symptoms, age_group, allergies, medications)
                 if guide:
                     conn = get_db(); c = conn.cursor()
@@ -1281,8 +1534,8 @@ def repair_view():
                         (user_id, symptoms, age_group, json.dumps(guide), datetime.now().isoformat()))
                     conn.commit(); conn.close()
                     st.session_state.health_guide = guide
+                    award_xp(user_id, 10, "health check")
                     st.rerun()
-        
         guide = st.session_state.get("health_guide")
         if guide:
             st.divider()
@@ -1319,22 +1572,13 @@ def repair_view():
                 st.markdown(f'<div class="echo-says">💙 <em>{guide["outro"]}</em></div>', unsafe_allow_html=True)
             if st.button("🔄 New Guidance"):
                 st.session_state.health_guide = None; st.rerun()
-    
     else:
         conn = get_db(); c = conn.cursor()
         c.execute("SELECT * FROM repairs WHERE user_id = ? ORDER BY created_at DESC LIMIT 20", (user_id,))
         repairs = c.fetchall()
         c.execute("SELECT * FROM health_guides WHERE user_id = ? ORDER BY created_at DESC LIMIT 20", (user_id,))
         health = c.fetchall()
-        c.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY created_at DESC LIMIT 20", (user_id,))
-        devices = c.fetchall()
         conn.close()
-        if devices:
-            st.subheader("📱 Your Devices")
-            for d in devices:
-                label = f"{d['brand']} {d['model']}".strip() or d["device"]
-                st.caption(f"• {label}")
-            st.divider()
         st.subheader("🔧 Repair History")
         for r in repairs:
             with st.expander(f"🔧 {r['device']} — {r['created_at'][:10]}"):
@@ -1371,11 +1615,16 @@ def notes_view():
             else:
                 with st.spinner("Organizing..."):
                     tags = ai_suggest_tags(content)
+                    connections = ai_note_connections(user_id, content)
                 conn = get_db(); c = conn.cursor()
                 c.execute("INSERT INTO notes (user_id, title, content, tags, created_at) VALUES (?, ?, ?, ?, ?)",
                     (user_id, title or content[:40], content, tags, datetime.now().isoformat()))
                 conn.commit(); conn.close()
-                st.success("✅ Saved!"); st.rerun()
+                award_xp(user_id, 5, "note saved")
+                st.success("✅ Saved! +5 XP")
+                if connections and "no connections" not in connections.lower():
+                    st.info(f"🔗 {connections}")
+                st.rerun()
     st.divider()
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
@@ -1407,7 +1656,8 @@ def journal_view():
                 c.execute("INSERT INTO journal (user_id, title, content, mood, created_at) VALUES (?, ?, ?, ?, ?)",
                     (user_id, title or content[:40], content, mood, datetime.now().isoformat()))
                 conn.commit(); conn.close()
-                st.success("✅ Saved."); st.rerun()
+                award_xp(user_id, 8, "journal entry")
+                st.success("✅ Saved. +8 XP"); st.rerun()
     st.divider()
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT * FROM journal WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
@@ -1417,7 +1667,7 @@ def journal_view():
             st.write(e["content"])
             if st.button("🤔 AI Reflect", key=f"reflect_{e['id']}"):
                 with st.spinner("..."):
-                    reflection = ai_chat([{"role":"system","content":"Warm, gentle journal companion. Reflect with empathy. Ask one gentle question. Under 60 words."},{"role":"user","content":e["content"]}])
+                    reflection = ai_chat([{"role":"system","content":"Warm gentle journal companion. Reflect with empathy. Ask one gentle question. Under 60 words."},{"role":"user","content":e["content"]}])
                 st.info(f"💭 {reflection}")
             if st.button("🗑️ Delete", key=f"del_j_{e['id']}"):
                 conn = get_db(); c = conn.cursor()
