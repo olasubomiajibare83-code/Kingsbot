@@ -22,7 +22,7 @@ UPLOAD_DIR = "echo_vault"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ⚠️ CHANGE THIS TO YOUR EMAIL
-OWNER_EMAILS = ["your-email@gmail.com"]
+OWNER_EMAILS = ["ajibaretemiloluwa@gmail.com"]
 
 # ============================================================
 # STYLING
