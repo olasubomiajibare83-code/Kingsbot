@@ -1,2216 +1,1403 @@
+"""
+NEXUS ULTIMATE v3.0 — Complete Single-File App
+Brain: Pollinations GPT-OSS 20B (free)
+Run: streamlit run nexus.py
+"""
 import streamlit as st
 import streamlit.components.v1
-import sqlite3
-import hashlib
-import json
-import requests
-import base64
-import os
-import random
-import time
-from datetime import datetime, timedelta
+import sqlite3, hashlib, json, requests, base64, os, random, time, math
+from datetime import datetime, timedelta, date
+from contextlib import contextmanager
 
-st.set_page_config(
-    page_title="NEXUS",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="NEXUS ULTIMATE", page_icon="🧠",
+                   layout="wide", initial_sidebar_state="expanded")
 
 DB_FILE = "nexus.db"
 UPLOAD_DIR = "echo_vault"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 OWNER_EMAILS = ["your-email@gmail.com"]
 
-# ============================================================
-# STYLING
-# ============================================================
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stApp {
-        background: linear-gradient(-45deg, #0a0a18, #1a1a3e, #2a1a4e, #0f1a3e, #0a0a18);
-        background-size: 400% 400%;
-        animation: gradientFlow 25s ease infinite;
-    }
-    @keyframes gradientFlow {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-    .stApp::before {
-        content: "";
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        background:
-            radial-gradient(circle at 15% 20%, rgba(102,126,234,0.18) 0%, transparent 35%),
-            radial-gradient(circle at 85% 30%, rgba(240,147,251,0.15) 0%, transparent 35%),
-            radial-gradient(circle at 50% 80%, rgba(255,217,61,0.10) 0%, transparent 40%),
-            radial-gradient(circle at 70% 90%, rgba(77,208,225,0.12) 0%, transparent 35%);
-        animation: orbFloat 35s ease-in-out infinite alternate;
-        pointer-events: none;
-        z-index: 0;
-    }
-    @keyframes orbFloat {
-        0% { transform: scale(1) translate(0, 0); }
-        100% { transform: scale(1.15) translate(-2%, 2%); }
-    }
-    .stApp::after {
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-image:
-            radial-gradient(1px 1px at 20% 30%, white, transparent),
-            radial-gradient(1px 1px at 60% 70%, white, transparent),
-            radial-gradient(2px 2px at 50% 50%, rgba(255,255,255,0.6), transparent),
-            radial-gradient(1px 1px at 80% 10%, white, transparent),
-            radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.5), transparent);
-        background-size: 550px 550px, 350px 350px, 250px 250px, 400px 400px, 300px 300px;
-        background-repeat: repeat;
-        animation: starsTwinkle 8s ease-in-out infinite alternate;
-        opacity: 0.35;
-        pointer-events: none;
-        z-index: 0;
-    }
-    @keyframes starsTwinkle { 0% { opacity: 0.2; } 100% { opacity: 0.5; } }
-    .main, [data-testid="stAppViewContainer"] > .main { position: relative; z-index: 2; }
-    .mood-ring {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        pointer-events: none; z-index: 1;
-        box-shadow: inset 0 0 120px 25px var(--mood-color, rgba(102,126,234,0.15));
-        transition: box-shadow 1.5s ease;
-    }
-    .nexus-header { text-align: center; padding: 30px 0 18px 0; position: relative; z-index: 2; }
-    .nexus-header h1 {
-        font-family: 'Georgia', serif; font-size: 52px; font-weight: 700;
-        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d, #4dd0e1, #667eea);
-        background-size: 400% 400%; animation: gradientFlow 8s ease infinite;
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin: 0; filter: drop-shadow(0 0 25px rgba(240,147,251,0.5));
-        letter-spacing: 2px;
-    }
-    .nexus-header p { color: rgba(255,255,255,0.6); font-size: 15px; margin-top: 8px; letter-spacing: 1px; }
-    .login-hero { text-align: center; padding: 70px 0 40px 0; }
-    .login-hero h1 {
-        font-family: 'Georgia', serif; font-size: 72px; font-weight: 700;
-        background: linear-gradient(135deg, #667eea, #f093fb, #ffd93d, #4dd0e1, #667eea);
-        background-size: 400% 400%; animation: gradientFlow 8s ease infinite;
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin: 0; filter: drop-shadow(0 0 30px rgba(240,147,251,0.6));
-    }
-    .login-hero p { color: rgba(255,255,255,0.7); font-size: 17px; margin-top: 12px; }
-    .module-tile {
-        background: linear-gradient(135deg, rgba(102,126,234,0.22), rgba(240,147,251,0.15), rgba(77,208,225,0.12));
-        border: 1px solid rgba(240,147,251,0.35);
-        border-radius: 24px; padding: 28px 20px; text-align: center;
-        min-height: 170px; display: flex; flex-direction: column;
-        justify-content: center; align-items: center;
-        backdrop-filter: blur(16px);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-        position: relative; overflow: hidden;
-    }
-    .module-tile:hover {
-        transform: translateY(-10px) scale(1.03);
-        border-color: rgba(240,147,251,0.9);
-        box-shadow: 0 20px 60px rgba(240,147,251,0.35);
-    }
-    .module-icon { font-size: 48px; margin-bottom: 12px; }
-    .module-title { font-size: 17px; font-weight: 700; color: #fff; font-family: 'Georgia', serif; }
-    .module-desc { font-size: 11px; color: rgba(255,255,255,0.6); }
-    .live-panel {
-        background: linear-gradient(135deg, rgba(102,126,234,0.12), rgba(240,147,251,0.08));
-        border: 1px solid rgba(240,147,251,0.2);
-        border-radius: 18px; padding: 20px; backdrop-filter: blur(12px); margin: 12px 0;
-    }
-    .live-panel .time {
-        font-size: 32px; font-family: 'Georgia', serif;
-        background: linear-gradient(135deg, #667eea, #f093fb);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: 700;
-    }
-    .live-panel .label { font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 2px; text-transform: uppercase; }
-    .brain-card {
-        background: linear-gradient(135deg, rgba(102,126,234,0.18), rgba(240,147,251,0.12));
-        border: 1px solid rgba(240,147,251,0.3);
-        border-radius: 18px; padding: 22px; margin: 14px 0;
-        backdrop-filter: blur(14px);
-        box-shadow: 0 8px 30px rgba(0,0,0,0.3);
-        position: relative; overflow: hidden;
-    }
-    .brain-card::before {
-        content: ""; position: absolute; top: 0; left: 0;
-        width: 4px; height: 100%;
-        background: linear-gradient(180deg, #667eea, #f093fb, #ffd93d);
-    }
-    .brain-card .mood { font-size: 24px; margin-bottom: 8px; }
-    .brain-card .story { font-size: 15px; line-height: 1.6; margin: 10px 0; color: rgba(255,255,255,0.92); }
-    .brain-card .pattern { font-size: 13px; color: rgba(255,255,255,0.6); font-style: italic; }
-    .brain-card .meta { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 10px; letter-spacing: 1px; }
-    .echo-memory {
-        background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(77,208,225,0.1));
-        border-left: 4px solid #667eea;
-        padding: 16px 20px; border-radius: 10px; margin: 12px 0;
-    }
-    .echo-says {
-        background: linear-gradient(135deg, rgba(240,147,251,0.15), rgba(255,217,61,0.08));
-        border-left: 4px solid #f093fb;
-        padding: 16px 20px; border-radius: 10px; margin: 12px 0;
-    }
-    .difference-item {
-        background: rgba(255,217,61,0.1); border-left: 3px solid #ffd93d;
-        padding: 11px 15px; border-radius: 6px; margin: 7px 0; font-size: 14px;
-    }
-    .missing-item {
-        background: rgba(255,107,107,0.1); border-left: 3px solid #ff6b6b;
-        padding: 11px 15px; border-radius: 6px; margin: 7px 0; font-size: 14px;
-    }
-    .same-item {
-        background: rgba(107,203,119,0.1); border-left: 3px solid #6bcb77;
-        padding: 11px 15px; border-radius: 6px; margin: 7px 0; font-size: 14px;
-    }
-    .stat-card {
-        background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(240,147,251,0.1));
-        border: 1px solid rgba(240,147,251,0.25);
-        border-radius: 14px; padding: 16px; text-align: center;
-        backdrop-filter: blur(10px); transition: all 0.3s;
-    }
-    .stat-card:hover { border-color: rgba(240,147,251,0.6); transform: translateY(-3px); }
-    .stat-number {
-        font-size: 32px; font-weight: 700;
-        background: linear-gradient(135deg, #667eea, #f093fb);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-family: 'Georgia', serif;
-    }
-    .stat-label {
-        font-size: 11px; color: rgba(255,255,255,0.5);
-        letter-spacing: 2px; text-transform: uppercase; margin-top: 4px;
-    }
-    .stButton > button {
-        border-radius: 14px; border: 1px solid rgba(240,147,251,0.4);
-        background: linear-gradient(135deg, rgba(102,126,234,0.3), rgba(240,147,251,0.2));
-        color: white; font-weight: 600;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        backdrop-filter: blur(8px);
-    }
-    .stButton > button:hover {
-        border-color: rgba(240,147,251,1);
-        background: linear-gradient(135deg, rgba(102,126,234,0.6), rgba(240,147,251,0.45));
-        box-shadow: 0 0 25px rgba(240,147,251,0.6);
-        transform: translateY(-3px);
-    }
-    .think-box {
-        background: linear-gradient(135deg, rgba(240,147,251,0.1), rgba(77,208,225,0.08));
-        border-left: 3px solid #f093fb;
-        padding: 10px 16px; border-radius: 8px; margin: 10px 0;
-        font-size: 13px; color: rgba(255,255,255,0.7); font-style: italic;
-    }
-    .flame { display: inline-block; animation: flamePulse 1.5s ease-in-out infinite; }
-    @keyframes flamePulse {
-        0%, 100% { transform: scale(1); filter: brightness(1); }
-        50% { transform: scale(1.15); filter: brightness(1.3); }
-    }
-    .suggestion {
-        background: linear-gradient(135deg, rgba(255,217,61,0.12), rgba(240,147,251,0.08));
-        border: 1px solid rgba(255,217,61,0.3);
-        border-radius: 14px; padding: 14px 18px; margin: 8px 0;
-        display: flex; align-items: center; gap: 12px;
-    }
-    .suggestion .icon { font-size: 22px; }
-    .suggestion .text { font-size: 14px; color: rgba(255,255,255,0.85); }
-    .daily-card {
-        background: linear-gradient(135deg, rgba(240,147,251,0.15), rgba(102,126,234,0.12));
-        border: 1px solid rgba(240,147,251,0.4);
-        border-radius: 18px; padding: 20px; margin: 12px 0;
-        box-shadow: 0 8px 30px rgba(240,147,251,0.2);
-    }
-    .daily-card .title {
-        font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
-        color: #f093fb; font-weight: 700; margin-bottom: 10px;
-    }
-    .daily-card .quote { font-size: 17px; font-style: italic; line-height: 1.6; color: rgba(255,255,255,0.9); }
-    .confetti-piece {
-        position: fixed; width: 10px; height: 10px;
-        pointer-events: none; z-index: 9999;
-        animation: confettiFall 3s linear forwards;
-    }
-    @keyframes confettiFall {
-        0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
-    }
-    .toast {
-        position: fixed; top: 20px; right: 20px;
-        background: linear-gradient(135deg, rgba(102,126,234,0.95), rgba(240,147,251,0.95));
-        color: white; padding: 14px 20px; border-radius: 12px;
-        box-shadow: 0 10px 40px rgba(240,147,251,0.5);
-        z-index: 9999;
-        animation: toastSlide 0.4s ease, toastFade 4s ease forwards;
-        font-size: 14px; font-weight: 600;
-    }
-    @keyframes toastSlide { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    @keyframes toastFade { 0%, 70% { opacity: 1; } 100% { opacity: 0; transform: translateX(400px); } }
-    
-    /* ARENA */
-    .arena-cell {
-        width: 52px; height: 52px; border-radius: 10px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(240,147,251,0.2);
-        display: inline-flex; align-items: center; justify-content: center;
-        font-size: 22px; margin: 2px;
-        transition: all 0.2s;
-        cursor: pointer;
-    }
-    .arena-cell.p1 { background: linear-gradient(135deg, #667eea, #764ba2); }
-    .arena-cell.p2 { background: linear-gradient(135deg, #f093fb, #f5576c); }
-    .arena-cell.empty:hover { background: rgba(240,147,251,0.2); }
-    .arena-board {
-        background: rgba(0,0,0,0.3);
-        padding: 16px; border-radius: 16px;
-        display: inline-block;
-        border: 1px solid rgba(240,147,251,0.3);
-    }
-    .rank-badge {
-        display: inline-block; padding: 4px 12px; border-radius: 20px;
-        font-size: 11px; font-weight: 700; letter-spacing: 1px;
-        text-transform: uppercase;
-    }
-    .rank-bronze { background: linear-gradient(135deg, #cd7f32, #8b4513); color: white; }
-    .rank-silver { background: linear-gradient(135deg, #c0c0c0, #808080); color: white; }
-    .rank-gold { background: linear-gradient(135deg, #ffd700, #ff8c00); color: white; }
-    .rank-platinum { background: linear-gradient(135deg, #e5e4e2, #4dd0e1); color: #0a0a18; }
-    .rank-diamond { background: linear-gradient(135deg, #b9f2ff, #667eea); color: #0a0a18; }
-    .rank-legend { background: linear-gradient(135deg, #f093fb, #ffd93d); color: #0a0a18; }
-    
-    /* DREAM */
-    .dream-symbol {
-        display: inline-block; padding: 8px 16px; border-radius: 20px;
-        background: linear-gradient(135deg, rgba(240,147,251,0.2), rgba(102,126,234,0.15));
-        border: 1px solid rgba(240,147,251,0.4);
-        font-size: 13px; font-weight: 600;
-        margin: 4px 2px;
-    }
-    .dream-quote {
-        font-size: 20px; font-style: italic; text-align: center;
-        padding: 24px; line-height: 1.6;
-        background: linear-gradient(135deg, rgba(240,147,251,0.12), rgba(255,217,61,0.08));
-        border-radius: 16px; margin: 16px 0;
-        border: 1px solid rgba(240,147,251,0.3);
-    }
+#MainMenu, footer, header {visibility:hidden;}
+.stApp { background: linear-gradient(-45deg,#0a0a18,#1a1a3e,#2a1a4e,#0f1a3e,#0a0a18);
+  background-size:400% 400%; animation: gradientFlow 25s ease infinite; }
+@keyframes gradientFlow {0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+.main {position:relative; z-index:2;}
+.nexus-header {text-align:center; padding:14px 0 10px 0;}
+.nexus-header h1 {font-family:'Georgia',serif; font-size:40px; font-weight:700;
+  background: linear-gradient(135deg,#667eea,#f093fb,#ffd93d,#4dd0e1,#667eea);
+  background-size:400% 400%; animation: gradientFlow 8s ease infinite;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin:0;}
+.nexus-header p {color:rgba(255,255,255,0.6); font-size:13px; margin-top:4px;}
+.stat-card {background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(240,147,251,0.1));
+  border:1px solid rgba(240,147,251,0.25); border-radius:14px; padding:14px; text-align:center;}
+.stat-number {font-size:26px; font-weight:700;
+  background: linear-gradient(135deg,#667eea,#f093fb);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Georgia',serif;}
+.stat-label {font-size:11px; color:rgba(255,255,255,0.5); letter-spacing:2px; text-transform:uppercase; margin-top:4px;}
+.module-tile {background: linear-gradient(135deg, rgba(102,126,234,0.22), rgba(240,147,251,0.15));
+  border:1px solid rgba(240,147,251,0.35); border-radius:20px; padding:22px 16px; text-align:center;
+  min-height:150px; display:flex; flex-direction:column; justify-content:center; align-items:center;
+  transition:all 0.4s; box-shadow:0 10px 40px rgba(0,0,0,0.4);}
+.module-tile:hover {transform: translateY(-8px) scale(1.03);}
+.module-icon {font-size:40px; margin-bottom:8px;}
+.module-title {font-size:15px; font-weight:700; color:#fff; font-family:'Georgia',serif;}
+.module-desc {font-size:11px; color:rgba(255,255,255,0.6);}
+.brain-card {background: linear-gradient(135deg, rgba(102,126,234,0.18), rgba(240,147,251,0.12));
+  border:1px solid rgba(240,147,251,0.3); border-radius:16px; padding:18px; margin:10px 0;}
+.brain-card .mood {font-size:20px; margin-bottom:6px;}
+.brain-card .story {font-size:15px; line-height:1.6; margin:8px 0; color:rgba(255,255,255,0.92);}
+.echo-memory {background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(77,208,225,0.1));
+  border-left:4px solid #667eea; padding:14px 18px; border-radius:10px; margin:10px 0;}
+.echo-says {background: linear-gradient(135deg, rgba(240,147,251,0.15), rgba(255,217,61,0.08));
+  border-left:4px solid #f093fb; padding:14px 18px; border-radius:10px; margin:10px 0;}
+.suggestion {background: linear-gradient(135deg, rgba(255,217,61,0.12), rgba(240,147,251,0.08));
+  border:1px solid rgba(255,217,61,0.3); border-radius:12px; padding:12px 16px; margin:6px 0;
+  display:flex; align-items:center; gap:12px;}
+.rank-badge {display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px;
+  font-weight:700; letter-spacing:1px; text-transform:uppercase;}
+.rank-bronze {background: linear-gradient(135deg,#cd7f32,#8b4513); color:white;}
+.rank-silver {background: linear-gradient(135deg,#c0c0c0,#808080); color:white;}
+.rank-gold {background: linear-gradient(135deg,#ffd700,#ff8c00); color:white;}
+.rank-platinum {background: linear-gradient(135deg,#e5e4e2,#4dd0e1); color:#0a0a18;}
+.rank-diamond {background: linear-gradient(135deg,#b9f2ff,#667eea); color:#0a0a18;}
+.rank-legend {background: linear-gradient(135deg,#f093fb,#ffd93d); color:#0a0a18;}
+.stButton > button {border-radius:12px; border:1px solid rgba(240,147,251,0.4);
+  background: linear-gradient(135deg, rgba(102,126,234,0.3), rgba(240,147,251,0.2));
+  color:white; font-weight:600; transition:all 0.3s;}
+.stButton > button:hover {border-color:rgba(240,147,251,1); transform:translateY(-2px);}
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================
-# DATABASE
-# ============================================================
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL, name TEXT, is_owner INTEGER DEFAULT 0,
-        xp INTEGER DEFAULT 0, streak INTEGER DEFAULT 0, last_active TEXT,
-        rank TEXT DEFAULT 'Bronze', arena_wins INTEGER DEFAULT 0,
-        arena_losses INTEGER DEFAULT 0, total_thoughts INTEGER DEFAULT 0,
-        title TEXT DEFAULT 'Seeker', theme TEXT DEFAULT 'cosmic',
-        created_at TEXT NOT NULL)""")
-    for tbl, cols in [
-        ("places", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT, created_at TEXT"),
-        ("memories", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, place_id INTEGER NOT NULL, photo_path TEXT, photo_hash TEXT, ai_description TEXT, ai_objects TEXT, user_note TEXT, mood TEXT, created_at TEXT"),
-        ("place_brains", "id INTEGER PRIMARY KEY AUTOINCREMENT, place_id INTEGER UNIQUE, story TEXT, pattern TEXT, mood TEXT, first_seen TEXT, last_seen TEXT, total_visits INTEGER DEFAULT 0, updated_at TEXT"),
-        ("chats", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, created_at TEXT"),
-        ("messages", "id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT"),
-        ("notes", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, content TEXT, tags TEXT, created_at TEXT"),
-        ("journal", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, content TEXT, mood TEXT, created_at TEXT"),
-        ("lessons", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, topic TEXT, steps TEXT, created_at TEXT"),
-        ("repairs", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, device TEXT, problem TEXT, steps TEXT, created_at TEXT"),
-        ("health_guides", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, symptoms TEXT, age_group TEXT, guide TEXT, created_at TEXT"),
-        ("user_devices", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, device TEXT, brand TEXT, model TEXT, created_at TEXT"),
-        ("user_health", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, age_group TEXT, allergies TEXT, medications TEXT, created_at TEXT"),
-        ("dreams", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, content TEXT, ai_interpretation TEXT, dream_type TEXT, symbol TEXT, emotion TEXT, lucid INTEGER DEFAULT 0, recurring INTEGER DEFAULT 0, created_at TEXT"),
-        ("time_capsules", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, message TEXT, unlock_date TEXT, opened INTEGER DEFAULT 0, created_at TEXT"),
-        ("achievements", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, code TEXT, name TEXT, description TEXT, icon TEXT, unlocked_at TEXT"),
-        ("arena_matches", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, result TEXT, moves INTEGER, difficulty TEXT, points INTEGER DEFAULT 0, board_state TEXT, created_at TEXT"),
-        ("habits", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT, icon TEXT, streak INTEGER DEFAULT 0, last_done TEXT, created_at TEXT"),
-        ("mood_log", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, mood TEXT, energy INTEGER, note TEXT, created_at TEXT"),
-        ("focus_sessions", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, duration INTEGER, task TEXT, completed INTEGER DEFAULT 1, created_at TEXT"),
-        ("gratitude", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, items TEXT, created_at TEXT"),
-        ("wins_log", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, description TEXT, size TEXT, created_at TEXT"),
-        ("reading_list", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, link TEXT, status TEXT DEFAULT 'Want to read', created_at TEXT"),
-        ("quotes_saved", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, quote TEXT, author TEXT, created_at TEXT"),
-        ("flash_cards", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, question TEXT, answer TEXT, deck TEXT, correct INTEGER DEFAULT 0, wrong INTEGER DEFAULT 0, created_at TEXT"),
-        ("breathing_log", "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, cycles INTEGER, minutes INTEGER, created_at TEXT"),
-    ]:
-        c.execute(f"CREATE TABLE IF NOT EXISTS {tbl} ({cols})")
-    conn.commit()
-    conn.close()
+# ==================== DB ====================
+@contextmanager
+def db():
+    conn = sqlite3.connect(DB_FILE, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn; conn.commit()
+    finally:
+        conn.close()
 
-def migrate_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(users)")
-    cols = [row[1] for row in c.fetchall()]
-    for col, default in [("xp", "0"), ("streak", "0"), ("last_active", "NULL"),
-                        ("rank", "'Bronze'"), ("arena_wins", "0"), ("arena_losses", "0"),
-                        ("total_thoughts", "0"), ("title", "'Seeker'"), ("theme", "'cosmic'")]:
-        if col not in cols:
-            try: c.execute(f"ALTER TABLE users ADD COLUMN {col} DEFAULT {default}")
-            except: pass
-    c.execute("PRAGMA table_info(dreams)")
-    cols = [row[1] for row in c.fetchall()]
-    for col, default in [("dream_type", "NULL"), ("symbol", "NULL"), ("emotion", "NULL"),
-                        ("lucid", "0"), ("recurring", "0")]:
-        if col not in cols:
-            try: c.execute(f"ALTER TABLE dreams ADD COLUMN {col} DEFAULT {default}")
-            except: pass
-    conn.commit()
-    conn.close()
+def init_db():
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT,
+            is_owner INTEGER DEFAULT 0, xp INTEGER DEFAULT 0, streak INTEGER DEFAULT 0,
+            last_active TEXT, rank TEXT DEFAULT 'Bronze', arena_wins INTEGER DEFAULT 0,
+            arena_losses INTEGER DEFAULT 0, created_at TEXT NOT NULL)""")
+        t = {
+            "places":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT, created_at TEXT",
+            "memories":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, place_id INTEGER NOT NULL, photo_path TEXT, ai_description TEXT, user_note TEXT, mood TEXT, created_at TEXT",
+            "chats":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, created_at TEXT",
+            "messages":"id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT",
+            "notes":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, content TEXT, created_at TEXT",
+            "journal":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, content TEXT, mood TEXT, created_at TEXT",
+            "lessons":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, topic TEXT, steps TEXT, created_at TEXT",
+            "repairs":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, device TEXT, problem TEXT, steps TEXT, created_at TEXT",
+            "health_guides":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, symptoms TEXT, guide TEXT, created_at TEXT",
+            "dreams":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, content TEXT, interpretation TEXT, dream_type TEXT, emotion TEXT, created_at TEXT",
+            "capsules":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, message TEXT, unlock_date TEXT, opened INTEGER DEFAULT 0, created_at TEXT",
+            "achievements":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, code TEXT, name TEXT, icon TEXT, unlocked_at TEXT",
+            "matches":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, result TEXT, moves INTEGER, difficulty TEXT, created_at TEXT",
+            "habits":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT, icon TEXT, streak INTEGER DEFAULT 0, last_done TEXT, created_at TEXT",
+            "moods":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, mood TEXT, energy INTEGER, note TEXT, created_at TEXT",
+            "focus":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, duration INTEGER, task TEXT, created_at TEXT",
+            "gratitude":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, items TEXT, created_at TEXT",
+            "wins":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, description TEXT, size TEXT, created_at TEXT",
+            "reading":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'Want to read', created_at TEXT",
+            "quotes":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, quote TEXT, author TEXT, created_at TEXT",
+            "flash":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, question TEXT, answer TEXT, created_at TEXT",
+            "meditation":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, minutes INTEGER, note TEXT, created_at TEXT",
+            "goals":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, objective TEXT, progress INTEGER DEFAULT 0, due_date TEXT, created_at TEXT",
+            "challenges":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, challenge_date TEXT, challenge_text TEXT, completed INTEGER DEFAULT 0, created_at TEXT",
+            "coach":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, role TEXT, content TEXT, created_at TEXT",
+            "projects":"id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT, description TEXT, stage TEXT DEFAULT 'idea', created_at TEXT",
+        }
+        for name, cols in t.items():
+            c.execute(f"CREATE TABLE IF NOT EXISTS {name} ({cols})")
 
 init_db()
-migrate_db()
-
-def get_db():
-    conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
 def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
-def is_owner_email(e): return e.lower() in [x.lower() for x in OWNER_EMAILS]
+def is_owner(e): return e.lower() in [x.lower() for x in OWNER_EMAILS]
 
-def fix_owners():
-    try:
-        conn = get_db(); c = conn.cursor()
-        for email in OWNER_EMAILS:
-            c.execute("UPDATE users SET is_owner = 1 WHERE LOWER(email) = LOWER(?)", (email,))
-        conn.commit(); conn.close()
-    except: pass
-
-fix_owners()
-
-# ============================================================
-# XP / RANK / ACHIEVEMENTS / AUDIO / TOAST
-# ============================================================
-def award_xp(user_id, amount, reason=""):
-    conn = get_db(); c = conn.cursor()
-    c.execute("UPDATE users SET xp = xp + ?, total_thoughts = total_thoughts + 1 WHERE id = ?", (amount, user_id))
-    c.execute("SELECT xp FROM users WHERE id = ?", (user_id,))
-    row = c.fetchone(); new_xp = row["xp"] if row else 0
-    rank = xp_to_rank(new_xp)
-    c.execute("UPDATE users SET rank = ? WHERE id = ?", (rank, user_id))
-    conn.commit(); conn.close()
-    check_achievements(user_id)
-    return new_xp
+# ==================== XP ====================
+def award_xp(uid, amount):
+    with db() as conn:
+        conn.execute("UPDATE users SET xp = xp + ? WHERE id = ?", (amount, uid))
+        row = conn.execute("SELECT xp FROM users WHERE id=?", (uid,)).fetchone()
+        conn.execute("UPDATE users SET rank=? WHERE id=?", (xp_to_rank(row["xp"]), uid))
+    check_achievements(uid)
 
 def xp_to_rank(xp):
-    if xp >= 5000: return "Legend"
-    if xp >= 2500: return "Diamond"
-    if xp >= 1000: return "Platinum"
-    if xp >= 500: return "Gold"
-    if xp >= 150: return "Silver"
+    if xp>=5000: return "Legend"
+    if xp>=2500: return "Diamond"
+    if xp>=1000: return "Platinum"
+    if xp>=500: return "Gold"
+    if xp>=150: return "Silver"
     return "Bronze"
 
-def rank_class(rank):
-    return {"Bronze": "rank-bronze", "Silver": "rank-silver", "Gold": "rank-gold",
-            "Platinum": "rank-platinum", "Diamond": "rank-diamond", "Legend": "rank-legend"}.get(rank, "rank-bronze")
+def rank_class(r):
+    return {"Bronze":"rank-bronze","Silver":"rank-silver","Gold":"rank-gold",
+            "Platinum":"rank-platinum","Diamond":"rank-diamond","Legend":"rank-legend"}.get(r,"rank-bronze")
 
-def update_streak(user_id):
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT streak, last_active FROM users WHERE id = ?", (user_id,))
-    u = c.fetchone()
-    today = datetime.now().date().isoformat()
-    if not u: conn.close(); return 0
-    last = u["last_active"]; streak = u["streak"] or 0
-    if last == today: conn.close(); return streak
-    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
-    streak = streak + 1 if last == yesterday else 1
-    c.execute("UPDATE users SET streak = ?, last_active = ? WHERE id = ?", (streak, today, user_id))
-    conn.commit(); conn.close()
-    return streak
+def update_streak(uid):
+    with db() as conn:
+        u = conn.execute("SELECT streak, last_active FROM users WHERE id=?", (uid,)).fetchone()
+        if not u: return
+        today = datetime.now().date().isoformat()
+        if u["last_active"] == today: return
+        y = (datetime.now() - timedelta(days=1)).date().isoformat()
+        s = (u["streak"] or 0) + 1 if u["last_active"] == y else 1
+        conn.execute("UPDATE users SET streak=?, last_active=? WHERE id=?", (s, today, uid))
 
-def get_time_greeting():
+def greeting():
     h = datetime.now().hour
-    if h < 5: return "Still awake? 🌙"
-    if h < 12: return "Good morning ☀️"
-    if h < 17: return "Good afternoon 🌤️"
-    if h < 21: return "Good evening 🌆"
+    if h<5: return "Still awake? 🌙"
+    if h<12: return "Good morning ☀️"
+    if h<17: return "Good afternoon 🌤️"
+    if h<21: return "Good evening 🌆"
     return "Good night 🌙"
 
-def get_current_mood_color(user_id):
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT mood FROM journal WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
-    row = c.fetchone(); conn.close()
-    if not row or not row["mood"]: return "rgba(102,126,234,0.15)"
-    m = row["mood"]
-    if "😊" in m or "😌" in m or "🔥" in m: return "rgba(107,203,119,0.18)"
-    if "😔" in m or "😤" in m: return "rgba(255,107,107,0.18)"
-    if "🤔" in m: return "rgba(240,147,251,0.15)"
-    if "😴" in m: return "rgba(77,208,225,0.15)"
-    return "rgba(102,126,234,0.15)"
-
-def render_mood_ring(user_id):
-    st.markdown(f'<div class="mood-ring" style="--mood-color:{get_current_mood_color(user_id)};"></div>', unsafe_allow_html=True)
-
 def celebrate():
-    st.components.v1.html("""
-    <script>
-    (function() {
-        const colors = ['#667eea','#f093fb','#ffd93d','#4dd0e1','#6bcb77','#ff6b6b'];
-        for (let i=0;i<60;i++){
-            const p = document.createElement('div');
-            p.className='confetti-piece';
-            p.style.left=Math.random()*100+'vw';
-            p.style.background=colors[Math.floor(Math.random()*colors.length)];
-            p.style.animationDelay=Math.random()*0.5+'s';
-            p.style.animationDuration=(2+Math.random()*2)+'s';
-            p.style.borderRadius=Math.random()>0.5?'50%':'0';
-            document.body.appendChild(p);
-            setTimeout(()=>p.remove(),5000);
-        }
-    })();
-    </script>
-    """, height=0)
+    st.components.v1.html("""<script>(function(){const c=['#667eea','#f093fb','#ffd93d','#4dd0e1','#6bcb77','#ff6b6b'];
+    for(let i=0;i<50;i++){const p=document.createElement('div');
+    p.style.cssText='position:fixed;width:10px;height:10px;pointer-events:none;z-index:9999;top:-10vh;left:'+Math.random()*100+'vw;background:'+c[Math.floor(Math.random()*c.length)]+';border-radius:50%;animation:cf 2.5s linear forwards;';
+    document.body.appendChild(p);setTimeout(()=>p.remove(),4000);}})();</script>
+    <style>@keyframes cf{0%{transform:translateY(0) rotate(0);opacity:1;}100%{transform:translateY(120vh) rotate(720deg);opacity:0;}}</style>""", height=0)
 
-def toast(message):
-    st.components.v1.html(f'<div class="toast">{message}</div>', height=0)
+def toast(msg):
+    st.components.v1.html(f'<div style="position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#667eea,#f093fb);color:white;padding:14px 20px;border-radius:12px;z-index:9999;font-weight:600;">{msg}</div>', height=0)
 
-def play_sound(kind="success"):
-    """Play a small sound effect."""
-    freqs = {"success": [523, 659, 784], "win": [523, 659, 784, 1047],
-             "lose": [400, 300, 200], "enter": [523, 784], "click": [800],
-             "level_up": [523, 659, 784, 1047, 1319], "achievement": [659, 784, 1047]}
-    seq = freqs.get(kind, freqs["click"])
-    notes_js = ",".join([f"o.frequency.value={f};o.start(t+{i*0.1});o.stop(t+{i*0.1+0.15});"
-                         for i, f in enumerate(seq)])
-    html = f"""
-    <script>
-    (function(){{
-        try {{
-            var ctx = new (window.AudioContext || window.webkitAudioContext)();
-            var t = ctx.currentTime;
-            {notes_js}
-        }} catch(e) {{}}
-    }})();
-    </script>
-    """
-    st.components.v1.html(html, height=0)
-
-# ============================================================
-# ACHIEVEMENTS
-# ============================================================
 ACHIEVEMENTS = {
-    "first_login": ("First Step", "You entered NEXUS", "🌱"),
-    "first_place": ("Cartographer", "Saved your first place in ECHO", "📍"),
-    "five_places": ("Explorer", "Saved 5 places", "🗺️"),
-    "ten_places": ("Voyager", "Saved 10 places", "🌍"),
-    "first_note": ("Thinker", "Wrote your first note", "📝"),
-    "ten_notes": ("Philosopher", "Wrote 10 notes", "🧠"),
-    "first_journal": ("Reflector", "Wrote your first journal entry", "📖"),
-    "ten_journals": ("Diary Keeper", "Wrote 10 journal entries", "✍️"),
-    "first_dream": ("Dreamer", "Interpreted your first dream", "🌙"),
-    "five_dreams": ("Oneironaut", "Interpreted 5 dreams", "✨"),
-    "first_capsule": ("Time Traveler", "Sealed your first capsule", "⏳"),
-    "first_lesson": ("Student", "Completed your first lesson", "🎓"),
-    "first_repair": ("Fixer", "Completed your first repair", "🔧"),
-    "first_health": ("Guardian", "Got your first health guidance", "💊"),
-    "first_arena": ("Gladiator", "Won your first Arena match", "⚔️"),
-    "arena_5_wins": ("Champion", "Won 5 Arena matches", "🏆"),
-    "arena_10_wins": ("Grandmaster", "Won 10 Arena matches", "👑"),
-    "streak_3": ("Consistent", "3-day streak", "🔥"),
-    "streak_7": ("Committed", "7-day streak", "💎"),
-    "streak_30": ("Dedicated", "30-day streak", "🌟"),
-    "xp_100": ("Apprentice", "Earned 100 XP", "🥉"),
-    "xp_500": ("Adept", "Earned 500 XP", "🥈"),
-    "xp_2000": ("Master", "Earned 2000 XP", "🥇"),
-    "xp_5000": ("Legend", "Earned 5000 XP", "👑"),
+    "first_login":("First Step","You entered NEXUS","🌱"),
+    "first_place":("Cartographer","Saved your first place","📍"),
+    "first_note":("Thinker","Wrote your first note","📝"),
+    "first_journal":("Reflector","Wrote first journal","📖"),
+    "first_dream":("Dreamer","Interpreted first dream","🌙"),
+    "first_capsule":("Time Traveler","Sealed first capsule","⏳"),
+    "first_lesson":("Student","Completed a lesson","🎓"),
+    "first_repair":("Fixer","Completed a repair","🔧"),
+    "first_health":("Guardian","Got health guidance","💊"),
+    "first_chess_win":("Gladiator","Won your first Chess match","♟️"),
+    "chess_5_wins":("Champion","Won 5 Chess matches","🏆"),
+    "streak_3":("Consistent","3-day streak","🔥"),
+    "streak_7":("Committed","7-day streak","💎"),
+    "xp_100":("Apprentice","100 XP","🥉"),
+    "xp_500":("Adept","500 XP","🥈"),
+    "xp_2000":("Master","2000 XP","🥇"),
+    "first_gratitude":("Grateful","Logged gratitude","🙏"),
+    "first_win":("Winner","Logged your first win","🏆"),
+    "first_card":("Learner","Created flash card","🃏"),
+    "first_meditation":("Zen","Completed meditation","🧘"),
+    "challenge_1":("Challenger","Completed daily challenge","📅"),
+    "coach_session":("Coached","Talked to your AI coach","🤖"),
 }
 
-def check_achievements(user_id):
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT code FROM achievements WHERE user_id = ?", (user_id,))
-    unlocked = {row["code"] for row in c.fetchall()}
-    new_unlocks = []
-    
-    checks = {}
-    c.execute("SELECT COUNT(*) as x FROM memories WHERE user_id = ?", (user_id,))
-    checks["first_place"] = c.fetchone()["x"] >= 1
-    checks["five_places"] = c.fetchone()["x"] >= 5 if False else checks["first_place"]
-    c.execute("SELECT COUNT(*) as x FROM places WHERE user_id = ?", (user_id,))
-    pc = c.fetchone()["x"]
-    checks["first_place"] = pc >= 1; checks["five_places"] = pc >= 5; checks["ten_places"] = pc >= 10
-    c.execute("SELECT COUNT(*) as x FROM notes WHERE user_id = ?", (user_id,))
-    nc = c.fetchone()["x"]
-    checks["first_note"] = nc >= 1; checks["ten_notes"] = nc >= 10
-    c.execute("SELECT COUNT(*) as x FROM journal WHERE user_id = ?", (user_id,))
-    jc = c.fetchone()["x"]
-    checks["first_journal"] = jc >= 1; checks["ten_journals"] = jc >= 10
-    c.execute("SELECT COUNT(*) as x FROM dreams WHERE user_id = ?", (user_id,))
-    dc = c.fetchone()["x"]
-    checks["first_dream"] = dc >= 1; checks["five_dreams"] = dc >= 5
-    c.execute("SELECT COUNT(*) as x FROM time_capsules WHERE user_id = ?", (user_id,))
-    checks["first_capsule"] = c.fetchone()["x"] >= 1
-    c.execute("SELECT COUNT(*) as x FROM lessons WHERE user_id = ?", (user_id,))
-    checks["first_lesson"] = c.fetchone()["x"] >= 1
-    c.execute("SELECT COUNT(*) as x FROM repairs WHERE user_id = ?", (user_id,))
-    checks["first_repair"] = c.fetchone()["x"] >= 1
-    c.execute("SELECT COUNT(*) as x FROM health_guides WHERE user_id = ?", (user_id,))
-    checks["first_health"] = c.fetchone()["x"] >= 1
-    c.execute("SELECT COUNT(*) as x FROM arena_matches WHERE user_id = ? AND result = 'win'", (user_id,))
-    aw = c.fetchone()["x"]
-    checks["first_arena"] = aw >= 1; checks["arena_5_wins"] = aw >= 5; checks["arena_10_wins"] = aw >= 10
-    c.execute("SELECT streak, xp FROM users WHERE id = ?", (user_id,))
-    row = c.fetchone()
-    if row:
-        s = row["streak"] or 0; xp = row["xp"] or 0
-        checks["streak_3"] = s >= 3; checks["streak_7"] = s >= 7; checks["streak_30"] = s >= 30
-        checks["xp_100"] = xp >= 100; checks["xp_500"] = xp >= 500
-        checks["xp_2000"] = xp >= 2000; checks["xp_5000"] = xp >= 5000
-    checks["first_login"] = True
-    
-    for code, ok in checks.items():
-        if ok and code not in unlocked:
-            name, desc, icon = ACHIEVEMENTS[code]
-            c.execute("INSERT INTO achievements (user_id, code, name, description, icon, unlocked_at) VALUES (?, ?, ?, ?, ?, ?)",
-                      (user_id, code, name, desc, icon, datetime.now().isoformat()))
-            new_unlocks.append((name, desc, icon))
-    conn.commit(); conn.close()
-    for name, desc, icon in new_unlocks:
-        play_sound("achievement")
+def check_achievements(uid):
+    with db() as conn:
+        unlocked = {r["code"] for r in conn.execute("SELECT code FROM achievements WHERE user_id=?", (uid,)).fetchall()}
+        checks = {"first_login": True}
+        for code, tbl, n in [("first_place","places",1),("first_note","notes",1),
+                              ("first_journal","journal",1),("first_dream","dreams",1),
+                              ("first_capsule","capsules",1),("first_lesson","lessons",1),
+                              ("first_repair","repairs",1),("first_health","health_guides",1),
+                              ("first_gratitude","gratitude",1),("first_win","wins",1),
+                              ("first_card","flash",1),("first_meditation","meditation",1)]:
+            cnt = conn.execute(f"SELECT COUNT(*) as x FROM {tbl} WHERE user_id=?", (uid,)).fetchone()["x"]
+            checks[code] = cnt >= n
+        aw = conn.execute("SELECT COUNT(*) as x FROM matches WHERE user_id=? AND result='win'", (uid,)).fetchone()["x"]
+        checks["first_chess_win"] = aw >= 1; checks["chess_5_wins"] = aw >= 5
+        cc = conn.execute("SELECT COUNT(*) as x FROM challenges WHERE user_id=? AND completed=1", (uid,)).fetchone()["x"]
+        checks["challenge_1"] = cc >= 1
+        cl = conn.execute("SELECT COUNT(*) as x FROM coach WHERE user_id=?", (uid,)).fetchone()["x"]
+        checks["coach_session"] = cl >= 1
+        row = conn.execute("SELECT streak, xp FROM users WHERE id=?", (uid,)).fetchone()
+        if row:
+            checks["streak_3"]=row["streak"]>=3; checks["streak_7"]=row["streak"]>=7
+            checks["xp_100"]=row["xp"]>=100; checks["xp_500"]=row["xp"]>=500; checks["xp_2000"]=row["xp"]>=2000
+        new = []
+        for code, ok in checks.items():
+            if ok and code not in unlocked:
+                name, desc, icon = ACHIEVEMENTS[code]
+                conn.execute("INSERT INTO achievements (user_id,code,name,icon,unlocked_at) VALUES (?,?,?,?,?)",
+                             (uid, code, name, icon, datetime.now().isoformat()))
+                new.append((name, icon))
+    for name, icon in new:
         toast(f"{icon} Achievement: {name}!")
 
-# ============================================================
-# ARENA — Competitive Mind Game (Deeper than Chess)
-# ============================================================
-# Rules:
-# - 6x6 board
-# - Each player has 6 pieces: 2 SHIELDS, 2 SPEARS, 1 SAGE, 1 KING
-# - SHIELD moves 1 any direction, blocks captures
-# - SPEAR moves 1 orthogonally, captures orthogonally
-# - SAGE moves up to 3 diagonally, captures diagonally
-# - KING moves 1 any direction, captures any adjacent
-# - First to capture opponent KING OR control the center (4 turns holding) wins
-# - Each piece can use a "power" once per game: freezes an enemy for 1 turn
-
-ARENA_SIZE = 6
-
-def new_arena_board():
-    board = [[None for _ in range(ARENA_SIZE)] for _ in range(ARENA_SIZE)]
-    board[0][0] = {"p": 1, "t": "S"}; board[0][1] = {"p": 1, "t": "S"}
-    board[0][4] = {"p": 1, "t": "P"}; board[0][5] = {"p": 1, "t": "P"}
-    board[0][2] = {"p": 1, "t": "G"}; board[0][3] = {"p": 1, "t": "K"}
-    board[5][0] = {"p": 2, "t": "S"}; board[5][1] = {"p": 2, "t": "S"}
-    board[5][4] = {"p": 2, "t": "P"}; board[5][5] = {"p": 2, "t": "P"}
-    board[5][2] = {"p": 2, "t": "G"}; board[5][3] = {"p": 2, "t": "K"}
-    return board
-
-PIECE_ICONS = {"S": "🛡️", "P": "⚔️", "G": "🧙", "K": "👑"}
-
-def arena_moves(board, r, c):
-    piece = board[r][c]
-    if not piece: return []
-    p, t = piece["p"], piece["t"]
-    moves = []
-    dirs_orth = [(-1,0),(1,0),(0,-1),(0,1)]
-    dirs_all = dirs_orth + [(-1,-1),(-1,1),(1,-1),(1,1)]
-    if t == "S":
-        for dr, dc in dirs_all:
-            nr, nc = r+dr, c+dc
-            if 0<=nr<ARENA_SIZE and 0<=nc<ARENA_SIZE:
-                if not board[nr][nc] or board[nr][nc]["p"] != p:
-                    moves.append((nr,nc))
-    elif t == "P":
-        for dr, dc in dirs_orth:
-            nr, nc = r+dr, c+dc
-            if 0<=nr<ARENA_SIZE and 0<=nc<ARENA_SIZE:
-                if not board[nr][nc] or board[nr][nc]["p"] != p:
-                    moves.append((nr,nc))
-    elif t == "G":
-        for dr, dc in [(-1,-1),(-1,1),(1,-1),(1,1)]:
-            for step in range(1, 4):
-                nr, nc = r+dr*step, c+dc*step
-                if not (0<=nr<ARENA_SIZE and 0<=nc<ARENA_SIZE): break
-                if not board[nr][nc]: moves.append((nr,nc))
-                else:
-                    if board[nr][nc]["p"] != p: moves.append((nr,nc))
-                    break
-    elif t == "K":
-        for dr, dc in dirs_all:
-            nr, nc = r+dr, c+dc
-            if 0<=nr<ARENA_SIZE and 0<=nc<ARENA_SIZE:
-                if not board[nr][nc] or board[nr][nc]["p"] != p:
-                    moves.append((nr,nc))
-    return moves
-
-def arena_apply(board, fr, fc, tr, tc):
-    b = [[dict(cell) if cell else None for cell in row] for row in board]
-    piece = b[fr][fc]
-    captured = b[tr][tc]
-    b[tr][tc] = piece
-    b[fr][fc] = None
-    return b, captured
-
-def arena_center_control(board):
-    """Player controlling center 2x2."""
-    s = 0
-    for r in [2,3]:
-        for c in [2,3]:
-            if board[r][c]: s += board[r][c]["p"]
-    return s
-
-def arena_ai_move(board, difficulty="medium"):
-    """Simple strategic AI."""
-    all_moves = []
-    for r in range(ARENA_SIZE):
-        for c in range(ARENA_SIZE):
-            piece = board[r][c]
-            if piece and piece["p"] == 2:
-                for tr, tc in arena_moves(board, r, c):
-                    all_moves.append((r,c,tr,tc))
-    if not all_moves: return None
-    # Score each move
-    scored = []
-    for m in all_moves:
-        fr,fc,tr,tc = m
-        score = 0
-        target = board[tr][tc]
-        if target and target["p"] == 1:
-            if target["t"] == "K": score += 100
-            elif target["t"] == "G": score += 30
-            elif target["t"] == "P": score += 20
-            elif target["t"] == "S": score += 15
-        # Center preference
-        if tr in [2,3] and tc in [2,3]: score += 5
-        # King safety
-        piece = board[fr][fc]
-        if piece["t"] == "K" and difficulty != "hard":
-            score -= 5
-        scored.append((score + random.random(), m))
-    scored.sort(reverse=True)
-    if difficulty == "easy":
-        return random.choice(all_moves)
-    elif difficulty == "medium":
-        return scored[0][1] if random.random() < 0.7 else scored[min(1, len(scored)-1)][1]
-    else:
-        return scored[0][1]
-
-# ============================================================
-# BRAIN — Pollinations
-# ============================================================
-def ai_chat(messages, temperature=0.7):
+# ==================== AI (POLLINATIONS BRAIN) ====================
+def ai_chat(messages, temperature=0.7, timeout=45):
     try:
         r = requests.post("https://text.pollinations.ai/openai",
-            json={"model": "openai-fast", "messages": messages, "temperature": temperature, "max_tokens": 1000},
-            timeout=90)
+            json={"model":"openai","messages":messages,"temperature":temperature,"max_tokens":800},
+            timeout=timeout)
         if r.status_code == 200:
-            data = r.json()
-            if data.get("choices") and data["choices"][0]["message"]["content"]:
-                c = data["choices"][0]["message"]["content"].strip()
-                if len(c) > 2: return c
+            d = r.json()
+            if d.get("choices") and d["choices"][0]["message"]["content"]:
+                return d["choices"][0]["message"]["content"].strip()
     except: pass
     try:
-        r = requests.post("https://text.pollinations.ai/openai",
-            json={"model": "openai", "messages": messages, "temperature": temperature}, timeout=90)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("choices") and data["choices"][0]["message"]["content"]:
-                return data["choices"][0]["message"]["content"].strip()
+        p = "".join(f"{m['role']}: {m['content']}\n" for m in messages) + "assistant:"
+        r = requests.get(f"https://text.pollinations.ai/{requests.utils.quote(p[:1500])}", timeout=timeout)
+        if r.status_code == 200 and len(r.text.strip()) > 3: return r.text.strip()
     except: pass
-    try:
-        prompt = ""
-        for m in messages:
-            if m["role"]=="system": prompt += f"{m['content']}\n\n"
-            elif m["role"]=="user": prompt += f"User: {m['content']}\n"
-            elif m["role"]=="assistant": prompt += f"Assistant: {m['content']}\n"
-        prompt += "Assistant:"
-        r = requests.get(f"https://text.pollinations.ai/{requests.utils.quote(prompt)}", timeout=90)
-        if r.status_code == 200 and len(r.text.strip()) > 3:
-            return r.text.strip()
-    except: pass
-    return "⚠️ The AI is resting. Please send your message again in a few seconds."
+    return "⚠️ Brain is resting. Try again in a moment."
 
-def _img_b64(path):
-    with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
-
-def ai_describe_photo(photo_path):
+def ai_json(prompt, temp=0.6, timeout=45):
+    r = ai_chat([{"role":"user","content":prompt}], temp, timeout)
     try:
-        img = _img_b64(photo_path)
+        c = r.strip().replace("```json","").replace("```","").strip()
+        s = c.find("{"); e = c.rfind("}")
+        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
+    except: pass
+    return None
+
+def ai_quote():
+    r = ai_chat([{"role":"user","content":"ONE short inspiring sentence (max 15 words). No quotes, no author."}])
+    return r.strip().strip('"')[:120]
+
+def ai_dream(text, uid):
+    with db() as conn:
+        past = [d["content"] for d in conn.execute("SELECT content FROM dreams WHERE user_id=? ORDER BY created_at DESC LIMIT 5",(uid,)).fetchall()]
+    p = f"""Dream interpreter. DREAM: {text}
+PAST: {'; '.join(past) or 'none'}
+Return JSON: {{"dream_type":"","emotion":"","symbols":[],"meaning":"","message":"","action":""}}"""
+    r = ai_json(p, 0.8)
+    return r or {"dream_type":"Symbolic","emotion":"unknown","symbols":[],"meaning":"Dreams echo the heart.","message":"Keep dreaming.","action":"Notice today."}
+
+def ai_photo(path):
+    try:
+        with open(path,"rb") as f: img = base64.b64encode(f.read()).decode()
         r = requests.post("https://text.pollinations.ai/openai",
-            json={"model": "openai", "messages":[{"role":"user","content":[
-                {"type":"text","text":"Describe this place in one warm, poetic sentence under 25 words. If unclear, say 'The image is unclear'."},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{img}"}}]}],
-                "temperature":0.7}, timeout=90)
+            json={"model":"openai","messages":[{"role":"user","content":[
+                {"type":"text","text":"Describe this place in one warm sentence under 25 words."},
+                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{img}"}}]}],"temperature":0.7}, timeout=60)
         if r.status_code==200:
             d = r.json()
             if d.get("choices"): return d["choices"][0]["message"]["content"].strip()
     except: pass
     return "A place you've seen."
 
-def ai_extract_objects(photo_path):
-    try:
-        img = _img_b64(photo_path)
-        r = requests.post("https://text.pollinations.ai/openai",
-            json={"model":"openai","messages":[{"role":"user","content":[
-                {"type":"text","text":"List everything visible. Return ONLY a JSON array of short descriptions. 10-25 items. Only JSON."},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{img}"}}]}],
-                "temperature":0.3}, timeout=90)
-        if r.status_code==200:
-            d = r.json()
-            if d.get("choices"):
-                t = d["choices"][0]["message"]["content"].strip().replace("```json","").replace("```","").strip()
-                s=t.find("["); e=t.rfind("]")
-                if s!=-1 and e!=-1: return json.loads(t[s:e+1])
-    except: pass
-    return []
+# ==================== CHESS ENGINE ====================
+UNICODE = {'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙','k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'}
 
-def ai_what_did_i_miss(old_o, old_d, new_o, new_d, name):
-    p = f"""ECHO comparing "{name}". PREVIOUS: {old_d} | {json.dumps(old_o)}. TODAY: {new_d} | {json.dumps(new_o)}.
-Return ONLY JSON: {{"gone":[], "new":[], "changed":[], "same":[], "tiny_details":[], "weather_feel":"", "story":""}}"""
-    r = ai_chat([{"role":"user","content":p}], temperature=0.6)
-    try:
-        c = r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return {"gone":[],"new":[],"changed":[],"same":[],"tiny_details":[],"weather_feel":"A day like any other.","story":"The place has a story."}
+def start_board():
+    return [['r','n','b','q','k','b','n','r'],['p']*8,['.']*8,['.']*8,['.']*8,['.']*8,['P']*8,['R','N','B','Q','K','B','N','R']]
 
-def ai_place_brain(name, descs, dates, moods):
-    t = ""
-    for i,(d,dt,m) in enumerate(zip(descs,dates,moods)):
-        t += f"Visit {i+1} ({dt[:10]}, felt {m}): {d}\n"
-    p = f"""ECHO remembering "{name}". Visits: {t}
-Return ONLY JSON: {{"story":"2-3 sentences","pattern":"1 sentence","mood":"1 word"}}"""
-    r = ai_chat([{"role":"user","content":p}], temperature=0.75)
-    try:
-        c = r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return {"story":f"A place you've visited {len(descs)} time(s).","pattern":"You've returned here more than once.","mood":"familiar"}
+def is_white(p): return p != '.' and p.isupper()
+def same_side(a,b): return (a.isupper() and b.isupper()) or (a.islower() and b.islower())
+def on_board(r,c): return 0<=r<8 and 0<=c<8
+def clone(b): return [row[:] for row in b]
 
-def ai_echo_speaks(name, desc, prev):
-    if not prev:
-        p = f"""ECHO meeting new place "{name}". First impression: {desc}. ONE warm sentence, under 20 words."""
+def find_king(b, w):
+    t = 'K' if w else 'k'
+    for r in range(8):
+        for c in range(8):
+            if b[r][c]==t: return (r,c)
+    return None
+
+def pseudo(b, r, c, st):
+    p = b[r][c]
+    if p=='.': return []
+    w = is_white(p); t = p.upper(); ms = []
+    if t=='P':
+        d = -1 if w else 1; sr = 6 if w else 1; pr = 0 if w else 7
+        nr = r+d
+        if on_board(nr,c) and b[nr][c]=='.':
+            ms.append((nr,c,'promote' if nr==pr else ''))
+            if r==sr and b[r+2*d][c]=='.': ms.append((r+2*d,c,'pawn_double'))
+        for dc in (-1,1):
+            nr,nc = r+d,c+dc
+            if on_board(nr,nc) and b[nr][nc]!='.' and not same_side(p,b[nr][nc]):
+                ms.append((nr,nc,'promote_capture' if nr==pr else 'capture'))
+            ep = st.get('ep')
+            if ep and (nr,nc)==ep: ms.append((nr,nc,'en_passant'))
+    elif t=='N':
+        for dr,dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+            nr,nc = r+dr,c+dc
+            if on_board(nr,nc) and (b[nr][nc]=='.' or not same_side(p,b[nr][nc])): ms.append((nr,nc,'capture' if b[nr][nc]!='.' else ''))
+    elif t in ('B','R','Q'):
+        dirs = {'B':[(-1,-1),(-1,1),(1,-1),(1,1)],'R':[(-1,0),(1,0),(0,-1),(0,1)],
+                'Q':[(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]}[t]
+        for dr,dc in dirs:
+            for i in range(1,8):
+                nr,nc = r+dr*i,c+dc*i
+                if not on_board(nr,nc): break
+                if b[nr][nc]=='.': ms.append((nr,nc,''))
+                else:
+                    if not same_side(p,b[nr][nc]): ms.append((nr,nc,'capture'))
+                    break
+    elif t=='K':
+        for dr,dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+            nr,nc = r+dr,c+dc
+            if on_board(nr,nc) and (b[nr][nc]=='.' or not same_side(p,b[nr][nc])): ms.append((nr,nc,'capture' if b[nr][nc]!='.' else ''))
+        cr = st.get('castling',{})
+        if w:
+            if cr.get('K') and b[7][5]=='.' and b[7][6]=='.' and b[7][7]=='R': ms.append((7,6,'castle_k'))
+            if cr.get('Q') and b[7][3]=='.' and b[7][2]=='.' and b[7][1]=='.' and b[7][0]=='R': ms.append((7,2,'castle_q'))
+        else:
+            if cr.get('k') and b[0][5]=='.' and b[0][6]=='.' and b[0][7]=='r': ms.append((0,6,'castle_k'))
+            if cr.get('q') and b[0][3]=='.' and b[0][2]=='.' and b[0][1]=='.' and b[0][0]=='r': ms.append((0,2,'castle_q'))
+    return ms
+
+def apply(b, st, fr, fc, tr, tc, sp):
+    nb = clone(b); ns = dict(st); ns['castling'] = dict(st.get('castling',{'K':True,'Q':True,'k':True,'q':True})); ns['ep']=None
+    p = nb[fr][fc]; w = is_white(p)
+    if sp=='en_passant': nb[fr][tc]='.'
+    nb[tr][tc]=p; nb[fr][fc]='.'
+    if sp=='pawn_double': ns['ep']=((fr+tr)//2,fc)
+    if sp in ('promote','promote_capture'): nb[tr][tc]='Q' if w else 'q'
+    if sp=='castle_k': nb[tr][5]=nb[tr][7]; nb[tr][7]='.'
+    if sp=='castle_q': nb[tr][3]=nb[tr][0]; nb[tr][0]='.'
+    if p=='K': ns['castling']['K']=False; ns['castling']['Q']=False
+    if p=='k': ns['castling']['k']=False; ns['castling']['q']=False
+    if p=='R':
+        if (fr,fc)==(7,0): ns['castling']['Q']=False
+        if (fr,fc)==(7,7): ns['castling']['K']=False
+    if p=='r':
+        if (fr,fc)==(0,0): ns['castling']['q']=False
+        if (fr,fc)==(0,7): ns['castling']['k']=False
+    return nb, ns
+
+def attacked(b, r, c, by_w):
+    ap = 'P' if by_w else 'p'; pd = 1 if by_w else -1
+    for dc in (-1,1):
+        if on_board(r+pd,c+dc) and b[r+pd][c+dc]==ap: return True
+    n = 'N' if by_w else 'n'
+    for dr,dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+        if on_board(r+dr,c+dc) and b[r+dr][c+dc]==n: return True
+    k = 'K' if by_w else 'k'
+    for dr,dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+        if on_board(r+dr,c+dc) and b[r+dr][c+dc]==k: return True
+    for dr,dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+        for i in range(1,8):
+            nr,nc = r+dr*i,c+dc*i
+            if not on_board(nr,nc): break
+            p = b[nr][nc]
+            if p=='.': continue
+            if (by_w and p in 'RQ') or (not by_w and p in 'rq'): return True
+            break
+    for dr,dc in [(-1,-1),(-1,1),(1,-1),(1,1)]:
+        for i in range(1,8):
+            nr,nc = r+dr*i,c+dc*i
+            if not on_board(nr,nc): break
+            p = b[nr][nc]
+            if p=='.': continue
+            if (by_w and p in 'BQ') or (not by_w and p in 'bq'): return True
+            break
+    return False
+
+def in_check(b, w):
+    kp = find_king(b, w)
+    if not kp: return False
+    return attacked(b, kp[0], kp[1], not w)
+
+def legal(b, st, w):
+    out = []
+    for r in range(8):
+        for c in range(8):
+            p = b[r][c]
+            if p=='.' or is_white(p)!=w: continue
+            for tr,tc,sp in pseudo(b,r,c,st):
+                nb, ns = apply(b,st,r,c,tr,tc,sp)
+                if sp in ('castle_k','castle_q'):
+                    row = 7 if w else 0
+                    if in_check(b,w): continue
+                    mids = [(row,5),(row,6)] if sp=='castle_k' else [(row,3),(row,2)]
+                    if any(attacked(b,mr,mc,not w) for mr,mc in mids): continue
+                if not in_check(nb,w): out.append((r,c,tr,tc,sp))
+    return out
+
+def has_legal(b, st, w): return len(legal(b,st,w)) > 0
+
+def sq(r,c): return chr(ord('a')+c)+str(8-r)
+
+def pval(p):
+    return {'P':1,'N':3,'B':3,'R':5,'Q':9,'K':1000,'p':-1,'n':-3,'b':-3,'r':-5,'q':-9,'k':-1000}.get(p,0)
+
+def evaluate(b):
+    s = 0
+    for r in range(8):
+        for c in range(8):
+            p = b[r][c]
+            if p=='.': continue
+            v = pval(p)
+            if 2<=r<=5 and 2<=c<=5: v += 0.15 if p.isupper() else -0.15
+            s += v
+    return s
+
+def minimax(b, st, d, a, beta, mx):
+    if d==0: return evaluate(b), None
+    ms = legal(b, st, mx)
+    if not ms:
+        if in_check(b,mx): return (10000 if not mx else -10000), None
+        return 0, None
+    ms.sort(key=lambda m: -abs(pval(b[m[2]][m[3]])) if b[m[2]][m[3]]!='.' else 0)
+    best = None
+    if mx:
+        v = -math.inf
+        for m in ms:
+            nb, ns = apply(b,st,*m[:4],m[4])
+            sc, _ = minimax(nb,ns,d-1,a,beta,False)
+            if sc>v: v=sc; best=m
+            a = max(a,v)
+            if beta<=a: break
+        return v, best
     else:
-        last = prev[-1]
-        p = f"""ECHO welcoming back to "{name}". Previous ({last['created_at'][:10]}): {last['ai_description']}. Today: {desc}. ONE warm sentence, under 25 words."""
-    return ai_chat([{"role":"user","content":p}], temperature=0.8)
+        v = math.inf
+        for m in ms:
+            nb, ns = apply(b,st,*m[:4],m[4])
+            sc, _ = minimax(nb,ns,d-1,a,beta,True)
+            if sc<v: v=sc; best=m
+            beta = min(beta,v)
+            if beta<=a: break
+        return v, best
 
-def ai_compare_photos(p1, p2, name):
-    try:
-        i1=_img_b64(p1); i2=_img_b64(p2)
-        r = requests.post("https://text.pollinations.ai/openai",
-            json={"model":"openai","messages":[{"role":"user","content":[
-                {"type":"text","text":f"Two photos of '{name}'. Write a 2-3 sentence 'What Changed' paragraph."},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{i1}"}},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{i2}"}}]}],
-                "temperature":0.7}, timeout=90)
-        if r.status_code==200:
-            d=r.json()
-            if d.get("choices"): return d["choices"][0]["message"]["content"].strip()
-    except: pass
-    return "The place has changed over time."
+def ai_move(b, st, diff):
+    d = {"easy":1,"medium":2,"hard":3}.get(diff,2)
+    if diff=="easy" and random.random()<0.4:
+        ms = legal(b,st,False)
+        return random.choice(ms) if ms else None
+    _, best = minimax(b, st, d, -math.inf, math.inf, False)
+    return best
 
-def ai_build_lesson(topic):
-    p = f"""ATLAS teacher. Lesson on: "{topic}"
-Return ONLY JSON: {{"title":"","intro":"","steps":[{{"number":1,"title":"","instruction":"","check":"","tip":""}}],"outro":""}} 5-7 steps. Only JSON."""
-    r = ai_chat([{"role":"user","content":p}], temperature=0.6)
-    try:
-        c=r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return None
+def san(b, st, mv):
+    fr,fc,tr,tc,sp = mv
+    p = b[fr][fc]
+    if sp=='castle_k': return "O-O"
+    if sp=='castle_q': return "O-O-O"
+    s = "" if p.upper()=='P' else p.upper()
+    if b[tr][tc]!='.':
+        if p.upper()=='P': s += chr(ord('a')+fc)
+        s += 'x'
+    s += sq(tr,tc)
+    if sp in ('promote','promote_capture'): s += "=Q"
+    return s
 
-def ai_build_repair(device, problem, brand="", model=""):
-    df = f"{brand} {model}".strip() or device
-    p = f"""ATLAS repair technician. Device: {df}. Problem: {problem}.
-Return ONLY JSON: {{"title":"","safety":"","tools_needed":[],"likely_cause":"","steps":[{{"number":1,"title":"","instruction":"","check":"","warning":""}}],"outro":""}} 5-8 real steps. Only JSON."""
-    r = ai_chat([{"role":"user","content":p}], temperature=0.5)
-    try:
-        c=r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return None
-
-def ai_health_guide(symptoms, age, allergies="", meds=""):
-    p = f"""ATLAS health guide. NOT a doctor.
-Symptoms: {symptoms}. Age: {age}. Allergies: {allergies or 'None'}. Meds: {meds or 'None'}.
-Return ONLY JSON: {{"title":"","seriousness":"Mild/Moderate/Serious/Emergency","possible_causes":[],"home_care":[],"medicines":[{{"name":"","dose":"","note":""}}],"warning_signs":[],"when_to_see_doctor":"","safety":"","outro":""}}
-Only safe OTC medicines. Only JSON."""
-    r = ai_chat([{"role":"user","content":p}], temperature=0.4)
-    try:
-        c=r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return None
-
-def ai_suggest_tags(content):
-    try:
-        r = ai_chat([{"role":"user","content":f"3 short comma-separated tags:\n{content[:400]}"}])
-        return r.replace("\n"," ").strip()[:100]
-    except: return ""
-
-def ai_daily_quote():
-    try:
-        r = ai_chat([{"role":"user","content":"Give ONE short inspiring sentence (max 15 words) for today. No quotes, no author."}])
-        return r.strip().strip('"')[:120]
-    except: return "Every small step builds a bigger tomorrow."
-
-def ai_note_connections(user_id, content):
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT title, content FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,))
-    old = c.fetchall(); conn.close()
-    if not old: return ""
-    ot = "\n".join([f"- {n['title']}" for n in old])
-    p = f"""Find connections. NEW: {content[:300]}. OLD: {ot}.
-If related, say ONE sentence: "Connects to: [title] because...". Else "No connections yet." Under 30 words."""
-    return ai_chat([{"role":"user","content":p}], temperature=0.5)
-
-# ============================================================
-# DREAM — UPGRADED TO FULLEST
-# ============================================================
-DREAM_SYMBOLS = {
-    "water": "💧 Emotions and flow", "fire": "🔥 Transformation", "flying": "🕊️ Freedom",
-    "falling": "⚠️ Loss of control", "teeth": "😬 Anxiety or speech",
-    "snake": "🐍 Change or hidden fear", "death": "💀 Endings and rebirth",
-    "baby": "👶 New beginning", "road": "🛣️ Life path", "door": "🚪 Opportunity",
-    "mirror": "🪞 Self-reflection", "forest": "🌲 Unknown journey",
-    "mountain": "⛰️ Challenge", "bird": "🐦 Hope", "storm": "⛈️ Turmoil",
-    "sun": "☀️ Clarity", "moon": "🌙 Intuition", "star": "⭐ Aspiration",
-    "river": "🏞️ Life flow", "ocean": "🌊 Deep emotion", "spider": "🕷️ Fear/creativity",
-    "money": "💰 Value/worth", "house": "🏠 Self/identity", "car": "🚗 Direction in life",
-    "tree": "🌳 Growth", "flower": "🌸 Beauty/blooming", "rain": "🌧️ Release",
-    "kiss": "💋 Connection", "chase": "🏃 Avoidance", "exam": "📝 Self-judgment",
-    "naked": "👤 Vulnerability", "lost": "🧭 Confusion", "school": "🎓 Learning",
-    "hospital": "🏥 Healing", "police": "👮 Guilt/order", "stranger": "👥 Unknown self"
-}
-
-def ai_interpret_dream(dream_text, user_id):
-    """Full dream interpretation with symbols, emotion, type."""
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT content FROM dreams WHERE user_id = ? ORDER BY created_at DESC LIMIT 15", (user_id,))
-    past = [d["content"] for d in c.fetchall()]
-    conn.close()
-    past_text = "\n".join([f"- {p[:100]}" for p in past]) if past else "No previous dreams."
-    prompt = f"""You are a warm, wise dream interpreter. Interpret this dream deeply.
-
-DREAM: {dream_text}
-
-PAST DREAMS FROM THIS PERSON:
-{past_text}
-
-Return ONLY valid JSON:
-{{
-  "dream_type": "one of: Prophetic, Emotional, Processing, Nightmare, Lucid, Symbolic, Healing, Recurring",
-  "emotion": "the dominant emotion in the dream — one word",
-  "symbols": ["symbol1", "symbol2", "symbol3"],
-  "meaning": "3-4 sentence poetic, specific interpretation",
-  "life_connection": "1-2 sentences connecting this to their past dreams if any patterns exist",
-  "message": "ONE warm, personal sentence for the dreamer",
-  "action": "ONE tiny thing they could do today related to this dream",
-  "is_recurring": true or false
-}}
-
-Be gentle, specific, and poetic. Only JSON."""
-    r = ai_chat([{"role":"user","content":prompt}], temperature=0.8)
-    try:
-        c = r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return {"dream_type":"Symbolic","emotion":"unknown","symbols":[],
-            "meaning":"Dreams are echoes of the heart.","life_connection":"","message":"Keep dreaming.",
-            "action":"Notice how you feel today.","is_recurring":False}
-
-def ai_dream_insight(user_id):
-    """Read all dreams and give overall pattern insight."""
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT content, symbol, emotion, dream_type FROM dreams WHERE user_id = ? ORDER BY created_at DESC LIMIT 15", (user_id,))
-    dreams = c.fetchall(); conn.close()
-    if len(dreams) < 3: return None
-    d_text = "\n".join([f"- [{d['dream_type'] or '?'} / {d['emotion'] or '?'}] {d['content'][:100]}" for d in dreams])
-    prompt = f"""Analyze this person's dream patterns.
-DREAMS:
-{d_text}
-
-Return ONLY JSON: {{"pattern": "2-3 sentence observation of recurring themes", "advice": "one warm sentence"}}
-Only JSON."""
-    r = ai_chat([{"role":"user","content":prompt}], temperature=0.75)
-    try:
-        c = r.strip().replace("```json","").replace("```","").strip()
-        s=c.find("{"); e=c.rfind("}")
-        if s!=-1 and e!=-1: return json.loads(c[s:e+1])
-    except: pass
-    return None
-
-def ai_dream_question(user_id):
-    """Ask the user a guided dream question."""
-    prompts = [
-        "Before you sleep — what is one thing you hope to dream about tonight?",
-        "Describe the last feeling you had in a dream. Where did you feel it in your body?",
-        "Did any person from your past appear in a recent dream?",
-        "What colour appeared most in your last dream?",
-        "If your last dream had a title, what would it be?",
-        "Was there water, fire, or sky in your last dream?",
-    ]
-    return random.choice(prompts)
-
-def ai_interpret_dream_short(dream_text):
-    """For quick interpretation display."""
-    return ai_chat([{"role":"user","content":f"Interpret this dream in 2 poetic sentences:\n{dream_text}"}], temperature=0.85)
-
-# ============================================================
-# TIME CAPSULE
-# ============================================================
-def ai_time_capsule_note(user_id, message):
-    p = f"""A person wrote a message to their future self:
-"{message[:400]}"
-
-Write a warm, personal 2-sentence note FROM their future self BACK TO them, in second person. Poetic and hopeful."""
-    return ai_chat([{"role":"user","content":p}], temperature=0.85)
-
-# ============================================================
-# LIFE INSIGHT
-# ============================================================
-def ai_life_insights(user_id):
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) as x FROM memories WHERE user_id = ?", (user_id,)); mem = c.fetchone()["x"]
-    c.execute("SELECT COUNT(*) as x FROM journal WHERE user_id = ?", (user_id,)); jc = c.fetchone()["x"]
-    c.execute("SELECT mood FROM journal WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,)); moods = [m["mood"] for m in c.fetchall() if m["mood"]]
-    c.execute("SELECT COUNT(*) as x FROM notes WHERE user_id = ?", (user_id,)); nc = c.fetchone()["x"]
-    c.execute("SELECT COUNT(*) as x FROM dreams WHERE user_id = ?", (user_id,)); dc = c.fetchone()["x"]
-    conn.close()
-    prompt = f"""User data: Places {mem}, Journal {jc}, Moods {', '.join(moods) if moods else 'none'}, Notes {nc}, Dreams {dc}.
-Write ONE short warm insight (max 25 words). Specific, not generic."""
-    return ai_chat([{"role":"user","content":prompt}], temperature=0.8)
-
-# ============================================================
-# SESSION
-# ============================================================
-defaults = {
-    "user_id": None, "name": None, "is_owner": False,
-    "view": "home", "current_place_id": None, "current_chat_id": None,
-    "current_lesson": None, "current_step": 0, "current_repair": None,
-    "repair_step": 0, "last_snap_result": None, "health_guide": None,
-    "pick_device": "", "daily_quote": None, "life_insight": None,
-    "arena_board": None, "arena_turn": 1, "arena_difficulty": "medium",
-    "arena_move_count": 0, "arena_center_turns": 0, "arena_last_result": None,
-}
-for k, v in defaults.items():
+# ==================== SESSION ====================
+defaults = {"user_id":None,"name":None,"view":"home","current_place":None,
+            "current_chat":None,"lesson":None,"repair":None,"health":None,
+            "daily_quote":None,"chess":None,"focus_end":None,"focus_task":"","focus_min":25}
+for k,v in defaults.items():
     if k not in st.session_state: st.session_state[k] = v
 
-# ============================================================
-# AUTH
-# ============================================================
+# ==================== AUTH ====================
 def auth_page():
     st.markdown("""
-    <div class="login-hero">
-        <h1>🧠 NEXUS ULTIMATE</h1>
-        <p>159 features + 120 more. One app. Everything you need.</p>
-        <p style="font-size:13px;opacity:0.5;margin-top:16px;">Powered by GPT-OSS 20B. Free. Forever.</p>
+    <div style="text-align:center;padding:60px 0 30px 0;">
+        <h1 style="font-family:'Georgia',serif;font-size:64px;
+            background: linear-gradient(135deg,#667eea,#f093fb,#ffd93d,#4dd0e1,#667eea);
+            background-size:400% 400%; animation: gradientFlow 8s ease infinite;
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin:0;">🧠 NEXUS ULTIMATE</h1>
+        <p style="color:rgba(255,255,255,0.7);font-size:16px;margin-top:12px;">
+            Powered by GPT-OSS 20B · Chess · Life OS</p>
     </div>
     """, unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        tab1, tab2 = st.tabs(["🔐 Log In", "✨ Sign Up"])
-        with tab1:
-            with st.form("login_form"):
-                u = st.text_input("Username or Email")
-                p = st.text_input("Password", type="password")
+    c1,c2,c3 = st.columns([1,1.2,1])
+    with c2:
+        t1, t2 = st.tabs(["🔐 Log In", "✨ Sign Up"])
+        with t1:
+            with st.form("login"):
+                u = st.text_input("Username or Email"); p = st.text_input("Password", type="password")
                 if st.form_submit_button("Log In", use_container_width=True):
-                    if not u or not p: st.error("Fill both fields")
-                    else:
-                        conn = get_db(); c = conn.cursor()
-                        c.execute("SELECT id, name, is_owner FROM users WHERE (username = ? OR email = ?) AND password_hash = ?",
-                                  (u, u, hash_pw(p)))
-                        user = c.fetchone(); conn.close()
-                        if user:
-                            st.session_state.user_id = user["id"]
-                            st.session_state.name = user["name"] or u
-                            st.session_state.is_owner = bool(user["is_owner"])
-                            update_streak(user["id"])
-                            play_sound("enter")
-                            st.rerun()
-                        else: st.error("Invalid login.")
-        with tab2:
-            with st.form("signup_form"):
-                n = st.text_input("Your Name")
-                u = st.text_input("Username")
-                e = st.text_input("Email")
-                p = st.text_input("Password", type="password")
-                p2 = st.text_input("Confirm Password", type="password")
-                if st.form_submit_button("Create Account", use_container_width=True):
-                    if not u or not e or not p: st.error("Fill all fields")
+                    with db() as conn:
+                        row = conn.execute("SELECT id,name FROM users WHERE (username=? OR email=?) AND password_hash=?",
+                                           (u,u,hash_pw(p))).fetchone()
+                    if row:
+                        st.session_state.user_id = row["id"]; st.session_state.name = row["name"] or u
+                        update_streak(row["id"]); st.rerun()
+                    else: st.error("Invalid login.")
+        with t2:
+            with st.form("signup"):
+                n = st.text_input("Name"); u = st.text_input("Username"); e = st.text_input("Email")
+                p = st.text_input("Password", type="password"); p2 = st.text_input("Confirm", type="password")
+                if st.form_submit_button("Create", use_container_width=True):
+                    if not u or not e or not p: st.error("Fill fields")
                     elif p != p2: st.error("Passwords don't match")
-                    elif len(p) < 6: st.error("6+ characters")
+                    elif len(p) < 6: st.error("6+ chars")
                     else:
                         try:
-                            owner = 1 if is_owner_email(e) else 0
-                            conn = get_db(); c = conn.cursor()
-                            c.execute("""INSERT INTO users (username,email,password_hash,name,is_owner,xp,streak,last_active,rank,title,created_at)
-                                VALUES (?,?,?,?,?,0,1,?,?,?,?)""",
-                                (u, e, hash_pw(p), n, owner, datetime.now().date().isoformat(), "Bronze", "Seeker", datetime.now().isoformat()))
-                            conn.commit(); conn.close()
-                            st.success("✅ Welcome! Now log in.")
-                        except sqlite3.IntegrityError: st.error("Username or email taken.")
+                            with db() as conn:
+                                conn.execute("""INSERT INTO users (username,email,password_hash,name,xp,streak,last_active,rank,created_at)
+                                    VALUES (?,?,?,?,0,1,?,?,?)""",
+                                    (u,e,hash_pw(p),n,datetime.now().date().isoformat(),"Bronze",datetime.now().isoformat()))
+                            st.success("✅ Created! Log in.")
+                        except sqlite3.IntegrityError: st.error("Taken.")
 
-# ============================================================
-# HOME
-# ============================================================
-def home_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT xp, streak, rank, arena_wins FROM users WHERE id = ?", (user_id,))
-    s = c.fetchone()
-    c.execute("SELECT COUNT(*) as x FROM places WHERE user_id = ?", (user_id,)); pc = c.fetchone()["x"]
-    c.execute("SELECT COUNT(*) as x FROM dreams WHERE user_id = ?", (user_id,)); dc = c.fetchone()["x"]
-    c.execute("SELECT COUNT(*) as x FROM achievements WHERE user_id = ?", (user_id,)); ac = c.fetchone()["x"]
-    conn.close()
-    xp = s["xp"] if s else 0; streak = s["streak"] if s else 0
-    rank = s["rank"] if s else "Bronze"; aw = s["arena_wins"] if s else 0
-    st.markdown(f'<div class="nexus-header"><h1>🧠 NEXUS ULTIMATE</h1><p>{get_time_greeting()}, {st.session_state.name} — <span class="rank-badge {rank_class(rank)}">{rank}</span></p></div>', unsafe_allow_html=True)
-    c1,c2,c3,c4 = st.columns(4)
-    with c1: st.markdown(f'<div class="stat-card"><div class="stat-number">{xp}</div><div class="stat-label">XP</div></div>', unsafe_allow_html=True)
-    with c2:
-        fl = "🔥" if streak > 1 else "✨"
-        st.markdown(f'<div class="stat-card"><div class="stat-number"><span class="flame">{fl}</span> {streak}</div><div class="stat-label">Streak</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="stat-card"><div class="stat-number">{ac}</div><div class="stat-label">Achievements</div></div>', unsafe_allow_html=True)
-    with c4: st.markdown(f'<div class="stat-card"><div class="stat-number">{aw}</div><div class="stat-label">Arena Wins</div></div>', unsafe_allow_html=True)
-    st.write("")
-    now = datetime.now()
-    col_a, col_b = st.columns([1,2])
-    with col_a:
-        st.markdown(f'<div class="live-panel"><div class="label">Now</div><div class="time">{now.strftime("%I:%M %p")}</div><div style="font-size:12px;opacity:0.5;margin-top:6px;">{now.strftime("%A, %B %d")}</div></div>', unsafe_allow_html=True)
-    with col_b:
-        if not st.session_state.get("daily_quote"):
-            with st.spinner("NEXUS whispers..."): st.session_state.daily_quote = ai_daily_quote()
-        st.markdown(f'<div class="daily-card"><div class="title">NEXUS whispers</div><div class="quote">"{st.session_state.daily_quote}"</div></div>', unsafe_allow_html=True)
-    st.write("")
-    st.markdown("### 🚀 Your Rooms")
-    mods = [
-        ("echo","📸","ECHO","Remember places"), ("chat","💬","AI CHAT","Talk to NEXUS"),
-        ("tutor","🎓","TUTOR","Learn anything"), ("repair","🔧","ATLAS","Fix & health"),
-        ("notes","📝","NOTES","Thoughts organized"), ("journal","📖","JOURNAL","Private diary"),
-        ("dreams","🌙","DREAMS","Interpret dreams"), ("capsule","⏳","CAPSULE","Message future"),
-        ("arena","⚔️","ARENA","Compete vs NEXUS"), ("habits","✅","HABITS","Build streaks"),
-        ("focus","🎯","FOCUS","Pomodoro timer"), ("gratitude","🙏","GRATITUDE","Daily thanks"),
-        ("wins","🏆","WINS","Small victories"), ("reading","📚","READING","Book list"),
-        ("quotes","💬","QUOTES","Saved quotes"), ("flash","🃏","FLASH","Card study"),
-        ("breathing","🫁","BREATHE","Calm down"), ("mood","😊","MOOD","Track feelings"),
-        ("achievements","🎖️","AWARDS","Your badges"), ("stats","📊","STATS","Full history"),
-    ]
-    cols = st.columns(5)
-    for i,(mid,icon,title,desc) in enumerate(mods):
-        with cols[i % 5]:
-            st.markdown(f'<div class="module-tile"><div class="module-icon">{icon}</div><div class="module-title">{title}</div><div class="module-desc">{desc}</div></div>', unsafe_allow_html=True)
-            if st.button("Open", key=f"open_{mid}", use_container_width=True):
-                st.session_state.view = mid; play_sound("click"); st.rerun()
-    st.divider()
-    st.markdown("### 🔮 Your Life Insight")
-    if not st.session_state.get("life_insight"):
-        with st.spinner("NEXUS is reading your story..."): st.session_state.life_insight = ai_life_insights(user_id)
-    st.markdown(f'<div class="brain-card"><div class="story">✨ {st.session_state.life_insight}</div></div>', unsafe_allow_html=True)
-    st.divider()
-    st.markdown("### 💡 NEXUS suggests")
-    for icon, text in get_smart_suggestions(user_id):
-        st.markdown(f'<div class="suggestion"><span class="icon">{icon}</span><span class="text">{text}</span></div>', unsafe_allow_html=True)
+# ==================== SIDEBAR ====================
+NAV = [("home","🏠","Home"),("chess","♟️","Chess"),("chat","💬","Chat"),
+       ("echo","📸","ECHO"),("tutor","🎓","Tutor"),("atlas","🔧","ATLAS"),
+       ("notes","📝","Notes"),("journal","📖","Journal"),("dreams","🌙","Dreams"),
+       ("capsule","⏳","Capsule"),("habits","✅","Habits"),("focus","🎯","Focus"),
+       ("mood","😊","Mood"),("gratitude","🙏","Gratitude"),("wins","🏆","Wins"),
+       ("reading","📚","Reading"),("quotes","💬","Quotes"),("flash","🃏","Flash"),
+       ("breathe","🫁","Breathe"),("meditate","🧘","Meditate"),("goals","🎯","Goals"),
+       ("coach","🤖","AI Coach"),("challenge","📅","Challenge"),("studio","🏗️","Studio"),
+       ("leaderboard","🏆","Leaderboard"),("achievements","🎖️","Awards"),("stats","📊","Stats")]
 
-def get_smart_suggestions(user_id):
-    conn = get_db(); c = conn.cursor(); su = []
-    c.execute("SELECT MAX(created_at) as l FROM memories WHERE user_id = ?", (user_id,)); lp = c.fetchone()["l"]
-    if not lp: su.append(("📸","Snap your first place"))
-    else:
-        try:
-            d = (datetime.now() - datetime.fromisoformat(lp)).days
-            if d >= 3: su.append(("📍", f"No snaps in {d} days"))
-        except: pass
-    c.execute("SELECT mood FROM journal WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,)); lj = c.fetchone()
-    if lj and ("😔" in (lj["mood"] or "") or "😤" in (lj["mood"] or "")): su.append(("📖","Heavy mood — write again?"))
-    c.execute("SELECT COUNT(*) as x FROM dreams WHERE user_id = ?", (user_id,))
-    if c.fetchone()["x"] == 0: su.append(("🌙","Try Dream Interpreter tonight"))
-    c.execute("SELECT COUNT(*) as x FROM arena_matches WHERE user_id = ?", (user_id,))
-    if c.fetchone()["x"] == 0: su.append(("⚔️","Enter the Arena — beat NEXUS"))
-    c.execute("SELECT COUNT(*) as x FROM time_capsules WHERE user_id = ?", (user_id,))
-    if c.fetchone()["x"] == 0: su.append(("⏳","Write a message to future you"))
-    conn.close()
-    return su[:4]
-
-def back_button(target="home"):
-    if st.button("← Back"):
-        st.session_state.view = target; st.rerun()
-
-# ============================================================
-# ECHO (same as before)
-# ============================================================
-def echo_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>📸 ECHO</h1><p>Snap a place. ECHO remembers everything.</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    tab_snap, tab_places, tab_brains, tab_compare = st.tabs(["📸 Snap", "🗺️ Places", "🧠 Mind", "🔮 Compare"])
-    with tab_snap:
-        cam = st.camera_input("📸 Take a photo")
-        with st.expander("Or upload"):
-            up = st.file_uploader("Choose", type=["jpg","jpeg","png"], label_visibility="collapsed")
+def sidebar():
+    with st.sidebar:
+        st.markdown(f"### 👋 {st.session_state.name}")
+        with db() as conn:
+            u = conn.execute("SELECT xp,rank,streak FROM users WHERE id=?", (st.session_state.user_id,)).fetchone()
+        st.markdown(f'<span class="rank-badge {rank_class(u["rank"])}">{u["rank"]}</span> {u["xp"]} XP · 🔥 {u["streak"]}',
+                    unsafe_allow_html=True)
         st.divider()
-        pn = st.text_input("Where is this place?", placeholder="e.g. My street, Lagos")
-        feel = st.selectbox("How does it feel?", ["Peaceful","Busy","Warm","Lonely","Joyful","Heavy","Bright","Quiet","Alive","Still"])
-        nt = st.text_area("Describe what you see (helps ECHO)", height=80)
-        if st.button("💾 Save to ECHO", type="primary", use_container_width=True):
-            pb = cam.getvalue() if cam else (up.getvalue() if up else None)
-            if not pb: st.error("Take or upload a photo first.")
-            elif not pn: st.error("Give the place a name.")
-            else:
-                with st.spinner("ECHO is thinking..."):
-                    fp, ph = save_photo_safely(user_id, pb)
-                    ds = ai_describe_photo(fp); ob = ai_extract_objects(fp)
-                    if len(ob)==0 and nt: ds = nt; ob = [n.strip() for n in nt.split(",") if n.strip()]
-                    elif nt: ds = f"{ds} — noted: {nt}"
-                    conn = get_db(); c = conn.cursor()
-                    c.execute("SELECT * FROM places WHERE user_id = ? AND name = ?", (user_id, pn))
-                    ex = c.fetchone(); is_new = ex is None
-                    pv=[]; po=[]; pd=""
-                    if ex:
-                        pid = ex["id"]
-                        c.execute("SELECT * FROM memories WHERE place_id = ? ORDER BY created_at ASC", (pid,))
-                        pv = [dict(r) for r in c.fetchall()]
-                        if pv:
-                            last = pv[-1]; pd = last["ai_description"] or ""
-                            try: po = json.loads(last["ai_objects"]) if last["ai_objects"] else []
-                            except: po = []
-                    else:
-                        c.execute("INSERT INTO places (user_id,name,created_at) VALUES (?,?,?)", (user_id,pn,datetime.now().isoformat()))
-                        pid = c.lastrowid
-                    c.execute("""INSERT INTO memories (user_id,place_id,photo_path,photo_hash,ai_description,ai_objects,user_note,mood,created_at)
-                        VALUES (?,?,?,?,?,?,?,?,?)""", (user_id,pid,fp,ph,ds,json.dumps(ob),nt,feel,datetime.now().isoformat()))
-                    mr = ai_what_did_i_miss(po,pd,ob,ds,pn) if pv and po else None
-                    c.execute("SELECT ai_description, created_at, mood FROM memories WHERE place_id = ? ORDER BY created_at ASC", (pid,))
-                    am = c.fetchall()
-                    descs = [m["ai_description"] or "" for m in am]; dates = [m["created_at"] for m in am]; moods = [m["mood"] or "neutral" for m in am]
-                    bd = ai_place_brain(pn, descs, dates, moods)
-                    c.execute("SELECT id FROM place_brains WHERE place_id = ?", (pid,))
-                    br = c.fetchone()
-                    if br: c.execute("UPDATE place_brains SET story=?,pattern=?,mood=?,last_seen=?,total_visits=?,updated_at=? WHERE place_id=?",
-                                    (bd["story"],bd["pattern"],bd["mood"],datetime.now().isoformat(),len(am),datetime.now().isoformat(),pid))
-                    else: c.execute("INSERT INTO place_brains (place_id,story,pattern,mood,first_seen,last_seen,total_visits,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                                    (pid,bd["story"],bd["pattern"],bd["mood"],datetime.now().isoformat(),datetime.now().isoformat(),len(am),datetime.now().isoformat()))
-                    conn.commit(); conn.close()
-                    gr = ai_echo_speaks(pn, ds, pv)
-                    award_xp(user_id, 15)
-                    celebrate(); play_sound("success")
-                    toast(f"✅ +15 XP · {pn} remembered")
-                    st.session_state.last_snap_result = {"greeting":gr,"description":ds,"objects":ob,"miss":mr,"brain":bd,"is_new":is_new,"photo_path":fp}
-                st.rerun()
-        r = st.session_state.last_snap_result
-        if r:
-            st.divider(); st.subheader("🧠 What ECHO saw")
-            c1,c2 = st.columns([1,2])
-            with c1:
-                if os.path.exists(r["photo_path"]): st.image(r["photo_path"], use_container_width=True)
-            with c2:
-                st.markdown(f'<div class="echo-memory"><strong>👁️ ECHO sees:</strong><br>{r["description"]}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="echo-says"><strong>💬 ECHO says:</strong><br><em>{r["greeting"]}</em></div>', unsafe_allow_html=True)
-            if r["miss"]:
-                m = r["miss"]; st.divider(); st.subheader("🔍 What did I miss?")
-                if m.get("story"): st.markdown(f'<div class="brain-card"><div class="story">💭 {m["story"]}</div></div>', unsafe_allow_html=True)
-                if m.get("weather_feel"): st.markdown(f'<div class="echo-says">🌤️ <em>{m["weather_feel"]}</em></div>', unsafe_allow_html=True)
-                if m.get("gone"):
-                    st.markdown("**❌ Gone:**")
-                    for g in m["gone"]: st.markdown(f'<div class="missing-item">🚫 {g}</div>', unsafe_allow_html=True)
-                if m.get("new"):
-                    st.markdown("**✨ New:**")
-                    for n in m["new"]: st.markdown(f'<div class="difference-item">➕ {n}</div>', unsafe_allow_html=True)
-                if m.get("changed"):
-                    st.markdown("**🔄 Changed:**")
-                    for c_ in m["changed"]: st.markdown(f'<div class="difference-item">🔄 {c_}</div>', unsafe_allow_html=True)
-                if m.get("tiny_details"):
-                    st.markdown("**🔎 Tiny details:**")
-                    for t in m["tiny_details"]: st.markdown(f'<div class="difference-item">🔍 {t}</div>', unsafe_allow_html=True)
-            if r["objects"]:
-                with st.expander(f"📋 {len(r['objects'])} items"):
-                    for o in r["objects"]: st.write(f"• {o}")
-            if r["brain"]:
-                st.divider(); st.subheader("🧠 Place Brain"); b = r["brain"]
-                st.markdown(f'<div class="brain-card"><div class="mood">💭 {b.get("mood","?")}</div><div class="story">{b.get("story","")}</div><div class="pattern">🔄 {b.get("pattern","")}</div></div>', unsafe_allow_html=True)
-            if st.button("✨ Done"): st.session_state.last_snap_result = None; st.rerun()
-    with tab_places:
-        conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM places WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); ps = c.fetchall(); conn.close()
-        if not ps: st.info("No places yet.")
-        for p in ps:
-            conn = get_db(); c = conn.cursor()
-            c.execute("SELECT COUNT(*) as x FROM memories WHERE place_id = ?", (p["id"],)); cnt = c.fetchone()["x"]
-            c.execute("SELECT * FROM place_brains WHERE place_id = ?", (p["id"],)); br = c.fetchone()
-            conn.close()
-            with st.container(border=True):
-                c1,c2 = st.columns([3,1])
-                with c1:
-                    st.markdown(f"### 📍 {p['name']}")
-                    if br: st.caption(f"🧠 *{br['mood']}* • {cnt} visit(s)"); st.write(f"💭 {br['story']}")
-                    else: st.caption(f"{cnt} visit(s)")
-                with c2:
-                    if st.button("Visit", key=f"vp_{p['id']}", use_container_width=True):
-                        st.session_state.current_place_id = p["id"]; st.session_state.view = "place_detail"; st.rerun()
-    with tab_brains:
-        st.subheader("🧠 ECHO's Mind")
-        conn = get_db(); c = conn.cursor()
-        c.execute("""SELECT pb.*, p.name as pn FROM place_brains pb JOIN places p ON pb.place_id = p.id
-            WHERE p.user_id = ? ORDER BY pb.last_seen DESC""", (user_id,)); bs = c.fetchall(); conn.close()
-        if not bs: st.info("ECHO hasn't met your places yet.")
-        for b in bs:
-            st.markdown(f'<div class="brain-card"><strong>📍 {b["pn"]}</strong><div class="mood">💭 {b["mood"]}</div><div class="story">{b["story"]}</div><div class="pattern">🔄 {b["pattern"]}</div><div class="meta">First: {b["first_seen"][:10]} • Last: {b["last_seen"][:10]} • {b["total_visits"]} visit(s)</div></div>', unsafe_allow_html=True)
-    with tab_compare:
-        conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM places WHERE user_id = ?", (user_id,)); ps = c.fetchall(); conn.close()
-        if not ps: st.info("Add places first.")
-        else:
-            opts = {p["name"]: p["id"] for p in ps}
-            sn = st.selectbox("Choose place", list(opts.keys())); sid = opts[sn]
-            conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM memories WHERE place_id = ? ORDER BY created_at ASC", (sid,)); ms = c.fetchall(); conn.close()
-            if len(ms) < 2: st.warning("Need 2+ visits.")
-            else:
-                mo = {f"Visit {i+1} — {m['created_at'][:16]}": m for i,m in enumerate(ms)}
-                c1,c2 = st.columns(2)
-                with c1: o1 = st.selectbox("Older", list(mo.keys()), index=0)
-                with c2: o2 = st.selectbox("Newer", list(mo.keys()), index=len(mo)-1)
-                m1 = mo[o1]; m2 = mo[o2]
-                cc1,cc2 = st.columns(2)
-                with cc1:
-                    if m1["photo_path"] and os.path.exists(m1["photo_path"]): st.image(m1["photo_path"], use_container_width=True)
-                    st.write(m1["ai_description"])
-                with cc2:
-                    if m2["photo_path"] and os.path.exists(m2["photo_path"]): st.image(m2["photo_path"], use_container_width=True)
-                    st.write(m2["ai_description"])
-                if st.button("🔮 What Changed?", type="primary", use_container_width=True):
-                    with st.spinner("..."):
-                        ch = ai_compare_photos(m1["photo_path"], m2["photo_path"], sn)
-                    st.markdown(f'<div class="echo-memory"><strong>🔮 What Changed:</strong><br>{ch}</div>', unsafe_allow_html=True)
+        for vid, icon, label in NAV:
+            active = "🟢 " if st.session_state.view == vid else ""
+            if st.button(f"{active}{icon} {label}", key=f"n_{vid}", use_container_width=True):
+                st.session_state.view = vid; st.rerun()
+        st.divider()
+        if st.button("🚪 Log out", use_container_width=True):
+            for k in list(st.session_state.keys()): del st.session_state[k]
+            st.rerun()
 
-def place_detail_view():
-    pid = st.session_state.current_place_id
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT * FROM places WHERE id = ?", (pid,)); pl = c.fetchone()
-    c.execute("SELECT * FROM memories WHERE place_id = ? ORDER BY created_at DESC", (pid,)); ms = c.fetchall()
-    c.execute("SELECT * FROM place_brains WHERE place_id = ?", (pid,)); br = c.fetchone()
-    conn.close()
+# ==================== HOME ====================
+def home_view():
+    uid = st.session_state.user_id
+    with db() as conn:
+        s = conn.execute("SELECT xp,streak,rank,arena_wins FROM users WHERE id=?", (uid,)).fetchone()
+        ac = conn.execute("SELECT COUNT(*) as x FROM achievements WHERE user_id=?", (uid,)).fetchone()["x"]
+    st.markdown(f'<div class="nexus-header"><h1>🧠 NEXUS ULTIMATE</h1>'
+                f'<p>{greeting()}, {st.session_state.name} — '
+                f'<span class="rank-badge {rank_class(s["rank"])}">{s["rank"]}</span></p></div>',
+                unsafe_allow_html=True)
+    c1,c2,c3,c4 = st.columns(4)
+    with c1: st.markdown(f'<div class="stat-card"><div class="stat-number">{s["xp"]}</div><div class="stat-label">XP</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="stat-card"><div class="stat-number">🔥 {s["streak"]}</div><div class="stat-label">Streak</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="stat-card"><div class="stat-number">{ac}</div><div class="stat-label">Awards</div></div>', unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="stat-card"><div class="stat-number">{s["arena_wins"]}</div><div class="stat-label">Chess Wins</div></div>', unsafe_allow_html=True)
+    if not st.session_state.daily_quote:
+        with st.spinner("NEXUS whispers..."): st.session_state.daily_quote = ai_quote()
+    st.markdown(f'<div class="brain-card"><div class="mood">✨ Today\'s whisper</div>'
+                f'<div class="story"><em>{st.session_state.daily_quote}</em></div></div>', unsafe_allow_html=True)
+    st.markdown("### 🚀 Rooms")
+    mods = [("chess","♟️","Chess","Play NEXUS"),("echo","📸","ECHO","Remember places"),
+            ("chat","💬","Chat","Talk freely"),("dreams","🌙","Dreams","Interpret"),
+            ("journal","📖","Journal","Private diary"),("habits","✅","Habits","Build streaks"),
+            ("mood","😊","Mood","Track feelings"),("focus","🎯","Focus","Pomodoro"),
+            ("coach","🤖","Coach","AI guidance"),("studio","🏗️","Studio","Build products"),
+            ("challenge","📅","Challenge","Today's task"),("goals","🎯","Goals","OKR tracker")]
+    cols = st.columns(4)
+    for i,(vid,icon,title,desc) in enumerate(mods):
+        with cols[i%4]:
+            st.markdown(f'<div class="module-tile"><div class="module-icon">{icon}</div>'
+                        f'<div class="module-title">{title}</div><div class="module-desc">{desc}</div></div>',
+                        unsafe_allow_html=True)
+            if st.button("Open", key=f"o_{vid}", use_container_width=True):
+                st.session_state.view = vid; st.rerun()
+
+# ==================== CHESS ====================
+def new_chess(diff="medium"):
+    return {"board":start_board(),"state":{"castling":{"K":True,"Q":True,"k":True,"q":True},"ep":None},
+            "turn":"white","history":[],"cap_w":[],"cap_b":[],"diff":diff,"last":None,
+            "status":"playing","msg":None,"selected":None}
+
+def board_html(g):
+    b = g["board"]; sel = g.get("selected"); last = g.get("last")
+    targets = []
+    if sel:
+        targets = [(m[2],m[3]) for m in legal(b,g["state"],True) if (m[0],m[1])==sel]
+    chk = find_king(b, True) if in_check(b, True) else None
+    h = '<div style="text-align:center;"><div style="display:inline-block;background:rgba(0,0,0,0.5);padding:10px;border-radius:14px;border:2px solid rgba(240,147,251,0.5);">'
+    for r in range(8):
+        h += '<div style="display:flex;">'
+        for c in range(8):
+            p = b[r][c]; light = (r+c)%2==0
+            cls = "background:#ebd4b0;" if light else "background:#7a5230;"
+            border = ""
+            if sel==(r,c): border += "box-shadow:inset 0 0 0 4px #ffd93d;"
+            if (r,c) in targets:
+                if b[r][c]!='.': border += "box-shadow:inset 0 0 0 4px rgba(255,107,107,0.7);"
+            if last and ((r,c)==(last[0],last[1]) or (r,c)==(last[2],last[3])):
+                border += "box-shadow:inset 0 0 0 3px rgba(240,147,251,0.8);"
+            if chk==(r,c): border += "box-shadow:inset 0 0 0 4px #ff4444;"
+            glyph = ""
+            if p!='.':
+                color = "#fff" if p.isupper() else "#111"
+                shadow = "0 1px 2px #000, 0 0 3px #000" if p.isupper() else "0 0 2px #fff"
+                glyph = f'<span style="color:{color};text-shadow:{shadow};">{UNICODE[p]}</span>'
+            h += f'<div style="width:54px;height:54px;display:flex;align-items:center;justify-content:center;font-size:34px;{cls}{border}">{glyph}</div>'
+        h += '</div>'
+    h += '</div></div>'
+    return h
+
+def chess_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>♟️ CHESS ARENA</h1><p>Real chess. Smart AI.</p></div>', unsafe_allow_html=True)
+    if st.session_state.chess is None:
+        c1, c2 = st.columns([2,1])
+        with c1: diff = st.selectbox("Difficulty", ["easy","medium","hard"], index=1)
+        with c2:
+            if st.button("⚔️ Start Match", type="primary", use_container_width=True):
+                st.session_state.chess = new_chess(diff); st.rerun()
+        st.info("Click a white piece, then a destination. Full rules incl. castling, en passant, promotion.")
+        return
+    g = st.session_state.chess
+    b = g["board"]
+    c1, c2, c3 = st.columns([2,2,1])
+    with c1:
+        if g["status"]=="playing":
+            lbl = "🟦 Your move" if g["turn"]=="white" else "🟥 NEXUS thinking…"
+            if in_check(b, g["turn"]=="white"): lbl += " — CHECK!"
+            st.markdown(f"**{lbl}**")
+        elif g["status"]=="win": st.success("♔ Checkmate! You win!")
+        elif g["status"]=="loss": st.error("♚ NEXUS wins.")
+        elif g["status"]=="draw": st.info("½ Draw.")
+    with c2: st.caption(f"Move {len(g['history'])//2+1} · {g['diff']}")
+    with c3:
+        if st.button("🔄 New", use_container_width=True): st.session_state.chess = None; st.rerun()
+    if g["msg"]: st.markdown(f'<div class="echo-says">💬 <em>{g["msg"]}</em></div>', unsafe_allow_html=True)
+    bc, pc = st.columns([2,1])
+    with bc:
+        st.markdown(board_html(g), unsafe_allow_html=True)
+        if g["status"]=="playing" and g["turn"]=="white":
+            st.markdown("##### Make your move")
+            white = []
+            for r in range(8):
+                for c in range(8):
+                    if is_white(b[r][c]):
+                        ms = [m for m in legal(b,g["state"],True) if (m[0],m[1])==(r,c)]
+                        if ms: white.append((r,c,b[r][c],ms))
+            if not white: finish_chess(uid, "loss"); return
+            opts = [f"{UNICODE[p]} {sq(r,c)}" for r,c,p,_ in white]
+            i = st.selectbox("Piece", range(len(white)), format_func=lambda i: opts[i], key="cp")
+            fr,fc,fp,moves = white[i]
+            dests = [(m[2],m[3],m[4]) for m in moves]
+            dl = []
+            for tr,tc,sp in dests:
+                tag = ""
+                if b[tr][tc]!='.': tag = " ✕"
+                if sp in ('promote','promote_capture'): tag += " ↑Q"
+                if sp=='castle_k': tag = " O-O"
+                if sp=='castle_q': tag = " O-O-O"
+                if sp=='en_passant': tag = " e.p."
+                dl.append(f"{sq(tr,tc)}{tag}")
+            di = st.selectbox("To", range(len(dests)), format_func=lambda i: dl[i], key="cd")
+            tr,tc,sp = dests[di]
+            if st.button("✅ Play", type="primary", use_container_width=True):
+                do_player(uid, fr, fc, tr, tc, sp); st.rerun()
+    with pc:
+        st.markdown("##### Captured")
+        st.write("**You:**", " ".join(UNICODE[p] for p in g["cap_b"]) or "—")
+        st.write("**NEXUS:**", " ".join(UNICODE[p] for p in g["cap_w"]) or "—")
+        st.markdown("##### Moves")
+        if g["history"]:
+            rows = []; i = 0; num = 1
+            while i < len(g["history"]):
+                w = g["history"][i]; bk = g["history"][i+1] if i+1<len(g["history"]) else ""
+                rows.append(f"{num:>2}. {w:<8} {bk}"); num += 1; i += 2
+            st.markdown('<div style="max-height:240px;overflow-y:auto;background:rgba(0,0,0,0.35);border-radius:10px;padding:12px;font-family:monospace;font-size:13px;color:rgba(255,255,255,0.85);line-height:1.6;">' + "<br>".join(rows) + '</div>', unsafe_allow_html=True)
+        if g["status"]=="playing" and g["turn"]=="white":
+            if st.button("💡 Hint", use_container_width=True):
+                with st.spinner("..."): best = ai_move(b, g["state"], g["diff"])
+                if best: st.info(f"Try **{san(b,g['state'],best)}**")
+    if g["status"]=="playing" and g["turn"]=="black":
+        with st.spinner("NEXUS thinking…"):
+            time.sleep(0.3)
+            best = ai_move(b, g["state"], g["diff"])
+        if best is None:
+            finish_chess(uid, "loss" if in_check(b,False) else "draw"); return
+        do_ai(uid, best); st.rerun()
+
+def do_player(uid, fr, fc, tr, tc, sp):
+    g = st.session_state.chess; b = g["board"]; stt = g["state"]
+    cap = b[tr][tc]
+    mv = (fr,fc,tr,tc,sp)
+    s = san(b,stt,mv)
+    nb, ns = apply(b,stt,fr,fc,tr,tc,sp)
+    g["board"] = nb; g["state"] = ns; g["history"].append(s); g["last"] = (fr,fc,tr,tc); g["selected"] = None
+    if cap!='.': g["cap_b"].append(cap)
+    if not has_legal(nb,ns,False):
+        finish_chess(uid, "win" if in_check(nb,False) else "draw"); return
+    g["turn"] = "black"
+    if cap!='.' or in_check(nb,False):
+        try:
+            g["msg"] = ai_chat([{"role":"user","content":f"You are NEXUS chess rival. Player played {s}. Capture:{cap!='.'} Check:{in_check(nb,False)}. Reply ONE short sentence (max 12 words)."}], 0.85, timeout=15)
+        except: pass
+    award_xp(uid, 2)
+
+def do_ai(uid, mv):
+    g = st.session_state.chess; b = g["board"]; stt = g["state"]
+    fr,fc,tr,tc,sp = mv
+    cap = b[tr][tc]
+    s = san(b,stt,mv)
+    nb, ns = apply(b,stt,fr,fc,tr,tc,sp)
+    g["board"] = nb; g["state"] = ns; g["history"].append(s); g["last"] = (fr,fc,tr,tc)
+    if cap!='.': g["cap_w"].append(cap)
+    if not has_legal(nb,ns,True):
+        finish_chess(uid, "loss" if in_check(nb,True) else "draw"); return
+    g["turn"] = "white"
+
+def finish_chess(uid, result):
+    g = st.session_state.chess
+    with db() as conn:
+        conn.execute("INSERT INTO matches (user_id,result,moves,difficulty,created_at) VALUES (?,?,?,?,?)",
+                     (uid, result, len(g["history"]), g["diff"], datetime.now().isoformat()))
+        if result=="win": conn.execute("UPDATE users SET arena_wins=arena_wins+1 WHERE id=?", (uid,))
+        else: conn.execute("UPDATE users SET arena_losses=arena_losses+1 WHERE id=?", (uid,))
+    if result=="win": award_xp(uid, 40); celebrate(); toast("👑 +40 XP")
+    else: award_xp(uid, 5)
+    st.session_state.chess = None
+    st.rerun()
+
+# ==================== CHAT ====================
+def chat_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>💬 AI CHAT</h1></div>', unsafe_allow_html=True)
+    with st.sidebar:
+        st.markdown("### Chats")
+        if st.button("➕ New", use_container_width=True, key="new_chat"):
+            with db() as conn:
+                c = conn.execute("INSERT INTO chats (user_id,title,created_at) VALUES (?,?,?)", (uid,"New Chat",datetime.now().isoformat()))
+                st.session_state.current_chat = c.lastrowid
+            st.rerun()
+    if st.session_state.current_chat is None:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM chats WHERE user_id=? ORDER BY created_at DESC LIMIT 1", (uid,)).fetchone()
+        if row: st.session_state.current_chat = row["id"]
+        else:
+            with db() as conn:
+                c = conn.execute("INSERT INTO chats (user_id,title,created_at) VALUES (?,?,?)", (uid,"New Chat",datetime.now().isoformat()))
+                st.session_state.current_chat = c.lastrowid
+    cid = st.session_state.current_chat
+    with db() as conn:
+        msgs = conn.execute("SELECT * FROM messages WHERE chat_id=? ORDER BY id", (cid,)).fetchall()
+    for m in msgs:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    p = st.chat_input("Message NEXUS…")
+    if p:
+        with db() as conn:
+            conn.execute("INSERT INTO messages (chat_id,role,content,created_at) VALUES (?,?,?,?)", (cid,"user",p,datetime.now().isoformat()))
+            t = conn.execute("SELECT title FROM chats WHERE id=?", (cid,)).fetchone()
+            if t and (t["title"]=="New Chat" or not t["title"]): conn.execute("UPDATE chats SET title=? WHERE id=?", (p[:40], cid))
+        with st.chat_message("user"): st.write(p)
+        with st.chat_message("assistant"):
+            with st.spinner("NEXUS thinks…"):
+                with db() as conn:
+                    h = conn.execute("SELECT role,content FROM messages WHERE chat_id=? ORDER BY id", (cid,)).fetchall()
+                api = [{"role":"system","content":"You are NEXUS. Warm, thoughtful, personal."}]
+                for x in h[-20:]: api.append({"role":x["role"],"content":x["content"]})
+                rep = ai_chat(api)
+            st.write(rep)
+        award_xp(uid, 2)
+        with db() as conn:
+            conn.execute("INSERT INTO messages (chat_id,role,content,created_at) VALUES (?,?,?,?)", (cid,"assistant",rep,datetime.now().isoformat()))
+        st.rerun()
+
+# ==================== ECHO ====================
+def echo_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>📸 ECHO</h1><p>Snap. Remember. Watch change.</p></div>', unsafe_allow_html=True)
+    t1, t2 = st.tabs(["📸 New", "🗺️ Timeline"])
+    with t1:
+        cam = st.camera_input("Take a photo")
+        up = st.file_uploader("Or upload", type=["jpg","jpeg","png"])
+        c1, c2 = st.columns(2)
+        with c1:
+            pn = st.text_input("Place name")
+            feel = st.selectbox("Mood", ["Peaceful","Busy","Warm","Lonely","Joyful","Heavy","Bright","Quiet","Alive","Still"])
+        with c2:
+            note = st.text_area("Note (optional)", height=100)
+        if st.button("💾 Save", type="primary", use_container_width=True):
+            pb = cam.getvalue() if cam else (up.getvalue() if up else None)
+            if not pb or not pn: st.error("Need photo + name")
+            else:
+                with st.spinner("ECHO seeing…"):
+                    d = os.path.join(UPLOAD_DIR, str(uid)); os.makedirs(d, exist_ok=True)
+                    fp = os.path.join(d, f"{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg")
+                    with open(fp,"wb") as f: f.write(pb)
+                    desc = ai_photo(fp)
+                    if note: desc += f" — {note}"
+                    with db() as conn:
+                        pl = conn.execute("SELECT id FROM places WHERE user_id=? AND name=?", (uid,pn)).fetchone()
+                        pid = pl["id"] if pl else conn.execute("INSERT INTO places (user_id,name,created_at) VALUES (?,?,?)",
+                            (uid,pn,datetime.now().isoformat())).lastrowid
+                        conn.execute("INSERT INTO memories (user_id,place_id,photo_path,ai_description,user_note,mood,created_at) VALUES (?,?,?,?,?,?,?)",
+                                     (uid,pid,fp,desc,note,feel,datetime.now().isoformat()))
+                    award_xp(uid, 15); celebrate(); toast("✅ +15 XP")
+                st.rerun()
+    with t2:
+        with db() as conn:
+            places = conn.execute("""SELECT p.id, p.name, COUNT(m.id) as visits FROM places p
+                LEFT JOIN memories m ON m.place_id = p.id WHERE p.user_id=? GROUP BY p.id ORDER BY p.created_at DESC""", (uid,)).fetchall()
+        if not places: st.info("No places yet.")
+        for p in places:
+            st.markdown(f'<div class="brain-card"><div class="mood">📍 {p["name"]}</div>'
+                        f'<div class="story">{p["visits"]} visit(s)</div></div>', unsafe_allow_html=True)
+            if st.button("View", key=f"vp_{p['id']}"):
+                st.session_state.current_place = p["id"]; st.session_state.view = "place"; st.rerun()
+
+def place_view():
+    pid = st.session_state.current_place
+    with db() as conn:
+        pl = conn.execute("SELECT * FROM places WHERE id=?", (pid,)).fetchone()
+        ms = conn.execute("SELECT * FROM memories WHERE place_id=? ORDER BY created_at DESC", (pid,)).fetchall()
     if not pl: st.session_state.view = "echo"; st.rerun(); return
     st.markdown(f'<div class="nexus-header"><h1>📍 {pl["name"]}</h1><p>{len(ms)} visit(s)</p></div>', unsafe_allow_html=True)
-    if br: st.markdown(f'<div class="brain-card"><div class="mood">💭 {br["mood"]}</div><div class="story">{br["story"]}</div><div class="pattern">🔄 {br["pattern"]}</div></div>', unsafe_allow_html=True)
-    if st.button("← Back"): st.session_state.current_place_id = None; st.session_state.view = "echo"; st.rerun()
-    st.divider()
-    for i,m in enumerate(ms):
+    if st.button("← Back"): st.session_state.view = "echo"; st.rerun()
+    for i, m in enumerate(ms):
         with st.container(border=True):
-            st.markdown(f"**Visit {len(ms)-i}** — {m['created_at'][:16]} • felt *{m['mood'] or '—'}*")
-            c1,c2 = st.columns([1,2])
+            st.markdown(f"**Visit {len(ms)-i}** — {m['created_at'][:16]} · *{m['mood'] or '—'}*")
+            c1, c2 = st.columns([1,3])
             with c1:
                 if m["photo_path"] and os.path.exists(m["photo_path"]): st.image(m["photo_path"], use_container_width=True)
             with c2:
-                if m["ai_description"]: st.write(f"🧠 {m['ai_description']}")
+                if m["ai_description"]: st.write(f"👁️ {m['ai_description']}")
                 if m["user_note"]: st.write(f"📝 {m['user_note']}")
 
-# ============================================================
-# CHAT
-# ============================================================
-def chat_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>💬 NEXUS</h1><p>Powered by GPT-OSS 20B</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.sidebar:
-        st.markdown("### 💬 Chats")
-        if st.button("➕ New Chat", use_container_width=True):
-            conn = get_db(); c = conn.cursor()
-            c.execute("INSERT INTO chats (user_id,title,created_at) VALUES (?,?,?)", (user_id,"New Chat",datetime.now().isoformat()))
-            st.session_state.current_chat_id = c.lastrowid; conn.commit(); conn.close(); st.rerun()
-        conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM chats WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); cs = c.fetchall(); conn.close()
-        for ch in cs:
-            t = ch["title"] or "New Chat"; pre = "🟢 " if ch["id"]==st.session_state.current_chat_id else "💬 "
-            if st.button(f"{pre}{t[:20]}", key=f"c_{ch['id']}", use_container_width=True):
-                st.session_state.current_chat_id = ch["id"]; st.rerun()
-    if st.session_state.current_chat_id is None:
-        conn = get_db(); c = conn.cursor(); c.execute("INSERT INTO chats (user_id,title,created_at) VALUES (?,?,?)", (user_id,"New Chat",datetime.now().isoformat()))
-        st.session_state.current_chat_id = c.lastrowid; conn.commit(); conn.close(); st.rerun()
-    cid = st.session_state.current_chat_id
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM messages WHERE chat_id = ? ORDER BY id ASC", (cid,)); ms = c.fetchall(); conn.close()
-    for m in ms:
-        with st.chat_message(m["role"]): st.write(m["content"])
-    p = st.chat_input("Message NEXUS...")
-    if p:
-        conn = get_db(); c = conn.cursor()
-        c.execute("INSERT INTO messages (chat_id,role,content,created_at) VALUES (?,?,?,?)", (cid,"user",p,datetime.now().isoformat()))
-        c.execute("SELECT title FROM chats WHERE id = ?", (cid,)); r = c.fetchone()
-        if r and (r["title"]=="New Chat" or not r["title"]): c.execute("UPDATE chats SET title = ? WHERE id = ?", (p[:40], cid))
-        conn.commit(); conn.close()
-        with st.chat_message("user"): st.write(p)
-        with st.chat_message("assistant"):
-            ph = st.empty(); ph.markdown('<div class="think-box">🧠 Thinking...</div>', unsafe_allow_html=True)
-            conn = get_db(); c = conn.cursor(); c.execute("SELECT role,content FROM messages WHERE chat_id = ? ORDER BY id ASC", (cid,)); h = c.fetchall(); conn.close()
-            sp = f"You are NEXUS. Warm, personal. User context:\n{get_nexus_context(user_id)}"
-            api = [{"role":"system","content":sp}]
-            for x in h[-20:]: api.append({"role":x["role"],"content":x["content"]})
-            rep = ai_chat(api); ph.empty(); st.write(rep)
-        award_xp(user_id, 2); play_sound("click")
-        conn = get_db(); c = conn.cursor()
-        c.execute("INSERT INTO messages (chat_id,role,content,created_at) VALUES (?,?,?,?)", (cid,"assistant",rep,datetime.now().isoformat()))
-        conn.commit(); conn.close(); st.rerun()
-
-def get_nexus_context(user_id):
-    conn = get_db(); c = conn.cursor(); ps = []
-    c.execute("SELECT name FROM users WHERE id = ?", (user_id,)); u = c.fetchone()
-    if u: ps.append(f"Name: {u['name']}")
-    c.execute("SELECT name FROM places WHERE user_id = ? LIMIT 5", (user_id,)); pl = [x["name"] for x in c.fetchall()]
-    if pl: ps.append(f"Places: {', '.join(pl)}")
-    c.execute("SELECT title FROM notes WHERE user_id = ? LIMIT 3", (user_id,)); nt = [x["title"] for x in c.fetchall() if x["title"]]
-    if nt: ps.append(f"Notes: {', '.join(nt)}")
-    conn.close(); return "\n".join(ps)
-
-# ============================================================
-# TUTOR (compressed)
-# ============================================================
+# ==================== TUTOR ====================
 def tutor_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
+    uid = st.session_state.user_id
     st.markdown('<div class="nexus-header"><h1>🎓 TUTOR</h1></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nl"):
-        t = st.text_input("What to learn?")
+    with st.form("tut"):
+        topic = st.text_input("Learn anything")
         if st.form_submit_button("🧠 Build Lesson", type="primary", use_container_width=True):
-            if not t: st.error("Enter topic")
-            else:
-                with st.spinner("Preparing..."): L = ai_build_lesson(t)
+            if topic:
+                with st.spinner("Building…"):
+                    L = ai_json(f"Lesson on '{topic}'. JSON: {{\"title\":\"\",\"intro\":\"\",\"steps\":[{{\"n\":1,\"title\":\"\",\"instruction\":\"\"}}]}} 5-6 steps.", 0.6)
                 if L:
-                    conn = get_db(); c = conn.cursor()
-                    c.execute("INSERT INTO lessons (user_id,title,topic,steps,created_at) VALUES (?,?,?,?,?)",
-                              (user_id,L.get("title",t),t,json.dumps(L),datetime.now().isoformat()))
-                    st.session_state.current_lesson = {"id":c.lastrowid,**L}; st.session_state.current_step = 0
-                    conn.commit(); conn.close(); award_xp(user_id,10); st.rerun()
-    if st.session_state.current_lesson:
-        L = st.session_state.current_lesson; st.divider()
-        st.markdown(f"## 📖 {L.get('title','')}"); st.info(L.get("intro",""))
-        stps = L.get("steps",[]); i = st.session_state.current_step
-        st.progress(i/max(len(stps),1)); st.caption(f"Step {i+1}/{len(stps)}")
-        if i < len(stps):
-            s = stps[i]
-            st.markdown(f"### {s.get('number',i+1)}. {s.get('title','')}")
-            st.write(s.get("instruction",""))
-            if s.get("tip"): st.info(f"💡 {s['tip']}")
-            if s.get("check"): st.markdown(f"**🤔 {s['check']}**")
-            c1,c2,c3 = st.columns(3)
-            with c1:
-                if st.button("✅ Next", type="primary", use_container_width=True):
-                    st.session_state.current_step += 1; award_xp(user_id,5); play_sound("click"); st.rerun()
-            with c2:
-                if st.button("🤔 Don't Understand", use_container_width=True):
-                    with st.spinner("..."): r = ai_chat([{"role":"system","content":"Rephrase simpler with metaphor. Under 80 words."},{"role":"user","content":s.get("instruction","")}])
-                    st.warning(f"🧠 {r}")
-            with c3:
-                if st.button("⏸️ Pause", use_container_width=True):
-                    st.session_state.current_lesson = None; st.session_state.current_step = 0; st.rerun()
-        else:
-            st.success("🎉 Complete! +50 XP"); award_xp(user_id,50); celebrate(); play_sound("win"); toast("🎉 +50 XP")
-            if st.button("🔄 New"):
-                st.session_state.current_lesson = None; st.session_state.current_step = 0; st.rerun()
+                    with db() as conn:
+                        conn.execute("INSERT INTO lessons (user_id,title,topic,steps,created_at) VALUES (?,?,?,?,?)",
+                                     (uid, L.get("title",topic), topic, json.dumps(L), datetime.now().isoformat()))
+                    st.session_state.lesson = L; award_xp(uid, 10); st.rerun()
+    L = st.session_state.lesson
+    if L:
+        st.markdown(f"## 📖 {L.get('title','')}")
+        st.info(L.get("intro",""))
+        for s in L.get("steps", []):
+            with st.expander(f"{s.get('n','•')}. {s.get('title','')}"): st.write(s.get("instruction",""))
 
-# ============================================================
-# ATLAS (compressed — repair + health)
-# ============================================================
-def repair_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
+# ==================== ATLAS ====================
+def atlas_view():
+    uid = st.session_state.user_id
     st.markdown('<div class="nexus-header"><h1>🔧 ATLAS</h1></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    mode = st.radio("Mode", ["🔧 Device", "💊 Health", "📖 History"], horizontal=True, label_visibility="collapsed")
-    st.divider()
-    if mode == "🔧 Device":
-        with st.form("nr"):
+    mode = st.radio("Mode", ["🔧 Device Repair", "💊 Health Guide"], horizontal=True)
+    if mode == "🔧 Device Repair":
+        with st.form("rep"):
             d = st.text_input("Device"); p = st.text_area("Problem", height=80)
-            b = st.text_input("Brand (optional)"); m = st.text_input("Model (optional)")
             if st.form_submit_button("🔧 Build Guide", type="primary", use_container_width=True):
-                if not d or not p: st.error("Fill both")
-                else:
-                    if b or m:
-                        conn = get_db(); c = conn.cursor()
-                        c.execute("INSERT INTO user_devices (user_id,device,brand,model,created_at) VALUES (?,?,?,?,?)",
-                                  (user_id,d,b,m,datetime.now().isoformat()))
-                        conn.commit(); conn.close()
-                    with st.spinner("..."): g = ai_build_repair(d,p,b,m)
+                if d and p:
+                    with st.spinner("..."):
+                        g = ai_json(f"Repair {d}: {p}. JSON: {{\"title\":\"\",\"safety\":\"\",\"tools\":[],\"steps\":[{{\"n\":1,\"title\":\"\",\"instruction\":\"\"}}]}} 5-8 steps.", 0.5)
                     if g:
-                        conn = get_db(); c = conn.cursor()
-                        c.execute("INSERT INTO repairs (user_id,device,problem,steps,created_at) VALUES (?,?,?,?,?)",
-                                  (user_id,d,p,json.dumps(g),datetime.now().isoformat()))
-                        st.session_state.current_repair = {"id":c.lastrowid,**g,"device_name":d}; st.session_state.repair_step = 0
-                        conn.commit(); conn.close(); award_xp(user_id,20); st.rerun()
-        if st.session_state.current_repair:
-            R = st.session_state.current_repair; st.divider()
+                        with db() as conn:
+                            conn.execute("INSERT INTO repairs (user_id,device,problem,steps,created_at) VALUES (?,?,?,?,?)",
+                                         (uid,d,p,json.dumps(g),datetime.now().isoformat()))
+                        st.session_state.repair = g; award_xp(uid, 20); st.rerun()
+        R = st.session_state.repair
+        if R:
             st.markdown(f"## 🔧 {R.get('title','')}")
-            if R.get("likely_cause"): st.info(f"🎯 {R['likely_cause']}")
             if R.get("safety"): st.error(f"⚠️ {R['safety']}")
-            if R.get("tools_needed"): st.markdown(f"🧰 {' • '.join(R['tools_needed'])}")
-            stps = R.get("steps",[]); i = st.session_state.repair_step
-            st.progress(i/max(len(stps),1))
-            if i < len(stps):
-                s = stps[i]; st.markdown(f"### {s.get('number',i+1)}. {s.get('title','')}")
+            if R.get("tools"): st.write("🧰 " + " · ".join(R["tools"]))
+            for s in R.get("steps", []):
+                st.markdown(f"### {s.get('n','•')}. {s.get('title','')}")
                 st.write(s.get("instruction",""))
-                if s.get("warning"): st.warning(f"⚠️ {s['warning']}")
-                if s.get("check"): st.markdown(f"**✅ {s['check']}**")
-                c1,c2 = st.columns(2)
-                with c1:
-                    if st.button("✅ Next", type="primary", use_container_width=True):
-                        st.session_state.repair_step += 1; st.rerun()
-                with c2:
-                    if st.button("⏸️ Pause", use_container_width=True):
-                        st.session_state.current_repair = None; st.session_state.repair_step = 0; st.rerun()
-            else:
-                st.success("🎉 Repair done! +30 XP"); award_xp(user_id,30); celebrate(); play_sound("win")
-                if st.button("🔄 New"):
-                    st.session_state.current_repair = None; st.session_state.repair_step = 0; st.rerun()
-    elif mode == "💊 Health":
-        with st.form("nh"):
-            ag = st.selectbox("Age group", ["Baby (0-2)","Child (3-12)","Teen (13-19)","Adult (20-59)","Elderly (60+)"])
-            al = st.text_input("Allergies (optional)"); md = st.text_input("Medications (optional)")
-            sy = st.text_area("Symptoms", height=100)
-            if st.form_submit_button("💊 Get Guidance", type="primary", use_container_width=True):
-                if not sy: st.error("Describe symptoms")
-                else:
-                    with st.spinner("..."): g = ai_health_guide(sy, ag, al, md)
-                    if g:
-                        conn = get_db(); c = conn.cursor()
-                        c.execute("INSERT INTO health_guides (user_id,symptoms,age_group,guide,created_at) VALUES (?,?,?,?,?)",
-                                  (user_id,sy,ag,json.dumps(g),datetime.now().isoformat()))
-                        conn.commit(); conn.close(); st.session_state.health_guide = g; award_xp(user_id,10); st.rerun()
-        g = st.session_state.get("health_guide")
-        if g:
-            st.divider()
-            srs = g.get("seriousness","Mild")
-            ico = {"Mild":"🟢","Moderate":"🟡","Serious":"🟠","Emergency":"🔴"}.get(srs,"🟡")
-            st.markdown(f"## {ico} {g.get('title','')}")
-            st.markdown(f"**{ico} {srs}**")
-            if g.get("safety"): st.error(f"⚠️ {g['safety']}")
-            st.subheader("🔍 Causes")
-            for x in g.get("possible_causes",[]): st.markdown(f'<div class="difference-item">• {x}</div>', unsafe_allow_html=True)
-            st.subheader("🏠 Home care")
-            for x in g.get("home_care",[]): st.markdown(f'<div class="same-item">• {x}</div>', unsafe_allow_html=True)
-            for m in g.get("medicines",[]):
-                if isinstance(m,dict):
-                    st.markdown(f'<div class="brain-card"><strong>💊 {m.get("name","")}</strong><br>Dose: {m.get("dose","")}<br><em>{m.get("note","")}</em></div>', unsafe_allow_html=True)
-            st.subheader("🚨 Hospital if:")
-            for x in g.get("warning_signs",[]): st.markdown(f'<div class="missing-item">🚨 {x}</div>', unsafe_allow_html=True)
-            if g.get("when_to_see_doctor"): st.info(f"👨‍⚕️ {g['when_to_see_doctor']}")
-            if st.button("🔄 New"): st.session_state.health_guide = None; st.rerun()
     else:
-        conn = get_db(); c = conn.cursor()
-        c.execute("SELECT * FROM repairs WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,)); rp = c.fetchall()
-        c.execute("SELECT * FROM health_guides WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user_id,)); hg = c.fetchall()
-        conn.close()
-        st.subheader("🔧 Repairs")
-        for r in rp:
-            with st.expander(f"{r['device']} — {r['created_at'][:10]}"):
-                st.write(r["problem"])
-        st.subheader("💊 Health")
-        for h in hg:
-            with st.expander(f"{h['symptoms'][:40]} — {h['created_at'][:10]}"):
-                try:
-                    g = json.loads(h["guide"]); st.write(f"**{g.get('seriousness','')}**")
-                except: pass
+        with st.form("hl"):
+            sy = st.text_area("Symptoms", height=100)
+            ag = st.selectbox("Age", ["Baby","Child","Teen","Adult","Elderly"])
+            if st.form_submit_button("💊 Guidance", type="primary", use_container_width=True):
+                if sy:
+                    with st.spinner("..."):
+                        g = ai_json(f"Health guide. Symptoms: {sy}. Age: {ag}. JSON: {{\"title\":\"\",\"seriousness\":\"Mild/Moderate/Serious\",\"causes\":[],\"home_care\":[],\"warning_signs\":[],\"see_doctor\":\"\",\"safety\":\"Not a doctor\"}}", 0.4)
+                    if g:
+                        with db() as conn:
+                            conn.execute("INSERT INTO health_guides (user_id,symptoms,guide,created_at) VALUES (?,?,?,?)",
+                                         (uid,sy,json.dumps(g),datetime.now().isoformat()))
+                        st.session_state.health = g; award_xp(uid, 10); st.rerun()
+        H = st.session_state.health
+        if H:
+            st.markdown(f"## 💊 {H.get('title','')}")
+            st.markdown(f"**{H.get('seriousness','')}**")
+            if H.get("safety"): st.error(f"⚠️ {H['safety']}")
+            st.subheader("Causes")
+            for x in H.get("causes", []): st.write(f"• {x}")
+            st.subheader("Home care")
+            for x in H.get("home_care", []): st.write(f"• {x}")
+            st.subheader("See doctor if")
+            for x in H.get("warning_signs", []): st.write(f"🚨 {x}")
 
-# ============================================================
-# NOTES
-# ============================================================
+# ==================== NOTES ====================
 def notes_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
+    uid = st.session_state.user_id
     st.markdown('<div class="nexus-header"><h1>📝 NOTES</h1></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nn"):
-        t = st.text_input("Title"); co = st.text_area("Note", height=150)
+    with st.form("nt"):
+        t = st.text_input("Title"); c = st.text_area("Note", height=140)
         if st.form_submit_button("💾 Save", type="primary", use_container_width=True):
-            if not co: st.error("Write something")
-            else:
-                with st.spinner("..."):
-                    tg = ai_suggest_tags(co); cn = ai_note_connections(user_id, co)
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO notes (user_id,title,content,tags,created_at) VALUES (?,?,?,?,?)",
-                          (user_id, t or co[:40], co, tg, datetime.now().isoformat()))
-                conn.commit(); conn.close()
-                award_xp(user_id,5); play_sound("success"); toast("✅ +5 XP")
-                if cn and "no connections" not in cn.lower(): st.info(f"🔗 {cn}")
-                st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); ns = c.fetchall(); conn.close()
+            if c:
+                with db() as conn:
+                    conn.execute("INSERT INTO notes (user_id,title,content,created_at) VALUES (?,?,?,?)",
+                                 (uid,t or c[:40],c,datetime.now().isoformat()))
+                award_xp(uid, 5); st.rerun()
+    with db() as conn:
+        ns = conn.execute("SELECT * FROM notes WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
     for n in ns:
-        with st.expander(f"📝 {n['title']} — {n['created_at'][:16]}"):
-            st.write(n["content"])
-            if n["tags"]: st.caption(f"🏷️ {n['tags']}")
+        with st.expander(f"📝 {n['title']} — {n['created_at'][:16]}"): st.write(n["content"])
 
-# ============================================================
-# JOURNAL
-# ============================================================
+# ==================== JOURNAL ====================
 def journal_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
+    uid = st.session_state.user_id
     st.markdown('<div class="nexus-header"><h1>📖 JOURNAL</h1></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nj"):
+    with st.form("jr"):
         t = st.text_input("Title")
         mo = st.selectbox("Mood", ["😊 Happy","😌 Calm","🤔 Thoughtful","😔 Sad","😤 Frustrated","😴 Tired","🔥 Motivated","😐 Neutral"])
-        co = st.text_area("Write freely...", height=200)
+        c = st.text_area("Write…", height=180)
         if st.form_submit_button("📖 Save", type="primary", use_container_width=True):
-            if not co: st.error("Write something")
-            else:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO journal (user_id,title,content,mood,created_at) VALUES (?,?,?,?,?)",
-                          (user_id, t or co[:40], co, mo, datetime.now().isoformat()))
-                conn.commit(); conn.close()
-                award_xp(user_id,8); play_sound("success"); toast("✅ +8 XP")
-                st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM journal WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); es = c.fetchall(); conn.close()
+            if c:
+                with db() as conn:
+                    conn.execute("INSERT INTO journal (user_id,title,content,mood,created_at) VALUES (?,?,?,?,?)",
+                                 (uid,t or c[:40],c,mo,datetime.now().isoformat()))
+                award_xp(uid, 8); st.rerun()
+    with db() as conn:
+        es = conn.execute("SELECT * FROM journal WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
     for e in es:
         with st.expander(f"{e['mood']} {e['title']} — {e['created_at'][:16]}"):
             st.write(e["content"])
             if st.button("🤔 AI Reflect", key=f"r_{e['id']}"):
-                with st.spinner("..."): r = ai_chat([{"role":"system","content":"Warm gentle journal companion. Reflect with empathy. Ask one gentle question. Under 60 words."},{"role":"user","content":e["content"]}])
+                with st.spinner("..."):
+                    r = ai_chat([{"role":"system","content":"Warm journal companion. Empathetic reflection + one gentle question. Under 60 words."},
+                                 {"role":"user","content":e["content"]}])
                 st.info(f"💭 {r}")
 
-# ============================================================
-# DREAMS — FULLY UPGRADED
-# ============================================================
+# ==================== DREAMS ====================
 def dreams_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🌙 DREAMS</h1><p>Your dream interpreter</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["✍️ New Dream", "🌌 My Dreams", "🔮 Patterns", "🌙 Dream Guide"])
-    
-    with tab1:
-        st.subheader("Tell NEXUS your dream")
-        guided = st.checkbox("Give me a dream prompt")
-        if guided:
-            if "dream_prompt" not in st.session_state: st.session_state.dream_prompt = ai_dream_question(user_id)
-            st.markdown(f'<div class="dream-quote">{st.session_state.dream_prompt}</div>', unsafe_allow_html=True)
-            if st.button("🔄 New prompt"): st.session_state.dream_prompt = ai_dream_question(user_id); st.rerun()
-        
-        with st.form("nd"):
-            dream = st.text_area("Your dream...", height=200, placeholder="e.g. I was flying over a lake, then suddenly fell into cold water...")
-            if st.form_submit_button("🌙 Interpret", type="primary", use_container_width=True):
-                if not dream: st.error("Describe your dream")
-                else:
-                    with st.spinner("Reading your dream..."):
-                        interp = ai_interpret_dream(dream, user_id)
-                    conn = get_db(); c = conn.cursor()
-                    symbols = ", ".join(interp.get("symbols", []))
-                    c.execute("""INSERT INTO dreams (user_id,content,ai_interpretation,dream_type,symbol,emotion,recurring,created_at)
-                        VALUES (?,?,?,?,?,?,?,?)""",
-                        (user_id, dream, json.dumps(interp), interp.get("dream_type","Symbolic"),
-                         symbols, interp.get("emotion","unknown"),
-                         1 if interp.get("is_recurring") else 0, datetime.now().isoformat()))
-                    conn.commit(); conn.close()
-                    award_xp(user_id,12); play_sound("success"); toast("🌙 +12 XP · Dream interpreted")
-                    st.rerun()
-    
-    with tab2:
-        conn = get_db(); c = conn.cursor()
-        c.execute("SELECT * FROM dreams WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); ds = c.fetchall(); conn.close()
-        if not ds: st.info("No dreams yet.")
-        for d in ds:
-            with st.expander(f"🌙 {d['created_at'][:16]} — [{d['dream_type'] or '?'}] {d['content'][:40]}..."):
-                st.write(f"**Dream:** {d['content']}")
-                try:
-                    i = json.loads(d["ai_interpretation"])
-                    st.markdown(f'<div class="brain-card"><div class="mood">🌙 {i.get("dream_type","")} · 💭 {i.get("emotion","")}</div><div class="story"><strong>Meaning:</strong> {i.get("meaning","")}</div></div>', unsafe_allow_html=True)
-                    if i.get("symbols"):
-                        sym_html = "".join([f'<span class="dream-symbol">{s}</span>' for s in i["symbols"]])
-                        st.markdown(f"**Symbols:** {sym_html}", unsafe_allow_html=True)
-                    if i.get("life_connection"):
-                        st.markdown(f"🔗 *{i['life_connection']}*")
-                    st.markdown(f'<div class="echo-says">💫 <em>{i.get("message","")}</em></div>', unsafe_allow_html=True)
-                    if i.get("action"): st.info(f"🎯 **Today:** {i['action']}")
-                except: st.write(d["ai_interpretation"])
-    
-    with tab3:
-        st.subheader("🔮 Your Dream Patterns")
-        insight = ai_dream_insight(user_id)
-        if insight:
-            st.markdown(f'<div class="brain-card"><div class="story">📖 {insight.get("pattern","")}</div><div class="pattern">✨ {insight.get("advice","")}</div></div>', unsafe_allow_html=True)
-        else:
-            st.info("Write at least 3 dreams for NEXUS to spot patterns.")
-        conn = get_db(); c = conn.cursor()
-        c.execute("SELECT dream_type, COUNT(*) as x FROM dreams WHERE user_id = ? GROUP BY dream_type ORDER BY x DESC", (user_id,))
-        dts = c.fetchall()
-        c.execute("SELECT emotion, COUNT(*) as x FROM dreams WHERE user_id = ? GROUP BY emotion ORDER BY x DESC", (user_id,))
-        ems = c.fetchall()
-        conn.close()
-        if dts:
-            st.subheader("Dream types")
-            for t in dts: st.write(f"• **{t['dream_type'] or '?'}** — {t['x']}")
-        if ems:
-            st.subheader("Emotions")
-            for e in ems: st.write(f"• **{e['emotion'] or '?'}** — {e['x']}")
-    
-    with tab4:
-        st.subheader("🌙 Common Dream Symbols")
-        st.caption("The meanings NEXUS recognizes")
-        cols = st.columns(3)
-        for i, (sym, meaning) in enumerate(DREAM_SYMBOLS.items()):
-            with cols[i % 3]:
-                st.markdown(f'<div class="suggestion"><span class="icon">{meaning.split()[0]}</span><span class="text"><strong>{sym.capitalize()}:</strong> {" ".join(meaning.split()[1:])}</span></div>', unsafe_allow_html=True)
-        st.divider()
-        st.subheader("🛌 Before Sleep")
-        st.markdown("""
-        - **Write your intention** — what would you like to dream about?
-        - **Journal one line** — what's on your mind?
-        - **Hydrate** — dreams form better when rested
-        - **Set your phone down** 30 min before sleep
-        - **When you wake**, write your dream before touching anything else
-        """)
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🌙 DREAMS</h1></div>', unsafe_allow_html=True)
+    with st.form("dr"):
+        d = st.text_area("Describe your dream…", height=180)
+        if st.form_submit_button("🌙 Interpret", type="primary", use_container_width=True):
+            if d:
+                with st.spinner("Reading…"): it = ai_dream(d, uid)
+                with db() as conn:
+                    conn.execute("INSERT INTO dreams (user_id,content,interpretation,dream_type,emotion,created_at) VALUES (?,?,?,?,?,?)",
+                                 (uid,d,json.dumps(it),it.get("dream_type","Symbolic"),it.get("emotion","unknown"),datetime.now().isoformat()))
+                award_xp(uid, 12); st.rerun()
+    with db() as conn:
+        ds = conn.execute("SELECT * FROM dreams WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
+    for d in ds:
+        with st.expander(f"🌙 {d['created_at'][:16]} — {d['content'][:40]}…"):
+            st.write(f"**Dream:** {d['content']}")
+            try:
+                i = json.loads(d["interpretation"])
+                st.markdown(f'<div class="brain-card"><div class="mood">🌙 {i.get("dream_type","")} · 💭 {i.get("emotion","")}</div>'
+                            f'<div class="story">{i.get("meaning","")}</div>'
+                            f'<div class="story">✨ {i.get("message","")}</div>'
+                            f'<div class="story">🎯 {i.get("action","")}</div></div>', unsafe_allow_html=True)
+                if i.get("symbols"): st.write("**Symbols:** " + ", ".join(i["symbols"]))
+            except: st.write(d["interpretation"])
 
-# ============================================================
-# CAPSULE
-# ============================================================
+# ==================== CAPSULE ====================
 def capsule_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>⏳ CAPSULE</h1><p>Message your future self</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nc"):
-        m = st.text_area("Message to future you...", height=200, placeholder="Dear future me...")
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>⏳ CAPSULE</h1></div>', unsafe_allow_html=True)
+    with st.form("cp"):
+        m = st.text_area("Message to future you…", height=160)
         u = st.date_input("Open on", value=datetime.now().date() + timedelta(days=365))
         if st.form_submit_button("🔒 Seal", type="primary", use_container_width=True):
-            if not m: st.error("Write a message")
-            else:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO time_capsules (user_id,message,unlock_date,opened,created_at) VALUES (?,?,?,0,?)",
-                          (user_id,m,str(u),datetime.now().isoformat()))
-                conn.commit(); conn.close()
-                award_xp(user_id,25); celebrate(); play_sound("win"); toast("⏳ Sealed! +25 XP")
-                st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM time_capsules WHERE user_id = ? ORDER BY unlock_date ASC", (user_id,)); cs = c.fetchall(); conn.close()
-    if not cs: st.info("No capsules yet.")
-    for cap in cs:
+            if m:
+                with db() as conn:
+                    conn.execute("INSERT INTO capsules (user_id,message,unlock_date,created_at) VALUES (?,?,?,?)",
+                                 (uid,m,str(u),datetime.now().isoformat()))
+                award_xp(uid, 25); celebrate(); toast("⏳ +25 XP"); st.rerun()
+    with db() as conn:
+        cs = conn.execute("SELECT * FROM capsules WHERE user_id=? ORDER BY unlock_date", (uid,)).fetchall()
+    for c in cs:
         try:
-            ud = datetime.strptime(cap["unlock_date"], "%Y-%m-%d").date()
+            ud = datetime.strptime(c["unlock_date"], "%Y-%m-%d").date()
             dl = (ud - datetime.now().date()).days
         except: dl = 999
-        if dl <= 0 and not cap["opened"]:
-            with st.container(border=True):
-                st.markdown("### 🔓 A capsule is ready!")
-                st.write(f"**You wrote:** {cap['message']}")
-                if st.button("💌 Read reply from future you", key=f"o_{cap['id']}"):
-                    with st.spinner("..."): r = ai_time_capsule_note(user_id, cap["message"])
-                    conn = get_db(); c = conn.cursor()
-                    c.execute("UPDATE time_capsules SET opened = 1 WHERE id = ?", (cap["id"],))
-                    conn.commit(); conn.close()
-                    st.markdown(f'<div class="brain-card"><div class="story">💌 {r}</div></div>', unsafe_allow_html=True)
-        else:
-            with st.expander(f"🔒 opens in {dl} days ({cap['unlock_date']})"):
-                st.caption("Still sealed.")
-
-# ============================================================
-# ⚔️ ARENA — Competitive Game
-# ============================================================
-def arena_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>⚔️ ARENA</h1><p>A game deeper than Chess</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    
-    st.markdown("""
-    ### 🎯 Rules of Arena
-    
-    **Board:** 6×6 · **Pieces per player:** 6
-    
-    | Piece | Icon | Movement | Captures |
-    | :--- | :--- | :--- | :--- |
-    | 🛡️ Shield | 2 per player | 1 step any direction | Never captures — blocks |
-    | ⚔️ Spear | 2 per player | 1 step orthogonally | Orthogonally |
-    | 🧙 Sage | 1 per player | up to 3 diagonally | Diagonally |
-    | 👑 King | 1 per player | 1 step any direction | Any adjacent |
-    
-    **Victory:**
-    - Capture the enemy King, OR
-    - Hold all 4 center squares for 3 consecutive turns
-    """)
-    st.divider()
-    
-    # Setup
-    if st.session_state.arena_board is None:
-        st.subheader("⚙️ New Match")
-        c1, c2 = st.columns(2)
-        with c1:
-            diff = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=1)
-            st.session_state.arena_difficulty = diff
-        with c2:
-            if st.button("⚔️ Start Match", type="primary", use_container_width=True):
-                st.session_state.arena_board = new_arena_board()
-                st.session_state.arena_turn = 1
-                st.session_state.arena_move_count = 0
-                st.session_state.arena_center_turns = 0
-                play_sound("enter")
+        if dl <= 0 and not c["opened"]:
+            st.success(f"🔓 Ready: {c['message']}")
+            if st.button("Mark opened", key=f"o_{c['id']}"):
+                with db() as conn:
+                    conn.execute("UPDATE capsules SET opened=1 WHERE id=?", (c["id"],))
                 st.rerun()
-        return
-    
-    board = st.session_state.arena_board
-    turn = st.session_state.arena_turn
-    
-    # Center control tracker
-    cc = arena_center_control(board)
-    if cc == 1: st.session_state.arena_center_turns += 1
-    elif cc == 2: st.session_state.arena_center_turns -= 1
-    else: st.session_state.arena_center_turns = 0
-    if st.session_state.arena_center_turns >= 3:
-        win_arena(user_id, "win"); st.session_state.arena_last_result = "You held center!"; return
-    if st.session_state.arena_center_turns <= -3:
-        win_arena(user_id, "loss"); st.session_state.arena_last_result = "NEXUS held center!"; return
-    
-    st.markdown(f"**Turn:** {'🟦 Your move' if turn==1 else '🟥 NEXUS thinking...'} · **Difficulty:** {st.session_state.arena_difficulty}")
-    st.caption(f"Move #{st.session_state.arena_move_count + 1} · Center control: {'You' if cc==1 else 'NEXUS' if cc==2 else 'contested'}")
-    
-    # Board HTML
-    html = '<div class="arena-board">'
-    for r in range(ARENA_SIZE):
-        html += '<div>'
-        for c in range(ARENA_SIZE):
-            piece = board[r][c]
-            if piece:
-                cls = "arena-cell p1" if piece["p"] == 1 else "arena-cell p2"
-                html += f'<div class="{cls}">{PIECE_ICONS[piece["t"]]}</div>'
-            else:
-                html += '<div class="arena-cell empty"></div>'
-        html += '</div>'
-    html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
-    
-    # Move selection
-    if turn == 1:
-        st.subheader("Your move")
-        my_pieces = []
-        for r in range(ARENA_SIZE):
-            for c in range(ARENA_SIZE):
-                p = board[r][c]
-                if p and p["p"] == 1:
-                    ms = arena_moves(board, r, c)
-                    if ms: my_pieces.append((r, c, p["t"], ms))
-        
-        if not my_pieces:
-            win_arena(user_id, "loss"); st.session_state.arena_last_result = "No moves left."; return
-        
-        options = [f"{PIECE_ICONS[t]} at {chr(65+c)}{r+1} → {len(ms)} moves" for r,c,t,ms in my_pieces]
-        idx = st.selectbox("Choose piece", range(len(my_pieces)), format_func=lambda i: options[i])
-        fr, fc, ft, ms = my_pieces[idx]
-        
-        dest_options = [f"{chr(65+tc)}{tr+1}" for tr,tc in ms]
-        dest_idx = st.selectbox("Move to", range(len(ms)), format_func=lambda i: dest_options[i])
-        tr, tc = ms[dest_idx]
-        
-        if st.button("✅ Confirm Move", type="primary", use_container_width=True):
-            new_board, captured = arena_apply(board, fr, fc, tr, tc)
-            st.session_state.arena_board = new_board
-            st.session_state.arena_move_count += 1
-            play_sound("click")
-            if captured and captured["t"] == "K" and captured["p"] == 2:
-                win_arena(user_id, "win"); st.session_state.arena_last_result = "You captured NEXUS's King!"; return
-            st.session_state.arena_turn = 2
-            st.rerun()
-    else:
-        st.subheader("NEXUS is thinking...")
-        with st.spinner(""):
-            time.sleep(0.5)
-            mv = arena_ai_move(board, st.session_state.arena_difficulty)
-        if not mv:
-            win_arena(user_id, "win"); st.session_state.arena_last_result = "NEXUS has no moves!"; return
-        fr, fc, tr, tc = mv
-        new_board, captured = arena_apply(board, fr, fc, tr, tc)
-        st.session_state.arena_board = new_board
-        st.session_state.arena_move_count += 1
-        if captured and captured["t"] == "K" and captured["p"] == 1:
-            win_arena(user_id, "loss"); st.session_state.arena_last_result = "NEXUS captured your King!"; return
-        st.session_state.arena_turn = 1
-        st.rerun()
-    
-    st.divider()
-    if st.button("🚪 Resign / Leave Match", use_container_width=True):
-        win_arena(user_id, "loss")
-        st.session_state.arena_last_result = "You resigned."
-        st.rerun()
+        else:
+            st.caption(f"🔒 opens in {dl} days ({c['unlock_date']})")
 
-def win_arena(user_id, result):
-    conn = get_db(); c = conn.cursor()
-    c.execute("INSERT INTO arena_matches (user_id,result,moves,difficulty,points,created_at) VALUES (?,?,?,?,?,?)",
-              (user_id, result, st.session_state.arena_move_count, st.session_state.arena_difficulty,
-               30 if result == "win" else 0, datetime.now().isoformat()))
-    if result == "win":
-        c.execute("UPDATE users SET arena_wins = arena_wins + 1 WHERE id = ?", (user_id,))
-    else:
-        c.execute("UPDATE users SET arena_losses = arena_losses + 1 WHERE id = ?", (user_id,))
-    conn.commit(); conn.close()
-    if result == "win":
-        award_xp(user_id, 30); celebrate(); play_sound("win"); toast("🏆 Arena victory! +30 XP")
-    else:
-        play_sound("lose")
-    st.session_state.arena_board = None
-    st.session_state.arena_turn = 1
-    st.session_state.arena_move_count = 0
-    st.session_state.arena_center_turns = 0
-    st.rerun()
-
-# ============================================================
-# HABITS
-# ============================================================
+# ==================== HABITS ====================
 def habits_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>✅ HABITS</h1><p>Build streaks</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nh"):
-        n = st.text_input("Habit name")
-        i = st.text_input("Emoji icon", value="✅")
-        if st.form_submit_button("➕ Add", type="primary", use_container_width=True):
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>✅ HABITS</h1></div>', unsafe_allow_html=True)
+    with st.form("hb"):
+        n = st.text_input("Habit"); i = st.text_input("Emoji", value="✅")
+        if st.form_submit_button("➕ Add", use_container_width=True):
             if n:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO habits (user_id,name,icon,created_at) VALUES (?,?,?,?)", (user_id,n,i,datetime.now().isoformat()))
-                conn.commit(); conn.close(); award_xp(user_id,3); play_sound("success"); st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM habits WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); hs = c.fetchall(); conn.close()
+                with db() as conn:
+                    conn.execute("INSERT INTO habits (user_id,name,icon,created_at) VALUES (?,?,?,?)",
+                                 (uid,n,i,datetime.now().isoformat()))
+                award_xp(uid, 3); st.rerun()
     today = datetime.now().date().isoformat()
+    with db() as conn:
+        hs = conn.execute("SELECT * FROM habits WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
     for h in hs:
-        done = h["last_done"] == today
-        with st.container(border=True):
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                st.markdown(f"### {h['icon']} {h['name']}")
-                st.caption(f"🔥 Streak: {h['streak']} days")
-            with c2:
-                if done:
-                    st.success("✅ Done today")
-                else:
-                    if st.button("Mark done", key=f"hd_{h['id']}", use_container_width=True):
-                        conn = get_db(); c = conn.cursor()
-                        yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
-                        new_streak = (h["streak"] or 0) + 1 if h["last_done"] == yesterday else 1
-                        c.execute("UPDATE habits SET last_done = ?, streak = ? WHERE id = ?", (today, new_streak, h["id"]))
-                        conn.commit(); conn.close()
-                        award_xp(user_id, 5); play_sound("success"); toast("✅ +5 XP")
-                        st.rerun()
+        c1, c2 = st.columns([3,1])
+        with c1: st.markdown(f"**{h['icon']} {h['name']}** — 🔥 {h['streak']} days")
+        with c2:
+            if h["last_done"] == today: st.success("✅")
+            else:
+                if st.button("Mark", key=f"hd_{h['id']}"):
+                    y = (datetime.now()-timedelta(days=1)).date().isoformat()
+                    ns = (h["streak"] or 0)+1 if h["last_done"]==y else 1
+                    with db() as conn:
+                        conn.execute("UPDATE habits SET last_done=?,streak=? WHERE id=?", (today,ns,h["id"]))
+                    award_xp(uid, 5); st.rerun()
 
-# ============================================================
-# FOCUS (Pomodoro)
-# ============================================================
+# ==================== FOCUS ====================
 def focus_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🎯 FOCUS</h1><p>Pomodoro timer</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    st.subheader("Start a focus session")
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🎯 FOCUS</h1></div>', unsafe_allow_html=True)
     task = st.text_input("What are you focusing on?")
-    dur = st.select_slider("Minutes", options=[5, 10, 15, 25, 30, 45, 60], value=25)
-    if st.button("▶️ Start Focus", type="primary", use_container_width=True):
+    dur = st.select_slider("Minutes", options=[5,10,15,25,30,45,60], value=25)
+    if st.button("▶️ Start", type="primary", use_container_width=True):
         if not task: st.error("Name your task")
         else:
-            st.session_state.focus_task = task
             st.session_state.focus_end = time.time() + dur*60
-            st.session_state.focus_duration = dur
+            st.session_state.focus_task = task; st.session_state.focus_min = dur
             st.rerun()
-    if st.session_state.get("focus_end"):
-        remaining = int(st.session_state.focus_end - time.time())
-        if remaining > 0:
-            mins, secs = divmod(remaining, 60)
-            st.markdown(f'<div class="brain-card"><div class="mood">⏱️ {mins:02d}:{secs:02d}</div><div class="story">Focusing on: <strong>{st.session_state.focus_task}</strong></div></div>', unsafe_allow_html=True)
-            st.caption("Keep this tab open. Refresh to update timer.")
-            if st.button("🔄 Refresh timer"): st.rerun()
+    if st.session_state.focus_end:
+        rem = int(st.session_state.focus_end - time.time())
+        if rem > 0:
+            m, s = divmod(rem, 60)
+            st.markdown(f'<div class="brain-card"><div class="mood">⏱️ {m:02d}:{s:02d}</div>'
+                        f'<div class="story">Focus: <strong>{st.session_state.focus_task}</strong></div></div>',
+                        unsafe_allow_html=True)
+            if st.button("🔄 Refresh"): st.rerun()
         else:
-            st.success(f"🎉 Focus session complete! +{st.session_state.focus_duration} XP")
-            conn = get_db(); c = conn.cursor()
-            c.execute("INSERT INTO focus_sessions (user_id,duration,task,completed,created_at) VALUES (?,?,?,1,?)",
-                      (user_id, st.session_state.focus_duration, st.session_state.focus_task, datetime.now().isoformat()))
-            conn.commit(); conn.close()
-            award_xp(user_id, st.session_state.focus_duration)
-            celebrate(); play_sound("win")
-            st.session_state.focus_end = None
-            st.session_state.focus_task = ""
-            if st.button("🔄 Another session"): st.rerun()
+            with db() as conn:
+                conn.execute("INSERT INTO focus (user_id,duration,task,created_at) VALUES (?,?,?,?)",
+                             (uid, st.session_state.focus_min, st.session_state.focus_task, datetime.now().isoformat()))
+            award_xp(uid, st.session_state.focus_min)
+            celebrate(); st.session_state.focus_end = None; st.rerun()
 
-# ============================================================
-# GRATITUDE
-# ============================================================
+# ==================== MOOD ====================
+def mood_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>😊 MOOD</h1></div>', unsafe_allow_html=True)
+    with st.form("md"):
+        mo = st.selectbox("Mood", ["😊 Happy","😌 Calm","🤔 Thoughtful","😔 Sad","😤 Frustrated","😴 Tired","🔥 Motivated","😐 Neutral"])
+        en = st.slider("Energy", 1, 10, 5); note = st.text_input("Note")
+        if st.form_submit_button("Log", type="primary", use_container_width=True):
+            with db() as conn:
+                conn.execute("INSERT INTO moods (user_id,mood,energy,note,created_at) VALUES (?,?,?,?,?)",
+                             (uid,mo,en,note,datetime.now().isoformat()))
+            award_xp(uid, 3); st.rerun()
+    with db() as conn:
+        ms = conn.execute("SELECT * FROM moods WHERE user_id=? ORDER BY created_at DESC LIMIT 30", (uid,)).fetchall()
+    for m in ms:
+        st.markdown(f'<div class="suggestion"><span class="icon">{m["mood"].split()[0]}</span>'
+                    f'<span class="text"><strong>{m["created_at"][:16]}</strong> — Energy {m["energy"]}/10 {m["note"] or ""}</span></div>',
+                    unsafe_allow_html=True)
+
+# ==================== GRATITUDE ====================
 def gratitude_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🙏 GRATITUDE</h1><p>Three things today</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("ng"):
-        items = st.text_area("Three things you're grateful for (one per line)", height=150)
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🙏 GRATITUDE</h1></div>', unsafe_allow_html=True)
+    with st.form("gr"):
+        items = st.text_area("Three things you're grateful for", height=140)
         if st.form_submit_button("💾 Save", type="primary", use_container_width=True):
             if items.strip():
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO gratitude (user_id,items,created_at) VALUES (?,?,?)", (user_id,items,datetime.now().isoformat()))
-                conn.commit(); conn.close()
-                award_xp(user_id, 5); play_sound("success"); toast("🙏 +5 XP")
-                st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM gratitude WHERE user_id = ? ORDER BY created_at DESC LIMIT 30", (user_id,)); gs = c.fetchall(); conn.close()
+                with db() as conn:
+                    conn.execute("INSERT INTO gratitude (user_id,items,created_at) VALUES (?,?,?)",
+                                 (uid,items,datetime.now().isoformat()))
+                award_xp(uid, 5); st.rerun()
+    with db() as conn:
+        gs = conn.execute("SELECT * FROM gratitude WHERE user_id=? ORDER BY created_at DESC LIMIT 30", (uid,)).fetchall()
     for g in gs:
-        with st.expander(f"🙏 {g['created_at'][:16]}"):
-            st.write(g["items"])
+        with st.expander(f"🙏 {g['created_at'][:16]}"): st.write(g["items"])
 
-# ============================================================
-# WINS
-# ============================================================
+# ==================== WINS ====================
 def wins_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🏆 WINS</h1><p>Track every small victory</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nw"):
-        d = st.text_input("What did you win today?")
-        sz = st.selectbox("Size", ["tiny", "small", "medium", "big", "massive"])
-        if st.form_submit_button("➕ Log Win", type="primary", use_container_width=True):
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🏆 WINS</h1></div>', unsafe_allow_html=True)
+    with st.form("wn"):
+        d = st.text_input("What did you win?")
+        sz = st.selectbox("Size", ["tiny","small","medium","big","massive"])
+        if st.form_submit_button("➕ Log", type="primary", use_container_width=True):
             if d:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO wins_log (user_id,description,size,created_at) VALUES (?,?,?,?)",
-                          (user_id,d,sz,datetime.now().isoformat()))
-                conn.commit(); conn.close()
-                award_xp(user_id, 4); play_sound("win"); toast("🏆 +4 XP")
-                st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM wins_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,)); ws = c.fetchall(); conn.close()
+                with db() as conn:
+                    conn.execute("INSERT INTO wins (user_id,description,size,created_at) VALUES (?,?,?,?)",
+                                 (uid,d,sz,datetime.now().isoformat()))
+                award_xp(uid, 4); st.rerun()
+    with db() as conn:
+        ws = conn.execute("SELECT * FROM wins WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (uid,)).fetchall()
+    emoji = {"tiny":"🐣","small":"✨","medium":"🌟","big":"🏆","massive":"👑"}
     for w in ws:
-        emoji = {"tiny":"🐣","small":"✨","medium":"🌟","big":"🏆","massive":"👑"}.get(w["size"],"🏆")
-        st.markdown(f'<div class="suggestion"><span class="icon">{emoji}</span><span class="text"><strong>{w["created_at"][:10]}</strong> — {w["description"]}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="suggestion"><span class="icon">{emoji.get(w["size"],"🏆")}</span>'
+                    f'<span class="text"><strong>{w["created_at"][:10]}</strong> — {w["description"]}</span></div>',
+                    unsafe_allow_html=True)
 
-# ============================================================
-# READING
-# ============================================================
+# ==================== READING ====================
 def reading_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>📚 READING</h1><p>Your book list</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nr"):
-        t = st.text_input("Title"); l = st.text_input("Link (optional)")
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>📚 READING</h1></div>', unsafe_allow_html=True)
+    with st.form("rd"):
+        t = st.text_input("Title")
         s = st.selectbox("Status", ["Want to read","Reading","Finished"])
-        if st.form_submit_button("➕ Add", type="primary", use_container_width=True):
+        if st.form_submit_button("➕ Add", use_container_width=True):
             if t:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO reading_list (user_id,title,link,status,created_at) VALUES (?,?,?,?,?)",
-                          (user_id,t,l,s,datetime.now().isoformat()))
-                conn.commit(); conn.close(); award_xp(user_id,3); st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM reading_list WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); rs = c.fetchall(); conn.close()
+                with db() as conn:
+                    conn.execute("INSERT INTO reading (user_id,title,status,created_at) VALUES (?,?,?,?)",
+                                 (uid,t,s,datetime.now().isoformat()))
+                award_xp(uid, 3); st.rerun()
+    with db() as conn:
+        rs = conn.execute("SELECT * FROM reading WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
     for r in rs:
-        st.markdown(f'<div class="suggestion"><span class="icon">📖</span><span class="text"><strong>{r["title"]}</strong> — {r["status"]}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="suggestion"><span class="icon">📖</span>'
+                    f'<span class="text"><strong>{r["title"]}</strong> — {r["status"]}</span></div>',
+                    unsafe_allow_html=True)
 
-# ============================================================
-# QUOTES
-# ============================================================
+# ==================== QUOTES ====================
 def quotes_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>💬 QUOTES</h1><p>Words that move you</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nq"):
-        q = st.text_area("Quote", height=80)
-        a = st.text_input("Author (optional)")
-        if st.form_submit_button("💾 Save", type="primary", use_container_width=True):
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>💬 QUOTES</h1></div>', unsafe_allow_html=True)
+    with st.form("qt"):
+        q = st.text_area("Quote", height=80); a = st.text_input("Author")
+        if st.form_submit_button("💾 Save", use_container_width=True):
             if q:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO quotes_saved (user_id,quote,author,created_at) VALUES (?,?,?,?)",
-                          (user_id,q,a,datetime.now().isoformat()))
-                conn.commit(); conn.close(); award_xp(user_id,3); st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM quotes_saved WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); qs = c.fetchall(); conn.close()
+                with db() as conn:
+                    conn.execute("INSERT INTO quotes (user_id,quote,author,created_at) VALUES (?,?,?,?)",
+                                 (uid,q,a,datetime.now().isoformat()))
+                award_xp(uid, 3); st.rerun()
+    with db() as conn:
+        qs = conn.execute("SELECT * FROM quotes WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
     for q in qs:
-        st.markdown(f'<div class="dream-quote">"{q["quote"]}"<div style="font-size:13px;margin-top:8px;opacity:0.6;">— {q["author"] or "Unknown"}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="brain-card" style="text-align:center;"><div class="story">"{q["quote"]}"</div>'
+                    f'<div style="font-size:13px;opacity:0.6;">— {q["author"] or "Unknown"}</div></div>',
+                    unsafe_allow_html=True)
 
-# ============================================================
-# FLASH CARDS
-# ============================================================
+# ==================== FLASH CARDS ====================
 def flash_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🃏 FLASH</h1><p>Study with cards</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nf"):
-        q = st.text_input("Question"); a = st.text_input("Answer"); d = st.text_input("Deck", value="General")
-        if st.form_submit_button("➕ Add Card", type="primary", use_container_width=True):
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🃏 FLASH CARDS</h1></div>', unsafe_allow_html=True)
+    with st.form("fc"):
+        q = st.text_input("Question"); a = st.text_input("Answer")
+        if st.form_submit_button("➕ Add", use_container_width=True):
             if q and a:
-                conn = get_db(); c = conn.cursor()
-                c.execute("INSERT INTO flash_cards (user_id,question,answer,deck,created_at) VALUES (?,?,?,?,?)",
-                          (user_id,q,a,d,datetime.now().isoformat()))
-                conn.commit(); conn.close(); award_xp(user_id,3); st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM flash_cards WHERE user_id = ? ORDER BY created_at DESC", (user_id,)); cs = c.fetchall(); conn.close()
-    if not cs: st.info("No cards yet.")
-    for card in cs:
-        with st.expander(f"🃏 [{card['deck']}] {card['question']}"):
-            if st.button("👁️ Reveal", key=f"rv_{card['id']}"):
-                st.success(card["answer"])
+                with db() as conn:
+                    conn.execute("INSERT INTO flash (user_id,question,answer,created_at) VALUES (?,?,?,?)",
+                                 (uid,q,a,datetime.now().isoformat()))
+                award_xp(uid, 3); st.rerun()
+    with db() as conn:
+        cs = conn.execute("SELECT * FROM flash WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
+    for c in cs:
+        with st.expander(f"🃏 {c['question']}"):
+            if st.button("👁️ Reveal", key=f"rv_{c['id']}"): st.success(c["answer"])
 
-# ============================================================
-# BREATHING
-# ============================================================
-def breathing_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🫁 BREATHE</h1><p>Calm the mind</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    st.markdown("""
-    ### 4-7-8 Breathing
-    
-    1. **Inhale** through nose for **4 seconds**
-    2. **Hold** for **7 seconds**
-    3. **Exhale** slowly through mouth for **8 seconds**
-    4. Repeat 4 times
-    """)
+# ==================== BREATHE ====================
+def breathe_view():
+    st.markdown('<div class="nexus-header"><h1>🫁 BREATHE</h1></div>', unsafe_allow_html=True)
+    st.markdown("### 4-7-8 Breathing — Inhale 4s · Hold 7s · Exhale 8s")
     st.components.v1.html("""
-    <div style="text-align:center;padding:40px;">
-        <div id="breath-circle" style="width:200px;height:200px;margin:auto;border-radius:50%;
-            background: linear-gradient(135deg,#667eea,#f093fb);
-            transition:all 4s ease; display:flex; align-items:center; justify-content:center;
-            color:white;font-size:20px;font-weight:700;">
-            Start
-        </div>
-        <button onclick="startBreath()" style="margin-top:20px;padding:12px 24px;border-radius:12px;
-            border:none;background:#667eea;color:white;font-weight:700;cursor:pointer;">
-            Begin
-        </button>
+    <div style="text-align:center;padding:20px;">
+        <div id="bc" style="width:180px;height:180px;margin:auto;border-radius:50%;
+            background: linear-gradient(135deg,#667eea,#f093fb); display:flex; align-items:center; justify-content:center;
+            color:white;font-size:20px;font-weight:700; transition: all 4s ease;">Ready</div>
+        <button onclick="go()" style="margin-top:20px;padding:12px 28px;border-radius:12px;border:none;
+            background:linear-gradient(135deg,#667eea,#f093fb);color:white;font-weight:700;cursor:pointer;font-size:15px;">Begin</button>
     </div>
     <script>
-    function startBreath() {
-        const c = document.getElementById('breath-circle');
-        let phase = 0;
-        const phases = [
-            {text:'Inhale',dur:4000,scale:1.4},
-            {text:'Hold',dur:7000,scale:1.4},
-            {text:'Exhale',dur:8000,scale:1.0}
-        ];
-        function next() {
-            if (phase >= 3) { c.textContent = 'Done 🧘'; return; }
-            const p = phases[phase];
-            c.textContent = p.text;
-            c.style.transition = `all ${p.dur}ms ease`;
-            c.style.transform = `scale(${p.scale})`;
-            phase++;
-            setTimeout(next, p.dur);
+    function go(){
+        const c = document.getElementById('bc');
+        const phases = [{t:'Inhale',d:4000,s:1.4},{t:'Hold',d:7000,s:1.4},{t:'Exhale',d:8000,s:1.0}];
+        let p = 0;
+        function step(){
+            if(p >= 3){ c.textContent='Done 🧘'; c.style.transform='scale(1)'; return; }
+            const ph = phases[p];
+            c.textContent = ph.t;
+            c.style.transition = `all ${ph.d}ms ease`;
+            c.style.transform = `scale(${ph.s})`;
+            p++;
+            setTimeout(step, ph.d);
         }
-        next();
+        step();
     }
     </script>
-    """, height=320)
-    if st.button("✅ Log a 4-cycle session", type="primary", use_container_width=True):
-        conn = get_db(); c = conn.cursor()
-        c.execute("INSERT INTO breathing_log (user_id,cycles,minutes,created_at) VALUES (?,?,?,?)",
-                  (user_id,4,2,datetime.now().isoformat()))
-        conn.commit(); conn.close()
-        award_xp(user_id, 5); play_sound("success"); toast("🫁 +5 XP")
+    """, height=280)
+
+# ==================== MEDITATE ====================
+def meditate_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🧘 MEDITATE</h1></div>', unsafe_allow_html=True)
+    with st.form("mt"):
+        m = st.slider("Minutes", 1, 60, 10); n = st.text_input("Note (optional)")
+        if st.form_submit_button("🧘 Log session", type="primary", use_container_width=True):
+            with db() as conn:
+                conn.execute("INSERT INTO meditation (user_id,minutes,note,created_at) VALUES (?,?,?,?)",
+                             (uid,m,n,datetime.now().isoformat()))
+            award_xp(uid, m); celebrate(); st.rerun()
+    with db() as conn:
+        ms = conn.execute("SELECT * FROM meditation WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (uid,)).fetchall()
+    for m in ms:
+        st.markdown(f'<div class="suggestion"><span class="icon">🧘</span>'
+                    f'<span class="text">{m["minutes"]} min — {m["created_at"][:10]} {m["note"] or ""}</span></div>',
+                    unsafe_allow_html=True)
+
+# ==================== GOALS ====================
+def goals_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🎯 GOALS</h1></div>', unsafe_allow_html=True)
+    with st.form("gl"):
+        o = st.text_input("Objective")
+        d = st.date_input("Due date", value=datetime.now().date() + timedelta(days=30))
+        if st.form_submit_button("➕ Add", use_container_width=True):
+            if o:
+                with db() as conn:
+                    conn.execute("INSERT INTO goals (user_id,objective,progress,due_date,created_at) VALUES (?,?,?,?,?)",
+                                 (uid,o,0,str(d),datetime.now().isoformat()))
+                award_xp(uid, 5); st.rerun()
+    with db() as conn:
+        gs = conn.execute("SELECT * FROM goals WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
+    for g in gs:
+        with st.container(border=True):
+            st.markdown(f"### 🎯 {g['objective']}")
+            st.caption(f"Due: {g['due_date']}")
+            p = st.slider("Progress %", 0, 100, g["progress"] or 0, key=f"pr_{g['id']}")
+            if p != (g["progress"] or 0):
+                with db() as conn:
+                    conn.execute("UPDATE goals SET progress=? WHERE id=?", (p,g["id"]))
+                st.rerun()
+
+# ==================== COACH ====================
+def coach_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🤖 AI COACH</h1><p>Weekly check-in, guidance, accountability</p></div>', unsafe_allow_html=True)
+    with db() as conn:
+        logs = conn.execute("SELECT * FROM coach WHERE user_id=? ORDER BY id", (uid,)).fetchall()
+    for m in logs:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    p = st.chat_input("Talk to your coach…")
+    if p:
+        with db() as conn:
+            conn.execute("INSERT INTO coach (user_id,role,content,created_at) VALUES (?,?,?,?)",
+                         (uid,"user",p,datetime.now().isoformat()))
+        with st.chat_message("user"): st.write(p)
+        with st.chat_message("assistant"):
+            with st.spinner("Coach listening…"):
+                with db() as conn:
+                    j = [x["mood"] for x in conn.execute("SELECT mood FROM journal WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()]
+                    w = [x["description"] for x in conn.execute("SELECT description FROM wins WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()]
+                    u = conn.execute("SELECT xp,streak FROM users WHERE id=?", (uid,)).fetchone()
+                ctx = f"Moods: {', '.join(j) or 'none'}. Wins: {', '.join(w) or 'none'}. XP:{u['xp']} Streak:{u['streak']}."
+                rep = ai_chat([{"role":"system","content":f"You are a warm, direct life coach. Ask 1 short follow-up question. {ctx}"},
+                               {"role":"user","content":p}], 0.75)
+            st.write(rep)
+        award_xp(uid, 3)
+        with db() as conn:
+            conn.execute("INSERT INTO coach (user_id,role,content,created_at) VALUES (?,?,?,?)",
+                         (uid,"assistant",rep,datetime.now().isoformat()))
         st.rerun()
 
-# ============================================================
-# MOOD TRACKER
-# ============================================================
-def mood_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>😊 MOOD</h1><p>Track how you feel</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    with st.form("nm"):
-        mo = st.selectbox("Mood", ["😊 Happy","😌 Calm","🤔 Thoughtful","😔 Sad","😤 Frustrated","😴 Tired","🔥 Motivated","😐 Neutral"])
-        en = st.slider("Energy", 1, 10, 5)
-        note = st.text_input("Note (optional)")
-        if st.form_submit_button("💾 Log Mood", type="primary", use_container_width=True):
-            conn = get_db(); c = conn.cursor()
-            c.execute("INSERT INTO mood_log (user_id,mood,energy,note,created_at) VALUES (?,?,?,?,?)",
-                      (user_id,mo,en,note,datetime.now().isoformat()))
-            conn.commit(); conn.close()
-            award_xp(user_id,3); play_sound("success"); st.rerun()
-    st.divider()
-    conn = get_db(); c = conn.cursor(); c.execute("SELECT * FROM mood_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 30", (user_id,)); ms = c.fetchall(); conn.close()
-    for m in ms:
-        st.markdown(f'<div class="suggestion"><span class="icon">{m["mood"].split()[0]}</span><span class="text"><strong>{m["created_at"][:16]}</strong> — Energy {m["energy"]}/10 {m["note"] or ""}</span></div>', unsafe_allow_html=True)
+# ==================== CHALLENGE ====================
+POOL = ["Write 3 things you're grateful for","Take a photo of somewhere you pass daily",
+        "Journal 5 min about today","Message someone you miss","Do one thing you've been putting off",
+        "Write a note about something you learned","Take 10 slow breaths before bed","Read 15 minutes",
+        "Do one kind thing for someone","Write tomorrow's most important task","Move for 20 minutes","Say no to something"]
 
-# ============================================================
-# ACHIEVEMENTS
-# ============================================================
+def challenge_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>📅 DAILY CHALLENGE</h1></div>', unsafe_allow_html=True)
+    today = datetime.now().date().isoformat()
+    with db() as conn:
+        ch = conn.execute("SELECT * FROM challenges WHERE user_id=? AND challenge_date=?", (uid,today)).fetchone()
+        if not ch:
+            t = random.choice(POOL)
+            conn.execute("INSERT INTO challenges (user_id,challenge_date,challenge_text,created_at) VALUES (?,?,?,?)",
+                         (uid,today,t,datetime.now().isoformat()))
+            ch = conn.execute("SELECT * FROM challenges WHERE user_id=? AND challenge_date=?", (uid,today)).fetchone()
+    st.markdown(f'<div class="brain-card"><div class="mood">📅 {today}</div>'
+                f'<div class="story" style="font-size:20px;">{ch["challenge_text"]}</div></div>',
+                unsafe_allow_html=True)
+    if ch["completed"]: st.success("✅ Completed!")
+    else:
+        if st.button("✅ Mark Complete", type="primary", use_container_width=True):
+            with db() as conn:
+                conn.execute("UPDATE challenges SET completed=1 WHERE id=?", (ch["id"],))
+            award_xp(uid, 30); celebrate(); st.rerun()
+
+# ==================== STUDIO ====================
+def studio_view():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🏗️ STUDIO</h1><p>Build products people want</p></div>', unsafe_allow_html=True)
+    with st.form("pj"):
+        n = st.text_input("Project name"); d = st.text_area("Description", height=60)
+        if st.form_submit_button("➕ New Project", use_container_width=True):
+            if n:
+                with db() as conn:
+                    conn.execute("INSERT INTO projects (user_id,name,description,created_at) VALUES (?,?,?,?)",
+                                 (uid,n,d,datetime.now().isoformat()))
+                award_xp(uid, 10); st.rerun()
+    with db() as conn:
+        ps = conn.execute("SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()
+    if not ps: st.info("Create a project above."); return
+    for p in ps:
+        st.markdown(f'<div class="brain-card"><div class="mood">🏗️ {p["name"]}</div>'
+                    f'<div class="story">{p["description"] or ""}</div>'
+                    f'<div class="story">Stage: <strong>{p["stage"]}</strong></div></div>',
+                    unsafe_allow_html=True)
+
+# ==================== LEADERBOARD ====================
+def leaderboard_view():
+    st.markdown('<div class="nexus-header"><h1>🏆 LEADERBOARD</h1></div>', unsafe_allow_html=True)
+    with db() as conn:
+        us = conn.execute("SELECT name,username,xp,rank,streak,arena_wins FROM users ORDER BY xp DESC LIMIT 20").fetchall()
+    for i, u in enumerate(us):
+        medal = ["🥇","🥈","🥉"][i] if i < 3 else f"{i+1}."
+        name = u["name"] or u["username"]
+        st.markdown(f'<div class="suggestion"><span class="icon">{medal}</span>'
+                    f'<span class="text"><strong>{name}</strong> — {u["xp"]} XP · '
+                    f'<span class="rank-badge {rank_class(u["rank"])}">{u["rank"]}</span> '
+                    f'♟️ {u["arena_wins"]}W · 🔥 {u["streak"]}</span></div>',
+                    unsafe_allow_html=True)
+
+# ==================== ACHIEVEMENTS ====================
 def achievements_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>🎖️ ACHIEVEMENTS</h1><p>Your badges</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT code FROM achievements WHERE user_id = ?", (user_id,))
-    unlocked = {row["code"] for row in c.fetchall()}
-    conn.close()
-    for code, (name, desc, icon) in ACHIEVEMENTS.items():
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>🎖️ AWARDS</h1></div>', unsafe_allow_html=True)
+    with db() as conn:
+        unlocked = {r["code"] for r in conn.execute("SELECT code FROM achievements WHERE user_id=?", (uid,)).fetchall()}
+    for code,(name,desc,icon) in ACHIEVEMENTS.items():
         locked = code not in unlocked
-        opacity = "0.4" if locked else "1"
-        st.markdown(f'<div class="suggestion" style="opacity:{opacity};"><span class="icon">{icon}</span><span class="text"><strong>{name}</strong> — {desc}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="suggestion" style="opacity:{"0.4" if locked else "1"};">'
+                    f'<span class="icon">{icon}</span><span class="text"><strong>{name}</strong> — {desc}</span></div>',
+                    unsafe_allow_html=True)
 
-# ============================================================
-# STATS
-# ============================================================
+# ==================== STATS ====================
 def stats_view():
-    user_id = st.session_state.user_id
-    render_mood_ring(user_id)
-    st.markdown('<div class="nexus-header"><h1>📊 STATS</h1><p>Your full history</p></div>', unsafe_allow_html=True)
-    back_button("home"); st.divider()
-    conn = get_db(); c = conn.cursor()
-    tables = ["places","memories","notes","journal","dreams","time_capsules","lessons","repairs",
-              "health_guides","arena_matches","habits","mood_log","focus_sessions","gratitude",
-              "wins_log","reading_list","quotes_saved","flash_cards","breathing_log","achievements"]
-    for t in tables:
-        try:
-            c.execute(f"SELECT COUNT(*) as x FROM {t} WHERE user_id = ?", (user_id,))
-            n = c.fetchone()["x"]
-            st.metric(t.replace("_", " ").title(), n)
-        except: pass
-    c.execute("SELECT xp, streak, rank, arena_wins, arena_losses FROM users WHERE id = ?", (user_id,))
-    u = c.fetchone()
-    conn.close()
-    if u:
-        st.divider()
-        st.markdown(f"**Rank:** {u['rank']} · **XP:** {u['xp']} · **Streak:** {u['streak']} · **Arena:** {u['arena_wins']}W / {u['arena_losses']}L")
+    uid = st.session_state.user_id
+    st.markdown('<div class="nexus-header"><h1>📊 STATS</h1></div>', unsafe_allow_html=True)
+    with db() as conn:
+        for t in ["places","memories","notes","journal","dreams","capsules","lessons","repairs",
+                  "health_guides","matches","habits","moods","focus","achievements","projects"]:
+            try:
+                n = conn.execute(f"SELECT COUNT(*) as x FROM {t} WHERE user_id=?", (uid,)).fetchone()["x"]
+                st.metric(t.replace("_"," ").title(), n)
+            except: pass
+        u = conn.execute("SELECT xp,streak,rank,arena_wins,arena_losses FROM users WHERE id=?", (uid,)).fetchone()
+    st.divider()
+    st.markdown(f"**Rank:** {u['rank']} · **XP:** {u['xp']} · **Streak:** {u['streak']} · "
+                f"**Chess:** {u['arena_wins']}W / {u['arena_losses']}L")
 
-# ============================================================
-# TIME CAPSULE NOTE: reuse function names
-# ============================================================
-def save_photo_safely(user_id, photo_bytes):
-    user_dir = os.path.join(UPLOAD_DIR, str(user_id))
-    os.makedirs(user_dir, exist_ok=True)
-    ph = hashlib.sha256(photo_bytes).hexdigest()[:16]
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fp = os.path.join(user_dir, f"{ts}_{ph}.jpg")
-    with open(fp, "wb") as f: f.write(photo_bytes)
-    return fp, ph
-
-# ============================================================
-# ROUTER
-# ============================================================
+# ==================== ROUTER ====================
 if st.session_state.user_id is None:
     auth_page()
 else:
+    sidebar()
     v = st.session_state.view
-    if v == "home": home_view()
-    elif v == "echo": echo_view()
-    elif v == "place_detail": place_detail_view()
-    elif v == "chat": chat_view()
-    elif v == "tutor": tutor_view()
-    elif v == "repair": repair_view()
-    elif v == "notes": notes_view()
-    elif v == "journal": journal_view()
-    elif v == "dreams": dreams_view()
-    elif v == "capsule": capsule_view()
-    elif v == "arena": arena_view()
-    elif v == "habits": habits_view()
-    elif v == "focus": focus_view()
-    elif v == "gratitude": gratitude_view()
-    elif v == "wins": wins_view()
-    elif v == "reading": reading_view()
-    elif v == "quotes": quotes_view()
-    elif v == "flash": flash_view()
-    elif v == "breathing": breathing_view()
-    elif v == "mood": mood_view()
-    elif v == "achievements": achievements_view()
-    elif v == "stats": stats_view()
-    else: home_view()
+    {
+        "home": home_view, "chess": chess_view, "chat": chat_view,
+        "echo": echo_view, "place": place_view, "tutor": tutor_view,
+        "atlas": atlas_view, "notes": notes_view, "journal": journal_view,
+        "dreams": dreams_view, "capsule": capsule_view, "habits": habits_view,
+        "focus": focus_view, "mood": mood_view, "gratitude": gratitude_view,
+        "wins": wins_view, "reading": reading_view, "quotes": quotes_view,
+        "flash": flash_view, "breathe": breathe_view, "meditate": meditate_view,
+        "goals": goals_view, "coach": coach_view, "challenge": challenge_view,
+        "studio": studio_view, "leaderboard": leaderboard_view,
+        "achievements": achievements_view, "stats": stats_view,
+    }.get(v, home_view)()
