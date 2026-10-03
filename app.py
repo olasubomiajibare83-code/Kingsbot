@@ -1,6 +1,5 @@
 """
 SmithApp
-Install: pip install streamlit requests pillow
 Run:     streamlit run smithapp.py
 """
 import base64, hashlib, html, io, json, math, os, random, sqlite3, time
