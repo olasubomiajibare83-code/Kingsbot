@@ -1,10 +1,13 @@
 """
-SmithApp v2.0 - Chat, Call, Watch, Think, and Scroll
+SmithApp v3.0 — Chat, Call, Video, Movies, Echo, Fix, Workout
+Install: pip install streamlit requests pillow
 Run:     streamlit run smithapp.py
 """
-import base64, hashlib, io, json, os, random, sqlite3
+import base64, hashlib, io, json, os, random, sqlite3, smtplib, time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
 
 import requests
@@ -12,15 +15,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image, ImageChops, ImageDraw
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="SmithApp", page_icon="💬", layout="wide")
+st.set_page_config(page_title="SmithApp", page_icon="💬", layout="wide", initial_sidebar_state="expanded")
 DB, VAULT = "smith.db", "vault"
 os.makedirs(VAULT, exist_ok=True)
 
-# 🔑 PASTE YOUR TMDB API KEY HERE
-TMDB_API_KEY = "YOUR_TMDB_API_KEY_HERE"
+TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
+SMTP_EMAIL = os.getenv("SMTP_EMAIL", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
 
-# --- DATABASE SCHEMA ---
 SCHEMA = [
     "users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, name TEXT, pw TEXT, created TEXT)",
     "dm(id INTEGER PRIMARY KEY AUTOINCREMENT, sender INT, receiver INT, body TEXT, raw TEXT, seen INT DEFAULT 0, created TEXT)",
@@ -31,6 +33,11 @@ SCHEMA = [
     "tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, title TEXT, due TEXT, done INT DEFAULT 0)",
     "pros(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, name TEXT, skill TEXT, email TEXT, phone TEXT, area TEXT)",
     "ttt(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, result TEXT)",
+    "videos(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, caption TEXT, path TEXT, likes INT DEFAULT 0, created TEXT)",
+    "vcomments(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id INT, user_id INT, body TEXT, created TEXT)",
+    "vlikes(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id INT, user_id INT)",
+    "workouts(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, kind TEXT, reps INT, seconds INT, calories INT, created TEXT)",
+    "challenges(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INT, kind TEXT, target INT, progress INT DEFAULT 0, created TEXT)",
 ]
 
 @contextmanager
@@ -57,18 +64,33 @@ def check_pw(pw, stored):
     salt, _ = stored.split("$", 1)
     return hash_pw(pw, salt) == stored
 
-# --- AI BRAIN (Pollinations) ---
-API = "https://text.pollinations.ai/openai"
+OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_MODEL = "llama3.2"
+POLLINATIONS = "https://text.pollinations.ai/openai"
 
-def ai(messages, temp=0.6, timeout=45):
+def _try_ollama(messages, temp, timeout):
     try:
-        r = requests.post(API, json={"model": "openai", "messages": messages, "temperature": temp}, timeout=timeout)
+        r = requests.post(OLLAMA_URL, json={"model": OLLAMA_MODEL, "messages": messages, "stream": False, "options": {"temperature": temp}}, timeout=timeout)
+        if r.ok:
+            t = r.json().get("message", {}).get("content", "").strip()
+            if t: return t
+    except Exception: pass
+    return None
+
+def _try_cloud(messages, temp, timeout):
+    try:
+        r = requests.post(POLLINATIONS, json={"model": "openai", "messages": messages, "temperature": temp}, timeout=timeout)
         if r.ok:
             t = r.json()["choices"][0]["message"]["content"]
-            if t and t.strip():
-                return t.strip()
-    except Exception:
-        pass
+            if t and t.strip(): return t.strip()
+    except Exception: pass
+    return None
+
+def ai(messages, temp=0.6, timeout=45):
+    out = _try_ollama(messages, temp, min(timeout, 60))
+    if out: return out
+    out = _try_cloud(messages, temp, timeout)
+    if out: return out
     return None
 
 def img_part(raw):
@@ -82,23 +104,32 @@ def ai_json(prompt, images=None):
     text = prompt + " Reply with JSON only, no markdown."
     content = [{"type": "text", "text": text}] + [img_part(i) for i in images] if images else text
     raw = ai([{"role": "user", "content": content}])
-    try:
-        return json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
-    except Exception:
-        return None
+    try: return json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+    except Exception: return None
 
 def polish(text):
-    out = ai([
-        {"role": "system", "content": "Rewrite the user's message so it is clear, polite and professional. Keep the meaning, the language and roughly the length. Do not add facts. Return only the rewritten message."},
-        {"role": "user", "content": text},
-    ], temp=0.3, timeout=20)
-    if out:
-        return out
+    out = ai([{"role": "system", "content": "Rewrite the user's message so it is clear, polite and professional. Keep the meaning, the language and roughly the length. Do not add facts. Return only the rewritten message."}, {"role": "user", "content": text}], temp=0.3, timeout=20)
+    if out: return out
     t = text.strip()
     t = t[0].upper() + t[1:]
     return t if t[-1] in ".!?" else t + "."
 
-# --- HELPERS ---
+def send_email(to_addr, subject, body):
+    if not SMTP_EMAIL or not SMTP_PASS:
+        return False, "Email not configured. Set SMTP_EMAIL and SMTP_PASS."
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SMTP_EMAIL
+        msg["To"] = to_addr
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(SMTP_EMAIL, SMTP_PASS)
+            s.send_message(msg)
+        return True, "Sent"
+    except Exception as e:
+        return False, str(e)[:120]
+
 def css():
     st.markdown("""<style>
     .stApp{background:#0b141a;color:#e9edef}
@@ -106,11 +137,6 @@ def css():
     .hero h1{margin:0;font-size:1.5rem}
     .card{background:#202c33;border-radius:14px;padding:12px 14px;margin-bottom:8px}
     .muted{color:#8696a0;font-size:.85rem}
-    .movie-card{background:#202c33;border-radius:12px;padding:12px;margin:8px 0;display:flex;gap:12px}
-    .movie-poster{width:80px;height:120px;border-radius:8px;object-fit:cover}
-    .video-feed{display:flex;flex-direction:column;gap:16px}
-    .video-item{background:#111;border-radius:16px;overflow:hidden;position:relative}
-    .video-caption{position:absolute;bottom:0;left:0;right:0;padding:20px;background:linear-gradient(transparent,rgba(0,0,0,0.8));color:#fff}
     </style>""", unsafe_allow_html=True)
 
 def head(icon, title, sub=""):
@@ -128,6 +154,13 @@ def save_pic(raw, uid):
     Image.open(io.BytesIO(raw)).convert("RGB").save(path, quality=85)
     return path
 
+def save_video(raw, uid):
+    folder = os.path.join(VAULT, str(uid), "videos")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, datetime.now().strftime("%Y%m%d%H%M%S%f") + ".mp4")
+    with open(path, "wb") as f: f.write(raw)
+    return path
+
 def users_other(uid):
     with db() as c:
         return c.execute("SELECT id, username, name FROM users WHERE id != ? ORDER BY name", (uid,)).fetchall()
@@ -136,9 +169,8 @@ def send_dm(sender, receiver, body, raw=None):
     with db() as c:
         c.execute("INSERT INTO dm(sender,receiver,body,raw,created) VALUES(?,?,?,?,?)", (sender, receiver, body, raw or body, now()))
 
-# --- AUTH ---
 def auth():
-    head("💬", "SmithApp", "Chat, call, watch, scroll, fix, and think with AI")
+    head("💬", "SmithApp", "Chat, call, stream, watch, fix, train — all in one")
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         t1, t2 = st.tabs(["Login", "Sign up"])
@@ -167,35 +199,26 @@ def auth():
                     except sqlite3.IntegrityError:
                         st.error("Username taken.")
 
-# --- PAGES: EXISTING ---
-def home():
-    uid = st.session_state.uid
-    head("🏠", "Hello, " + st.session_state.name, "Your day in one place")
-    since = (datetime.now() - timedelta(hours=24)).isoformat()
-    with db() as c:
-        unread = c.execute("SELECT COUNT(*) x FROM dm WHERE receiver=? AND seen=0", (uid,)).fetchone()["x"]
-        stat = c.execute("SELECT COUNT(*) x FROM status WHERE created>=? AND user_id!=?", (since, uid)).fetchone()["x"]
-        tasks = c.execute("SELECT COUNT(*) x FROM tasks WHERE user_id=? AND done=0", (uid,)).fetchone()["x"]
-    a, b, d = st.columns(3)
-    a.metric("Unread messages", unread)
-    b.metric("New statuses", stat)
-    d.metric("Open tasks", tasks)
-
 def chat():
     uid = st.session_state.uid
-    head("💬", "Chats", "Every message can be polished by AI")
+    head("💬", "Chats", "AI polishes every message into professional writing")
     others = users_other(uid)
     if not others:
-        st.info("No one else has signed up yet. Ask a friend to create an account.")
+        st.info("No one else has signed up yet.")
         return
     labels = {o["id"]: (o["name"] or o["username"]) + " (@" + o["username"] + ")" for o in others}
     peer = st.selectbox("Chat with", list(labels), format_func=lambda i: labels[i])
-    a, b = st.columns([1, 1])
+    a, b, c = st.columns(3)
     polish_on = a.toggle("✨ AI professional polish", value=True)
     if b.button("📞 Start call", use_container_width=True):
         room = "smithapp-" + hashlib.sha256((str(min(uid, peer)) + "-" + str(max(uid, peer)) + "-smith").encode()).hexdigest()[:16]
         url = "https://meet.jit.si/" + room
         send_dm(uid, peer, "📞 Call started. Join: " + url)
+        st.session_state.call = url
+    if c.button("🎥 Video call", use_container_width=True):
+        room = "smithapp-vid-" + hashlib.sha256((str(min(uid, peer)) + "-" + str(max(uid, peer)) + "-v").encode()).hexdigest()[:16]
+        url = "https://meet.jit.si/" + room
+        send_dm(uid, peer, "🎥 Video call started. Join: " + url)
         st.session_state.call = url
     if st.session_state.get("call"):
         st.link_button("Open call in new tab", st.session_state.call)
@@ -203,7 +226,6 @@ def chat():
         if st.button("End call view"):
             st.session_state.call = None
             st.rerun()
-
     def thread():
         with db() as c:
             c.execute("UPDATE dm SET seen=1 WHERE receiver=? AND sender=?", (uid, peer))
@@ -214,7 +236,6 @@ def chat():
                 if r["sender"] == uid and r["raw"] != r["body"]:
                     st.caption("✨ polished from: " + r["raw"])
                 st.caption(r["created"][11:16])
-
     (st.fragment(run_every=4)(thread) if hasattr(st, "fragment") else thread)()
     with st.form("send", clear_on_submit=True):
         text = st.text_area("Message", height=80)
@@ -239,39 +260,134 @@ def status():
         rows = c.execute("SELECT s.*, u.name, u.username FROM status s JOIN users u ON u.id=s.user_id WHERE s.created>=? ORDER BY s.id DESC", (since,)).fetchall()
     for r in rows:
         st.markdown(f"<div class='card'><b>{r['name'] or r['username']}</b> <span class='muted'>{r['created'][11:16]}</span></div>", unsafe_allow_html=True)
-        if r["path"] and os.path.exists(r["path"]):
-            st.image(r["path"], width=320)
-        if r["text"]:
-            st.write(r["text"])
+        if r["path"] and os.path.exists(r["path"]): st.image(r["path"], width=320)
+        if r["text"]: st.write(r["text"])
         if r["user_id"] == uid and st.button("Delete", key="ds" + str(r["id"])):
             with db() as c:
                 c.execute("DELETE FROM status WHERE id=?", (r["id"],))
             st.rerun()
 
+def video_feed():
+    uid = st.session_state.uid
+    head("📱", "Video Feed", "Vertical scroll — like, comment, share")
+    t1, t2 = st.tabs(["🔥 For You", "⬆️ Upload"])
+    with t2:
+        with st.form("vupload"):
+            cap = st.text_input("Caption")
+            up = st.file_uploader("Video file (mp4, mov)", type=["mp4", "mov", "webm"])
+            if st.form_submit_button("Post", type="primary") and up:
+                path = save_video(up.getvalue(), uid)
+                with db() as c:
+                    c.execute("INSERT INTO videos(user_id,caption,path,created) VALUES(?,?,?,?)", (uid, cap, path, now()))
+                st.success("Posted!")
+                st.rerun()
+    with t1:
+        with db() as c:
+            vids = c.execute("SELECT v.*, u.name, u.username FROM videos v JOIN users u ON u.id=v.user_id ORDER BY v.id DESC LIMIT 30").fetchall()
+        if not vids:
+            st.info("No videos yet. Upload one to start the feed.")
+            return
+        for v in vids:
+            with st.container():
+                c1, c2 = st.columns([1, 4])
+                with c1:
+                    avatar = "https://ui-avatars.com/api/?name=" + quote(v["name"] or v["username"]) + "&background=00a884&color=fff"
+                    st.image(avatar, width=48)
+                with c2:
+                    st.markdown(f"**@{v['username']}** · {v['created'][11:16]}")
+                    if v["caption"]: st.write(v["caption"])
+                if os.path.exists(v["path"]): st.video(v["path"])
+                with db() as c:
+                    likes = c.execute("SELECT COUNT(*) x FROM vlikes WHERE video_id=?", (v["id"],)).fetchone()["x"]
+                    comments = c.execute("SELECT COUNT(*) x FROM vcomments WHERE video_id=?", (v["id"],)).fetchone()["x"]
+                    already = c.execute("SELECT 1 FROM vlikes WHERE video_id=? AND user_id=?", (v["id"], uid)).fetchone()
+                lc1, lc2, lc3 = st.columns(3)
+                like_label = ("❤️ " if already else "🤍 ") + str(likes)
+                if lc1.button(like_label, key=f"lk_{v['id']}"):
+                    with db() as c:
+                        if already: c.execute("DELETE FROM vlikes WHERE video_id=? AND user_id=?", (v["id"], uid))
+                        else: c.execute("INSERT INTO vlikes(video_id,user_id) VALUES(?,?)", (v["id"], uid))
+                    st.rerun()
+                with lc2:
+                    if st.button("💬 " + str(comments), key=f"cm_{v['id']}"):
+                        st.session_state[f"showcm_{v['id']}"] = not st.session_state.get(f"showcm_{v['id']}", False)
+                if lc3.button("↗️ Share", key=f"sh_{v['id']}"):
+                    st.toast("Share link copied!")
+                if st.session_state.get(f"showcm_{v['id']}"):
+                    with db() as c:
+                        cms = c.execute("SELECT vc.*, u.name, u.username FROM vcomments vc JOIN users u ON u.id=vc.user_id WHERE video_id=? ORDER BY vc.id DESC", (v["id"],)).fetchall()
+                    for cm in cms:
+                        st.markdown(f"<div class='card'><b>@{cm['username']}</b> {cm['body']}</div>", unsafe_allow_html=True)
+                    with st.form(f"cf_{v['id']}", clear_on_submit=True):
+                        newcm = st.text_input("Add a comment", key=f"inp_{v['id']}")
+                        if st.form_submit_button("Post"):
+                            if newcm:
+                                with db() as c:
+                                    c.execute("INSERT INTO vcomments(video_id,user_id,body,created) VALUES(?,?,?,?)", (v["id"], uid, newcm, now()))
+                                st.rerun()
+                st.divider()
+
+def movies():
+    head("🎬", "Movies", "Search any film — every Fast & Furious, any blockbuster")
+    if not TMDB_API_KEY:
+        st.warning("Set TMDB_API_KEY at the top of the file to enable movie search.")
+        return
+    q = st.text_input("Search movies", placeholder="Fast & Furious, Dune, Inception...")
+    url = "https://api.themoviedb.org/3/search/movie" if q else "https://api.themoviedb.org/3/movie/popular"
+    params = {"api_key": TMDB_API_KEY, "query": q} if q else {"api_key": TMDB_API_KEY}
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        results = r.json().get("results", [])
+    except: st.error("Could not reach TMDB."); return
+    if not results: st.info("No results found."); return
+    for mv in results[:15]:
+        mid = mv["id"]; title = mv.get("title", "?")
+        year = (mv.get("release_date") or "?")[:4]
+        rating = mv.get("vote_average", 0); poster = mv.get("poster_path")
+        poster_url = f"https://image.tmdb.org/t/p/w200{poster}" if poster else "https://via.placeholder.com/80x120?text=No+Poster"
+        c1, c2 = st.columns([1, 4])
+        with c1: st.image(poster_url, width=100)
+        with c2:
+            st.subheader(f"{title} ({year})")
+            st.caption(f"⭐ {rating:.1f}/10")
+            st.write((mv.get("overview") or "")[:220])
+            if st.button("📍 Where to Watch", key=f"w_{mid}"):
+                try:
+                    wr = requests.get(f"https://api.themoviedb.org/3/movie/{mid}/watch/providers", params={"api_key": TMDB_API_KEY}, timeout=15)
+                    regions = wr.json().get("results", {})
+                    for reg in ["US", "GB", "CA", "NG", "AU"]:
+                        if reg in regions:
+                            data = regions[reg]
+                            if data.get("link"): st.markdown(f"[🔗 All options on JustWatch ({reg})]({data['link']})")
+                            for ptype in ["flatrate", "rent", "buy"]:
+                                if data.get(ptype):
+                                    names = [p["provider_name"] for p in data[ptype]]
+                                    st.write(f"**{ptype.title()}:** {', '.join(names)}")
+                except: st.error("Could not fetch provider data.")
+        st.divider()
+
 def brain():
     uid = st.session_state.uid
-    head("🧠", "Brain", "An AI that remembers you")
+    head("🧠", "Brain", "AI that remembers you")
     with db() as c:
         facts = [r["fact"] for r in c.execute("SELECT fact FROM facts WHERE user_id=?", (uid,))]
         hist = c.execute("SELECT role, content FROM brain WHERE user_id=? ORDER BY id DESC LIMIT 14", (uid,)).fetchall()[::-1]
     with st.expander("What I remember (" + str(len(facts)) + ")"):
         st.write("\n".join("- " + f for f in facts) or "Nothing yet.")
         if facts and st.button("Forget everything"):
-            with db() as c:
-                c.execute("DELETE FROM facts WHERE user_id=?", (uid,))
+            with db() as c: c.execute("DELETE FROM facts WHERE user_id=?", (uid,))
             st.rerun()
     for m in hist:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+        with st.chat_message(m["role"]): st.write(m["content"])
     q = st.chat_input("Ask anything")
     if q:
-        sysmsg = "You are Smith Brain, a sharp, kind assistant. Be accurate and practical; say when unsure. What you know about the user: " + ("; ".join(facts) or "nothing yet") + "."
-        reply = ai([{"role": "system", "content": sysmsg}] + [{"role": m["role"], "content": m["content"]} for m in hist] + [{"role": "user", "content": q}], timeout=60) or "I can't reach my AI service right now. Please try again."
+        sysmsg = "You are Smith Brain, sharp, kind assistant. Be accurate, practical. About the user: " + ("; ".join(facts) or "nothing yet") + "."
+        reply = ai([{"role": "system", "content": sysmsg}] + [{"role": m["role"], "content": m["content"]} for m in hist] + [{"role": "user", "content": q}], timeout=90) or "AI unreachable. Try again."
         with db() as c:
             c.execute("INSERT INTO brain(user_id,role,content) VALUES(?,?,?)", (uid, "user", q))
             c.execute("INSERT INTO brain(user_id,role,content) VALUES(?,?,?)", (uid, "assistant", reply))
         if len(q) > 25:
-            f = ai_json('From this message, extract one lasting personal fact worth remembering (name, goals, preferences) as {"fact":"..."}; use "" if none. Message: ' + q)
+            f = ai_json('Extract one lasting personal fact as {"fact":"..."}; use "" if none. Message: ' + q)
             if f and f.get("fact"):
                 with db() as c:
                     c.execute("INSERT INTO facts(user_id,fact) VALUES(?,?)", (uid, str(f["fact"])[:200]))
@@ -283,8 +399,8 @@ def diff_image(a_raw, b_raw):
     b = Image.open(io.BytesIO(b_raw)).convert("RGB").resize(a.size)
     n = 24
     d = ImageChops.difference(a, b).convert("L").resize((n, n), Image.BOX)
-    out, draw, hits = b.copy(), ImageDraw.Draw(b.copy()), 0
-    draw = ImageDraw.Draw(out)
+    out = b.copy(); draw = ImageDraw.Draw(out)
+    hits = 0
     cw, ch = a.size[0] / n, a.size[1] / n
     for y in range(n):
         for x in range(n):
@@ -294,38 +410,42 @@ def diff_image(a_raw, b_raw):
     return out, round(100 * hits / (n * n))
 
 def echo():
-    head("📸", "Echo", "Spot what changed or is missing between two photos")
-    t1, t2 = st.tabs(["Compare two photos", "Identify one photo"])
+    head("📸", "Echo 2.0", "Highest-upgrade photo intelligence")
+    t1, t2, t3 = st.tabs(["Compare two photos", "Identify one photo", "Find difference"])
     with t1:
-        a_raw, b_raw = pic("Photo 1 (before)", "ea"), pic("Photo 2 (after)", "eb")
+        a_raw, b_raw = pic("Before", "ea"), pic("After", "eb")
         if st.button("Compare", type="primary") and a_raw and b_raw:
-            with st.spinner("Looking closely..."):
+            with st.spinner("Analyzing..."):
                 marked, pct = diff_image(a_raw, b_raw)
-                res = ai_json('You are given two photos of the same scene: photo 1 (before) then photo 2 (after). Identify objects in both. Return {"summary":"","missing":[],"added":[],"moved":[],"changed":[],"unsure":[]}. Be specific (colour, position). Only report what you can actually see.', [a_raw, b_raw])
-            st.image(marked, caption="Red boxes: pixel changes in photo 2 (" + str(pct) + "% of the frame)")
+                res = ai_json('Two photos of same scene: before then after. Return {"summary":"","missing":[],"added":[],"moved":[],"changed":[],"unsure":[]}. Be specific.', [a_raw, b_raw])
+            st.image(marked, caption=f"Red boxes: {pct}% of frame changed")
             if res:
                 st.subheader(res.get("summary", ""))
-                for k, icon in (("missing", "❌ Missing"), ("added", "➕ New"), ("moved", "↔️ Moved"), ("changed", "🔄 Changed"), ("unsure", "❓ Not sure")):
-                    if res.get(k):
-                        st.markdown("**" + icon + "**\n" + "\n".join("- " + str(i) for i in res[k]))
-            else:
-                st.warning("AI vision is unreachable, so only the pixel comparison above is available.")
+                for k, icon in (("missing","❌ Missing"),("added","➕ New"),("moved","↔️ Moved"),("changed","🔄 Changed"),("unsure","❓ Not sure")):
+                    if res.get(k): st.markdown("**" + icon + "**\n" + "\n".join("- " + str(i) for i in res[k]))
+            else: st.warning("AI unreachable, showing pixel diff only.")
     with t2:
         raw = pic("Photo to identify", "ei")
         if st.button("Identify") and raw:
             with st.spinner("Thinking..."):
-                res = ai([{"role": "user", "content": [{"type": "text", "text": "List every object you can recognise in this photo, then say what the scene is. Short and concrete."}, img_part(raw)]}], timeout=60)
-            st.write(res or "AI vision is unreachable right now.")
+                res = ai([{"role": "user", "content": [{"type": "text", "text": "List every object in this photo, then describe the scene. Short and concrete."}, img_part(raw)]}], timeout=90)
+            st.write(res or "AI vision unreachable.")
+    with t3:
+        st.info("Upload two similar images to highlight exact pixel differences.")
+        a_raw, b_raw = pic("Image A", "da"), pic("Image B", "db")
+        if st.button("Find differences") and a_raw and b_raw:
+            marked, pct = diff_image(a_raw, b_raw)
+            st.image(marked, caption=f"{pct}% of frame differs")
 
 def fixit():
     uid = st.session_state.uid
-    head("🔧", "Fix-it", "Diagnose, then contact a technician")
+    head("🔧", "Fix-it", "Diagnose anything — email a technician directly")
     item = st.text_input("What is broken? (TV, phone, fridge, pipe...)")
     problem = st.text_area("What is happening?")
     raw = pic("Photo (optional)", "fx")
     if st.button("Diagnose", type="primary") and item and problem:
         with st.spinner("Diagnosing..."):
-            r = ai_json('Home-repair triage for "' + item + '": ' + problem + '. Return {"likely_cause":"","safe_checks":[],"stop_if":[],"pro_skill":"","keywords":[]}. safe_checks must be harmless (no opening mains-powered devices, no gas, no chemicals). keywords are 2-4 words to match technicians.', [raw] if raw else None)
+            r = ai_json('Home-repair triage for "' + item + '": ' + problem + '. Return {"likely_cause":"","safe_checks":[],"stop_if":[],"pro_skill":"","keywords":[]}. safe_checks must be harmless.', [raw] if raw else None)
         st.session_state.fix = {"item": item, "problem": problem, "r": r or {"likely_cause": "Unknown", "safe_checks": ["Check power and cables.", "Restart it."], "stop_if": ["Smoke, burning smell, sparks, or water near power."], "pro_skill": item + " repair", "keywords": [item]}}
     fx = st.session_state.get("fix")
     if fx:
@@ -334,58 +454,122 @@ def fixit():
         st.markdown("**Safe checks**\n" + "\n".join("- " + str(i) for i in r.get("safe_checks", [])))
         st.error("Stop and call a pro if: " + "; ".join(map(str, r.get("stop_if", []))))
         words = [w for w in (r.get("keywords", []) + [fx["item"], r.get("pro_skill", "")]) if w]
-        q = " OR ".join(["skill LIKE ? OR name LIKE ?"] * len(words))
-        args = [x for w in words for x in ("%" + w + "%", "%" + w + "%")]
-        with db() as c:
-            pros = c.execute("SELECT * FROM pros WHERE " + q, args).fetchall()
+        if words:
+            q = " OR ".join(["skill LIKE ? OR name LIKE ?"] * len(words))
+            args = [x for w in words for x in ("%" + w + "%", "%" + w + "%")]
+            with db() as c:
+                pros = c.execute("SELECT * FROM pros WHERE " + q, args).fetchall()
+        else:
+            pros = []
         st.subheader("Technicians in SmithApp")
-        if not pros:
-            st.info("No technician for this is registered yet. Share SmithApp with one and ask them to register below.")
+        if not pros: st.info("No technician registered yet. Scroll down to register one.")
         for p in pros:
             st.markdown(f"<div class='card'><b>{p['name']}</b> · {p['skill']}<div class='muted'>{p['area'] or ''} · {p['phone'] or ''}</div>{p['email'] or ''}</div>", unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            subj, body = quote("Repair request: " + fx["item"]), quote(fx["problem"])
-            c1.link_button("✉️ Email", "mailto:" + (p["email"] or "") + "?subject=" + subj + "&body=" + body)
-            if p["user_id"] != uid and c2.button("💬 Message in app", key="pm" + str(p["id"])):
-                send_dm(uid, p["user_id"], "Hello, I need help with my " + fx["item"] + ": " + fx["problem"])
-                st.success("Sent. Find the reply in Chats.")
+            draft_prompt = f"Write a short professional repair request email. Item: {fx['item']}. Problem: {fx['problem']}. To a technician named {p['name']}. Under 120 words. Ask for availability and quote."
+            with st.expander("📧 Email directly from SmithApp"):
+                with st.form(f"em_{p['id']}"):
+                    if st.form_submit_button("✨ Generate AI draft"):
+                        with st.spinner("Drafting..."):
+                            default_body = ai([{"role":"user","content":draft_prompt}], timeout=30) or ""
+                        st.session_state[f"drafted_{p['id']}"] = default_body
+                    body = st.text_area("Email body", value=st.session_state.get(f"drafted_{p['id']}", ""), height=150, key=f"body_{p['id']}")
+                    subj = st.text_input("Subject", value=f"Repair request: {fx['item']}", key=f"subj_{p['id']}")
+                    if st.form_submit_button("📤 Send email now", type="primary"):
+                        ok, msg = send_email(p["email"] or "", subj, body)
+                        if ok: st.success("✅ Email sent to " + p["email"])
+                        else: st.error("Send failed: " + msg)
+        st.caption("Or click to open in your mail app:")
+        for p in pros:
+            subj_e, body_e = quote("Repair request: " + fx["item"]), quote(fx["problem"])
+            st.link_button(f"✉️ {p['name']} ({p['email']})", "mailto:" + (p["email"] or "") + "?subject=" + subj_e + "&body=" + body_e)
     with st.expander("I'm a technician: list me"):
         with st.form("pro"):
-            n, s = st.text_input("Business or name"), st.text_input("Skills (e.g. television, phone, plumbing)")
-            e, p, a = st.text_input("Email"), st.text_input("Phone"), st.text_input("Area")
+            n = st.text_input("Business or name")
+            s = st.text_input("Skills (e.g. television, phone, plumbing)")
+            e = st.text_input("Email")
+            ph = st.text_input("Phone")
+            a = st.text_input("Area")
             if st.form_submit_button("Register") and n and s and e:
                 with db() as c:
-                    c.execute("INSERT INTO pros(user_id,name,skill,email,phone,area) VALUES(?,?,?,?,?,?)", (uid, n, s, e, p, a))
+                    c.execute("INSERT INTO pros(user_id,name,skill,email,phone,area) VALUES(?,?,?,?,?,?)", (uid, n, s, e, ph, a))
                 st.success("Listed.")
 
+def workout():
+    uid = st.session_state.uid
+    head("💪", "Workout", "Push-ups, squats, planks, and more")
+    t1, t2, t3 = st.tabs(["🏋️ Log workout", "🎯 Challenges", "📊 Progress"])
+    with t1:
+        with st.form("wl"):
+            kind = st.selectbox("Exercise", ["Push-ups","Squats","Sit-ups","Plank (sec)","Burpees","Jumping jacks","Lunges","Pull-ups","Running (min)"])
+            reps = st.number_input("Reps / count", 0, 1000, 20)
+            secs = st.number_input("Seconds (for holds)", 0, 3600, 0)
+            cal = st.number_input("Calories (0 = auto)", 0, 5000, 0)
+            if st.form_submit_button("Log workout", type="primary"):
+                auto_cal = cal or int(reps * 0.5 + secs * 0.15)
+                with db() as c:
+                    c.execute("INSERT INTO workouts(user_id,kind,reps,seconds,calories,created) VALUES(?,?,?,?,?,?)", (uid, kind, reps, secs, auto_cal, now()))
+                st.success(f"Logged! +{auto_cal} cal")
+                st.rerun()
+    with t2:
+        with st.form("ch"):
+            kind = st.selectbox("Challenge", ["30-day push-ups (30/day)","100 squats/day","Plank 5 min/day","1000 push-ups in a week"])
+            target = st.number_input("Target", 1, 100000, 30)
+            if st.form_submit_button("Start challenge"):
+                with db() as c:
+                    c.execute("INSERT INTO challenges(user_id,kind,target,created) VALUES(?,?,?,?)", (uid, kind, target, now()))
+                st.rerun()
+        with db() as c:
+            chs = c.execute("SELECT * FROM challenges WHERE user_id=? ORDER BY id DESC", (uid,)).fetchall()
+        for ch in chs:
+            prog = ch["progress"] or 0
+            pct = min(1.0, prog / max(ch["target"], 1))
+            st.markdown(f"**{ch['kind']}** — {prog}/{ch['target']}")
+            st.progress(pct)
+            if st.button("+1 progress", key=f"chp_{ch['id']}"):
+                with db() as c:
+                    c.execute("UPDATE challenges SET progress=progress+1 WHERE id=?", (ch["id"],))
+                st.rerun()
+    with t3:
+        with db() as c:
+            logs = c.execute("SELECT * FROM workouts WHERE user_id=? ORDER BY id DESC LIMIT 50", (uid,)).fetchall()
+        total_cal = sum(l["calories"] or 0 for l in logs)
+        total_reps = sum(l["reps"] or 0 for l in logs)
+        a, b = st.columns(2)
+        a.metric("Total calories", total_cal)
+        b.metric("Total reps", total_reps)
+        by_day = {}
+        for l in logs:
+            d = l["created"][:10]
+            by_day[d] = by_day.get(d, 0) + (l["calories"] or 0)
+        if by_day:
+            st.line_chart({"calories": [by_day[d] for d in sorted(by_day)]})
+        for l in logs[:20]:
+            st.markdown(f"<div class='card'>{l['created'][:16]} — <b>{l['kind']}</b> {l['reps']} reps · {l['calories']} cal</div>", unsafe_allow_html=True)
+
 def win(b):
-    for x, y, z in [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]:
-        if b[x] == b[y] == b[z] != " ":
-            return b[x]
+    for x, y, z in [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]:
+        if b[x] == b[y] == b[z] != " ": return b[x]
 
 def ttt_ai(b):
     empty = [i for i, v in enumerate(b) if v == " "]
-    if random.random() < 0.35:
-        return random.choice(empty)
-    for mark, chance in (("O", 1.0), ("X", 0.6)):
+    if random.random() < 0.35: return random.choice(empty)
+    for mark, chance in (("O",1.0),("X",0.6)):
         if random.random() <= chance:
             for i in empty:
                 b[i] = mark
                 hit = win(b) == mark
                 b[i] = " "
-                if hit:
-                    return i
-    if b[4] == " " and random.random() < 0.6:
-        return 4
+                if hit: return i
+    if b[4] == " " and random.random() < 0.6: return 4
     return random.choice(empty)
 
 def games():
     uid = st.session_state.uid
-    head("⭕", "Tic-tac-toe", "The AI can slip up. Can you beat it?")
-    g = st.session_state.setdefault("ttt", {"b": [" "] * 9, "msg": ""})
+    head("⭕", "Game", "Beat the AI")
+    g = st.session_state.setdefault("ttt", {"b": [" "]*9, "msg": ""})
     cols = st.columns(3)
     for i in range(9):
-        if cols[i % 3].button(g["b"][i] if g["b"][i] != " " else "·", key="t" + str(i), use_container_width=True) and not g["msg"] and g["b"][i] == " ":
+        if cols[i%3].button(g["b"][i] if g["b"][i] != " " else "·", key="t"+str(i), use_container_width=True) and not g["msg"] and g["b"][i] == " ":
             g["b"][i] = "X"
             if not win(g["b"]) and " " in g["b"]:
                 g["b"][ttt_ai(g["b"])] = "O"
@@ -395,18 +579,16 @@ def games():
                 with db() as c:
                     c.execute("INSERT INTO ttt(user_id,result) VALUES(?,?)", (uid, "win" if w == "X" else "loss" if w else "draw"))
             st.rerun()
-    if g["msg"]:
-        st.info(g["msg"])
+    if g["msg"]: st.info(g["msg"])
     if st.button("New game"):
-        st.session_state.ttt = None
-        st.rerun()
+        st.session_state.ttt = None; st.rerun()
     with db() as c:
         rec = {r["result"]: r["n"] for r in c.execute("SELECT result, COUNT(*) n FROM ttt WHERE user_id=? GROUP BY result", (uid,))}
-    st.caption(f"Record: {rec.get('win', 0)}W · {rec.get('loss', 0)}L · {rec.get('draw', 0)}D")
+    st.caption(f"Record: {rec.get('win',0)}W · {rec.get('loss',0)}L · {rec.get('draw',0)}D")
 
 def notes():
     uid = st.session_state.uid
-    head("📝", "Notes & tasks")
+    head("📝", "Notes & Tasks")
     t1, t2 = st.tabs(["Notes", "Tasks"])
     with t1:
         with st.form("n", clear_on_submit=True):
@@ -418,8 +600,7 @@ def notes():
         with db() as c:
             rows = c.execute("SELECT * FROM notes WHERE user_id=? ORDER BY id DESC", (uid,)).fetchall()
         for r in rows:
-            with st.expander(r["title"]):
-                st.write(r["content"])
+            with st.expander(r["title"]): st.write(r["content"])
     with t2:
         with st.form("t", clear_on_submit=True):
             title, due = st.text_input("Task"), st.date_input("Due")
@@ -432,7 +613,7 @@ def notes():
         for r in rows:
             c1, c2 = st.columns([5, 1])
             c1.write(("✅ " if r["done"] else "⬜ ") + r["title"] + " · " + r["due"])
-            if not r["done"] and c2.button("Done", key="d" + str(r["id"])):
+            if not r["done"] and c2.button("Done", key="d"+str(r["id"])):
                 with db() as c:
                     c.execute("UPDATE tasks SET done=1 WHERE id=?", (r["id"],))
                 st.rerun()
@@ -458,165 +639,21 @@ def settings():
     st.divider()
     if st.text_input("Type DELETE to erase your account") == "DELETE" and st.button("Delete account"):
         with db() as c:
-            for t, col in (("dm", "sender"), ("dm", "receiver"), ("status", "user_id"), ("brain", "user_id"), ("facts", "user_id"), ("notes", "user_id"), ("tasks", "user_id"), ("pros", "user_id"), ("ttt", "user_id")):
+            for t, col in [("dm","sender"),("dm","receiver"),("status","user_id"),("brain","user_id"),("facts","user_id"),("notes","user_id"),("tasks","user_id"),("pros","user_id"),("ttt","user_id"),("videos","user_id"),("workouts","user_id"),("challenges","user_id")]:
                 c.execute(f"DELETE FROM {t} WHERE {col}=?", (uid,))
             c.execute("DELETE FROM users WHERE id=?", (uid,))
-        st.session_state.clear()
-        st.rerun()
+        st.session_state.clear(); st.rerun()
 
-# --- PAGES: NEW (MOVIES + VIDEO FEED) ---
-
-def movies():
-    """TMDB-powered movie browser with legal Where to Watch links."""
-    head("🎬", "Movies", "Search any film. Watch legally on official platforms.")
-    
-    if TMDB_API_KEY == "YOUR_TMDB_API_KEY_HERE":
-        st.error("⚠️ Add your TMDB API key in the code to use this feature.")
-        return
-
-    # Search bar
-    q = st.text_input("Search movies", placeholder="e.g., Fast & Furious, Dune, Inception")
-    
-    if not q:
-        # Show popular titles as fallback
-        try:
-            r = requests.get(f"https://api.themoviedb.org/3/movie/popular", params={"api_key": TMDB_API_KEY, "page": 1}, timeout=10)
-            results = r.json().get("results", [])
-        except:
-            st.warning("Could not reach TMDB. Check your internet connection.")
-            return
-    else:
-        try:
-            r = requests.get(f"https://api.themoviedb.org/3/search/movie", params={"api_key": TMDB_API_KEY, "query": q}, timeout=10)
-            results = r.json().get("results", [])
-        except:
-            st.warning("Search failed. Try again.")
-            return
-
-    if not results:
-        st.info("No movies found.")
-        return
-
-    for movie in results[:12]:
-        mid = movie["id"]
-        title = movie.get("title", "Unknown")
-        year = (movie.get("release_date") or "?")[:4]
-        rating = movie.get("vote_average", 0)
-        overview = movie.get("overview", "No description available.")
-        poster = movie.get("poster_path")
-        
-        poster_url = f"https://image.tmdb.org/t/p/w200{poster}" if poster else "https://via.placeholder.com/80x120?text=No+Poster"
-        
-        with st.container():
-            c1, c2 = st.columns([1, 4])
-            with c1:
-                st.image(poster_url, width=100)
-            with c2:
-                st.subheader(f"{title} ({year})")
-                st.caption(f"⭐ {rating:.1f}/10")
-                st.write(overview[:200] + "..." if len(overview) > 200 else overview)
-                
-                # Watch providers (legal links)
-                if st.button(f"📍 Where to Watch", key=f"watch_{mid}"):
-                    try:
-                        wr = requests.get(f"https://api.themoviedb.org/3/movie/{mid}/watch/providers", params={"api_key": TMDB_API_KEY}, timeout=10)
-                        providers = wr.json().get("results", {})
-                        # Prioritize US/UK or show all
-                        regions = ["US", "GB", "CA", "AU"]
-                        found = False
-                        for region in regions:
-                            if region in providers:
-                                data = providers[region]
-                                st.markdown(f"**Available in {region}**")
-                                if data.get("link"):
-                                    st.markdown(f"[🔗 View all options on JustWatch]({data['link']})")
-                                for ptype in ["flatrate", "rent", "buy"]:
-                                    if data.get(ptype):
-                                        names = [p["provider_name"] for p in data[ptype]]
-                                        st.write(f"**{ptype.title()}:** {', '.join(names)}")
-                                found = True
-                        if not found:
-                            st.info("No streaming info for your region. Try searching on JustWatch.com")
-                    except:
-                        st.error("Could not fetch provider data.")
-            st.divider()
-
-def video_feed():
-    """TikTok-style vertical scroll using Loops (federated, open-source)."""
-    head("📱", "Video Feed", "Short videos from the open social web (Loops)")
-    
-    st.info("💡 **Loops** is the open-source, federated TikTok alternative. The API is public — no login needed to browse.")
-    
-    # Loops public instance for demonstration
-    LOOPS_INSTANCE = "https://loops.video"
-    
-    # Try to fetch recent public videos
-    try:
-        # Loops uses ActivityPub/JSON API. We'll try the public timeline endpoint.
-        r = requests.get(f"{LOOPS_INSTANCE}/api/v1/timelines/public", 
-                         headers={"Accept": "application/json"}, 
-                         timeout=10)
-        
-        if r.status_code == 200:
-            videos = r.json()
-            if not isinstance(videos, list):
-                videos = videos.get("data", [])
-            
-            if not videos:
-                st.info("No public videos available right now. Try again later.")
-                return
-            
-            # Display as vertical feed
-            st.markdown("### 🔥 For You")
-            
-            for vid in videos[:10]:
-                # Loops returns Note objects with video attachments
-                content = vid.get("content", "No caption")
-                media = vid.get("media_attachments", [])
-                account = vid.get("account", {})
-                username = account.get("username", "unknown")
-                display_name = account.get("display_name", username)
-                
-                video_url = None
-                poster_url = None
-                for m in media:
-                    if m.get("type") == "video":
-                        video_url = m.get("url")
-                        poster_url = m.get("preview_url")
-                        break
-                
-                if video_url:
-                    st.markdown(f"**@{username}** · {display_name}")
-                    if poster_url:
-                        st.image(poster_url, use_container_width=True)
-                    # Embed video in a scrollable container
-                    st.video(video_url)
-                    st.caption(content[:150] if content else "")
-                    st.divider()
-        else:
-            st.warning(f"Could not reach Loops instance (status {r.status_code}).")
-            st.info("You can still browse Loops directly at loops.video")
-            
-    except Exception as e:
-        st.warning(f"Could not connect to Loops: {str(e)[:100]}")
-        st.info("Loops may be rate-limiting or the instance is down. Try again later.")
-    
-    # Fallback: Show a searchable archive of short videos
-    st.divider()
-    st.markdown("### 🔍 More Options")
-    st.link_button("🌐 Open Loops in Browser", "https://loops.video")
-    st.link_button("📺 Browse Archive.org Shorts", "https://archive.org/details/movies")
-
-# --- MAIN APP ---
 PAGES = {
-    "🏠 Home": home,
+    "🏠 Home": lambda: head("🏠", "Hello, " + st.session_state.name, "Your world in one app"),
     "💬 Chats": chat,
     "🟢 Status": status,
     "🧠 Brain": brain,
+    "📱 Video Feed": video_feed,
+    "🎬 Movies": movies,
     "📸 Echo": echo,
     "🔧 Fix-it": fixit,
-    "🎬 Movies": movies,          # NEW
-    "📱 Video Feed": video_feed,   # NEW
+    "💪 Workout": workout,
     "⭕ Game": games,
     "📝 Notes": notes,
     "⚙️ Settings": settings,
@@ -625,14 +662,12 @@ PAGES = {
 def main():
     css()
     if not st.session_state.get("uid"):
-        auth()
-        return
+        auth(); return
     with st.sidebar:
         st.markdown("### " + st.session_state.name)
         page = st.radio("Go to", list(PAGES), label_visibility="collapsed")
         if st.button("Log out", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
+            st.session_state.clear(); st.rerun()
     PAGES[page]()
 
 main()
