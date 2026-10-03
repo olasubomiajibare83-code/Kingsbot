@@ -1,6 +1,5 @@
 """
 SmithApp v2.0 - Chat, Call, Watch, Think, and Scroll
-Install: pip install streamlit requests pillow
 Run:     streamlit run smithapp.py
 """
 import base64, hashlib, io, json, os, random, sqlite3
