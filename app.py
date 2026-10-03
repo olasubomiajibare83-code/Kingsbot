@@ -1,6 +1,5 @@
 """
 SmithApp v3.0 — Chat, Call, Video, Movies, Echo, Fix, Workout
-Install: pip install streamlit requests pillow
 Run:     streamlit run smithapp.py
 """
 import base64, hashlib, io, json, os, random, sqlite3, smtplib, time
